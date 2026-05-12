@@ -1,0 +1,81 @@
+{
+  "name": "sigma-almirante",
+  "private": true,
+  "version": "0.0.8",
+  "type": "module",
+  "main": "electron.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist",
+    "electron:start": "electron .",
+    "electron:build": "vite build && electron-builder -c.extraMetadata.main=electron.cjs",
+    "electron:build:win": "vite build && electron-builder --win -c.extraMetadata.main=electron.cjs",
+    "electron:build:mac": "vite build && electron-builder --mac -c.extraMetadata.main=electron.cjs",
+    "cap:sync": "vite build && npx cap sync android",
+    "cap:build:android": "vite build && npx cap sync android && cd android && JAVA_HOME=$HOME/Library/Java/jdk-21/Contents/Home ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew assembleDebug && cd .. && cp android/app/build/outputs/apk/debug/app-debug.apk release/SIGMA-Changuinola-v0.0.7-android.apk && echo 'APK generated in release/'",
+    "dist": "npm run electron:build"
+  },
+  "homepage": "./",
+  "dependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/ios": "^8.3.1",
+    "@capacitor/network": "^8.0.1",
+    "@capacitor/preferences": "^8.0.1",
+    "@google/genai": "^1.37.0",
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.90.1",
+    "@types/tesseract.js": "^0.0.2",
+    "electron-is-dev": "^3.0.1",
+    "html2canvas": "1.4.1",
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^5.0.7",
+    "lucide-react": "^0.562.0",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "react-router-dom": "^7.12.0",
+    "recharts": "^3.6.0",
+    "tesseract.js": "^7.0.0",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
+    "gh-pages": "^6.3.0",
+    "terser": "^5.46.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  },
+  "build": {
+    "appId": "com.municipio.sigma",
+    "productName": "SIGMA Almirante",
+    "files": [
+      "dist/**/*",
+      "electron.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "directories": {
+      "output": "release"
+    }
+  }
+}

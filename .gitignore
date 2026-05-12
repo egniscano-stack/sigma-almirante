@@ -1,0 +1,47 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# SECURITY: Environment variables - NEVER commit these
+.env
+.env.local
+.env.production
+.env.staging
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Audit logs (should stay local or go to secure server)
+audit_logs/
+*.audit.log
+
+# Build artifacts
+build/
+
+# Electron build output (installers/binaries - too large for git)
+release/
+
+# Capacitor native projects (generated, too large for git)
+android/
+ios/
