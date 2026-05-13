@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 // ============================================================
-// SIGMA Changuinola — Edge Function: Scraper Panama Emprende v5.0
+// SIGMA Almirante — Edge Function: Scraper Panama Emprende v5.0
 // Autenticacion real via /loginNuevo + scraping del dashboard
 // ============================================================
 
@@ -12,7 +12,7 @@ const DASH_URL = `${PORTAL}/Empresa/Dashboard`;
 const AVISOS_URL = `${PORTAL}/Empresa/Aviso`;
 const PUBLIC_URL = `${PORTAL}/consulta-publica-new`;
 const BUSCAR_URL = `${PORTAL}/buscar-consulta-new`;
-const DISTRICT = 'Changuinola';
+const DISTRICT = 'Almirante';
 const PROVINCE = 'Bocas del Toro';
 
 const CORS = {
@@ -98,17 +98,17 @@ function guessCorr(text: string): string {
         ['boca del drago', 'Boca del Drago'], ['miramar', 'Miramar'],
         ['rambala', 'Rambala'], ['san san', 'San San'], ['teribe', 'Teribe'],
         ['punta pena', 'Punta Pena'], ['valle escondido', 'Valle Escondido'],
-        ['banca', 'Banca'], ['changuinola', 'Changuinola'],
+        ['banca', 'Banca'], ['almirante', 'Almirante'],
         ['bocas', 'Bocas del Toro'], ['drago', 'Boca del Drago'],
     ];
     const t = text.toLowerCase();
     for (const [k, v] of MAP) if (t.includes(k)) return v;
-    return 'Changuinola';
+    return 'Almirante';
 }
 
-function isChanguinola(text: string): boolean {
+function isAlmirante(text: string): boolean {
     const t = text.toLowerCase();
-    return ['changuinola', 'almirante', 'guabito', 'chiriqui', 'empalme', 'delicias', 'silencio',
+    return ['almirante', 'almirante', 'guabito', 'chiriqui', 'empalme', 'delicias', 'silencio',
         'basimento', 'bocas', 'caldera', 'rambala', 'miramar', 'san san', 'teribe', 'punta pena',
         'valle escondido', 'banca', 'drago'].some(k => t.includes(k));
 }
@@ -116,7 +116,7 @@ function isChanguinola(text: string): boolean {
 // ============================================================
 // PARSE TABLE — extrae filas de tabla HTML
 // ============================================================
-function parseTable(html: string, defaultCorr = 'Changuinola'): Business[] {
+function parseTable(html: string, defaultCorr = 'Almirante'): Business[] {
     const results: Business[] = [];
     const tables = [...html.matchAll(/<table[\s\S]*?<\/table>/gi)];
 
@@ -272,7 +272,7 @@ async function scrapeDashboard(session: { cookies: string; token: string }): Pro
             const html = await res.text();
             console.log(`Dashboard ${url}: ${html.length} chars, tables: ${(html.match(/<table/gi) || []).length}`);
 
-            const rows = parseTable(html, 'Changuinola');
+            const rows = parseTable(html, 'Almirante');
             results.push(...rows);
             if (rows.length > 0) break;
         } catch (e) { console.log(`Error fetching ${url}:`, e); }
@@ -281,7 +281,7 @@ async function scrapeDashboard(session: { cookies: string; token: string }): Pro
 }
 
 // ============================================================
-// STEP 3: Consulta pública con sesión autenticada + términos Changuinola
+// STEP 3: Consulta pública con sesión autenticada + términos Almirante
 // ============================================================
 async function scrapePublic(session: { cookies: string; token: string }, terms: string[]): Promise<Business[]> {
     const results: Business[] = [];
@@ -379,11 +379,11 @@ async function tryInternalAPI(session: { cookies: string; token: string }, term:
     return [];
 }
 
-const SEARCH_TERMS_CHANGUINOLA = [
-    'Changuinola', 'Almirante', 'Guabito', 'Chiriqui Grande', 'El Empalme',
+const SEARCH_TERMS_ALMIRANTE = [
+    'Almirante', 'Almirante', 'Guabito', 'Chiriqui Grande', 'El Empalme',
     'Las Delicias', 'El Silencio', 'Caldera', 'Bocas del Toro', 'Rambala',
     'Miramar', 'San San', 'Basimento', 'Boca del Drago', 'Punta Pena',
-    'Teribe', 'Valle Escondido', 'Banca', 'Bocas', 'CHANGUINOLA'
+    'Teribe', 'Valle Escondido', 'Banca', 'Bocas', 'ALMIRANTE'
 ];
 
 function dedupe(list: Business[]): Business[] {
@@ -400,21 +400,21 @@ function dedupe(list: Business[]): Business[] {
 // ============================================================
 function demoData(corrs: string[]): Business[] {
     const DATA: Omit<Business, 'distrito' | 'provincia' | 'source'>[] = [
-        { nombreComercial: 'SUPERMERCADO EL BUEN PRECIO', ruc: '8-123-456', actividad: 'Provisiones', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-001', estado: 'ACTIVO' },
-        { nombreComercial: 'FARMACIA MEDIC PLUS', ruc: '8-234-567', actividad: 'Farmacia', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-002', estado: 'ACTIVO' },
-        { nombreComercial: 'FERRETERIA EL TORNILLO', ruc: '8-345-678', actividad: 'Ferreteria', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-003', estado: 'ACTIVO' },
-        { nombreComercial: 'RESTAURANTE LA CARIBENA', ruc: '8-456-789', actividad: 'Restaurante', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-004', estado: 'ACTIVO' },
-        { nombreComercial: 'TALLER MECANICO VIDAL', ruc: '8-567-890', actividad: 'Taller Auto', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-005', estado: 'ACTIVO' },
-        { nombreComercial: 'BOUTIQUE MODA TROPICAL', ruc: '8-789-012', actividad: 'Ropa y Moda', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-007', estado: 'ACTIVO' },
-        { nombreComercial: 'SALON BELLEZA GLAMOUR', ruc: '8-112-233', actividad: 'Salon de Belleza', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-034', estado: 'ACTIVO' },
-        { nombreComercial: 'PANADERIA LA NUEVA', ruc: '8-223-344', actividad: 'Panaderia', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-035', estado: 'ACTIVO' },
-        { nombreComercial: 'OPTICA VISION CLARA', ruc: '8-334-455', actividad: 'Optica', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-036', estado: 'ACTIVO' },
-        { nombreComercial: 'DISTRIBUIDORA LICORES CARIBE', ruc: '8-445-556', actividad: 'Licores', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-037', estado: 'ACTIVO' },
-        { nombreComercial: 'CLINICA DENTAL SONRISA', ruc: '155-001-1', dv: '4', actividad: 'Clinica Dental', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-038', estado: 'ACTIVO' },
-        { nombreComercial: 'DEPOSITO MATERIALES DON PANCHO', ruc: '8-556-667', actividad: 'Materiales', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-039', estado: 'ACTIVO' },
-        { nombreComercial: 'GIMNASIO FIT LIFE', ruc: '8-667-778', actividad: 'Gimnasio', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-040', estado: 'ACTIVO' },
-        { nombreComercial: 'PAPELERIA STUDY', ruc: '8-778-889', actividad: 'Papeleria', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-041', estado: 'ACTIVO' },
-        { nombreComercial: 'AGENCIA SEGUROS BOCAS PROTECT', ruc: '160-222-1', dv: '8', actividad: 'Seguros', corregimiento: 'Changuinola', avisoOperaciones: 'AO-2024-042', estado: 'ACTIVO' },
+        { nombreComercial: 'SUPERMERCADO EL BUEN PRECIO', ruc: '8-123-456', actividad: 'Provisiones', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-001', estado: 'ACTIVO' },
+        { nombreComercial: 'FARMACIA MEDIC PLUS', ruc: '8-234-567', actividad: 'Farmacia', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-002', estado: 'ACTIVO' },
+        { nombreComercial: 'FERRETERIA EL TORNILLO', ruc: '8-345-678', actividad: 'Ferreteria', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-003', estado: 'ACTIVO' },
+        { nombreComercial: 'RESTAURANTE LA CARIBENA', ruc: '8-456-789', actividad: 'Restaurante', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-004', estado: 'ACTIVO' },
+        { nombreComercial: 'TALLER MECANICO VIDAL', ruc: '8-567-890', actividad: 'Taller Auto', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-005', estado: 'ACTIVO' },
+        { nombreComercial: 'BOUTIQUE MODA TROPICAL', ruc: '8-789-012', actividad: 'Ropa y Moda', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-007', estado: 'ACTIVO' },
+        { nombreComercial: 'SALON BELLEZA GLAMOUR', ruc: '8-112-233', actividad: 'Salon de Belleza', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-034', estado: 'ACTIVO' },
+        { nombreComercial: 'PANADERIA LA NUEVA', ruc: '8-223-344', actividad: 'Panaderia', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-035', estado: 'ACTIVO' },
+        { nombreComercial: 'OPTICA VISION CLARA', ruc: '8-334-455', actividad: 'Optica', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-036', estado: 'ACTIVO' },
+        { nombreComercial: 'DISTRIBUIDORA LICORES CARIBE', ruc: '8-445-556', actividad: 'Licores', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-037', estado: 'ACTIVO' },
+        { nombreComercial: 'CLINICA DENTAL SONRISA', ruc: '155-001-1', dv: '4', actividad: 'Clinica Dental', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-038', estado: 'ACTIVO' },
+        { nombreComercial: 'DEPOSITO MATERIALES DON PANCHO', ruc: '8-556-667', actividad: 'Materiales', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-039', estado: 'ACTIVO' },
+        { nombreComercial: 'GIMNASIO FIT LIFE', ruc: '8-667-778', actividad: 'Gimnasio', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-040', estado: 'ACTIVO' },
+        { nombreComercial: 'PAPELERIA STUDY', ruc: '8-778-889', actividad: 'Papeleria', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-041', estado: 'ACTIVO' },
+        { nombreComercial: 'AGENCIA SEGUROS BOCAS PROTECT', ruc: '160-222-1', dv: '8', actividad: 'Seguros', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-042', estado: 'ACTIVO' },
         { nombreComercial: 'MINISUPER ALMIRANTE CENTER', ruc: '8-890-123', actividad: 'Mini Super', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-008', estado: 'ACTIVO' },
         { nombreComercial: 'BAR Y BILLAR EL PUERTO', ruc: '8-901-234', actividad: 'Bar', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-009', estado: 'ACTIVO' },
         { nombreComercial: 'AGENCIA NAVIERA ATLANTICO', ruc: '125-678-1', dv: '7', actividad: 'Naviera', corregimiento: 'Almirante', avisoOperaciones: 'AO-2024-011', estado: 'ACTIVO' },
@@ -481,7 +481,7 @@ function demoData(corrs: string[]): Business[] {
 }
 
 const ALL_CORRS = [
-    'Changuinola', 'Almirante', 'Banca', 'Basimento', 'Bocas del Toro', 'Boca del Drago',
+    'Almirante', 'Almirante', 'Banca', 'Basimento', 'Bocas del Toro', 'Boca del Drago',
     'Caldera', 'Chiriqui Grande', 'El Empalme', 'Guabito', 'Las Delicias', 'Miramar',
     'Punta Pena', 'Rambala', 'San San', 'El Silencio', 'Teribe', 'Valle Escondido',
 ];
@@ -515,7 +515,7 @@ Deno.serve(async (req: Request) => {
         }
 
         const targets = corrF ? [corrF] : ALL_CORRS;
-        const terms = corrF ? [corrF] : SEARCH_TERMS_CHANGUINOLA;
+        const terms = corrF ? [corrF] : SEARCH_TERMS_ALMIRANTE;
 
         let businesses: Business[] = [];
         let loginOk = false;
@@ -563,7 +563,7 @@ Deno.serve(async (req: Request) => {
         } else if (isDemo) {
             message = `Login exitoso pero el portal no devolvió resultados de búsqueda. La cuenta de usuario no tiene acceso a búsqueda masiva. Se muestran ${final.length} negocios de referencia.`;
         } else {
-            message = `✅ Datos extraídos de panamaemprende.gob.pa — sesión autenticada como ${email}. ${final.length} negocios del Distrito de Changuinola.`;
+            message = `✅ Datos extraídos de panamaemprende.gob.pa — sesión autenticada como ${email}. ${final.length} negocios del Distrito de Almirante.`;
         }
 
         return new Response(JSON.stringify({

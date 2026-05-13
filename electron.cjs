@@ -8,7 +8,7 @@ function createWindow() {
     height: 720,
     minWidth: 1000,
     minHeight: 600,
-    title: "Municipio de Changuinola",
+    title: "Municipio de Almirante",
     icon: path.join(__dirname, 'dist/icon.ico'),
     webPreferences: {
       nodeIntegration: false,

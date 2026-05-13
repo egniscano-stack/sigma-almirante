@@ -2,13 +2,13 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.municipio.sigma',
-  appName: 'SIGMA Changuinola',
+  appName: 'SIGMA Almirante',
   webDir: 'dist',
   // Serve from local files (offline-first)
   server: {
     androidScheme: 'https',
     // Allow the app to work completely offline
-    allowNavigation: ['qxmugkwcsxwxrwjshumg.supabase.co'],
+    allowNavigation: ['qrblfqscpyrselvfxncr.supabase.co'],
   },
   plugins: {
     // Preferences plugin for key-value storage (replaces localStorage for native)

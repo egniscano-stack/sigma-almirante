@@ -33,68 +33,94 @@ export const PortalLogin: React.FC<PortalLoginProps> = ({ onLogin, taxpayers }) 
     };
 
     return (
-        <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4">
-            <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden border-t-8 border-emerald-600">
-                <div className="bg-emerald-600 p-8 text-center text-white">
-                    <div className="w-auto inline-block mb-6 relative z-10">
-                        <img src={`${import.meta.env.BASE_URL}municipio-logo-new.png`} className="h-64 w-auto object-contain drop-shadow-2xl" alt="Escudo Municipio de Changuinola" />
+        <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4 relative overflow-hidden" style={{
+            backgroundImage: 'radial-gradient(circle at center, #1e293b 0%, #0f172a 100%)'
+        }}>
+            {/* Decoration */}
+            <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-emerald-500 blur-[120px]"></div>
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-blue-500 blur-[120px]"></div>
+            </div>
+
+            <div className="w-full max-w-lg z-10 animate-fade-in flex flex-col items-center">
+                {/* Logo Area - Responsive Scaling */}
+                <div className="text-center mb-2 md:mb-4 px-4">
+                    <div className="inline-block relative mb-1 md:mb-2">
+                        <div className="absolute -inset-4 bg-white/5 rounded-full blur-2xl"></div>
+                        <img 
+                            src={`${import.meta.env.BASE_URL}logo-municipio.png`} 
+                            className="h-48 sm:h-64 md:h-80 w-auto object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)] relative transition-transform duration-500" 
+                            alt="Escudo Municipio de Almirante" 
+                        />
                     </div>
-                    <h1 className="text-3xl font-bold tracking-tight uppercase">Sistema de Cobro Digital</h1>
-                    <p className="text-emerald-100 text-lg mt-1 font-medium">Municipio de Changuinola</p>
+                    <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight uppercase mb-0">
+                        Sistema de <span className="text-emerald-400">Cobro Digital</span>
+                    </h1>
+                    <p className="text-slate-300 text-sm sm:text-base font-medium tracking-wide">Municipio de Almirante</p>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-8 space-y-6">
-                    <div className="text-center mb-6">
-                        <p className="text-slate-600">Ingrese sus datos para consultar su estado de cuenta y realizar pagos en línea.</p>
-                    </div>
-
-                    {error && (
-                        <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center border border-red-100">
-                            {error}
+                {/* Form - Glassmorphism style - Responsive Padding */}
+                <div className="w-full bg-white/10 backdrop-blur-md rounded-2xl md:rounded-3xl p-5 sm:p-6 md:p-8 border border-white/10 shadow-2xl">
+                    <form onSubmit={handleSubmit} className="space-y-3 md:space-y-4">
+                        <div className="text-center mb-3">
+                            <p className="text-emerald-50 text-[10px] sm:text-xs md:text-sm font-medium opacity-80">
+                                Acceda para gestionar sus tributos.
+                            </p>
                         </div>
-                    )}
 
-                    <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-2">Identificación (Cédula o RUC)</label>
-                        <div className="relative">
-                            <UserIcon className="absolute left-3 top-3.5 text-slate-400" size={20} />
-                            <input
-                                type="text"
-                                value={docId}
-                                onChange={(e) => setDocId(e.target.value)}
-                                className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
-                                placeholder="Ej. 8-888-888"
-                                required
-                            />
+                        {error && (
+                            <div className="bg-red-500/20 text-red-200 p-2.5 rounded-xl text-[10px] sm:text-xs text-center border border-red-500/30 animate-shake">
+                                {error}
+                            </div>
+                        )}
+
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-[9px] sm:text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-1 ml-1">Identificación (Cédula o RUC)</label>
+                                <div className="relative group">
+                                    <UserIcon className="absolute left-4 top-3 text-slate-400 group-focus-within:text-emerald-400 transition-colors" size={16} />
+                                    <input
+                                        type="text"
+                                        value={docId}
+                                        onChange={(e) => setDocId(e.target.value)}
+                                        className="w-full pl-11 pr-4 py-3 bg-slate-800/60 border border-slate-700 rounded-xl md:rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-white text-xs sm:text-sm font-medium"
+                                        placeholder="Cédula o RUC"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-[9px] sm:text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-1 ml-1">N° de Contribuyente</label>
+                                <div className="relative group">
+                                    <ShieldCheck className="absolute left-4 top-3 text-slate-400 group-focus-within:text-emerald-400 transition-colors" size={16} />
+                                    <input
+                                        type="text"
+                                        value={taxpayerNum}
+                                        onChange={(e) => setTaxpayerNum(e.target.value)}
+                                        className="w-full pl-11 pr-4 py-3 bg-slate-800/60 border border-slate-700 rounded-xl md:rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-white text-xs sm:text-sm font-medium"
+                                        placeholder="Número de Contribuyente"
+                                        required
+                                    />
+                                </div>
+                            </div>
                         </div>
-                    </div>
 
-                    <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-2">N° de Contribuyente</label>
-                        <div className="relative">
-                            <ShieldCheck className="absolute left-3 top-3.5 text-slate-400" size={20} />
-                            <input
-                                type="text"
-                                value={taxpayerNum}
-                                onChange={(e) => setTaxpayerNum(e.target.value)}
-                                className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
-                                placeholder="Ej. 2024-5823"
-                                required
-                            />
-                        </div>
-                    </div>
+                        <button
+                            type="submit"
+                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3.5 sm:py-4 rounded-xl md:rounded-2xl shadow-lg shadow-emerald-900/40 transition-all flex justify-center items-center group text-sm sm:text-base tracking-wider active:scale-95 mt-2"
+                        >
+                            INGRESAR AL PORTAL <ArrowRight className="ml-2 group-hover:translate-x-2 transition-transform" size={18} />
+                        </button>
+                    </form>
+                </div>
 
-                    <button
-                        type="submit"
-                        className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex justify-center items-center group"
-                    >
-                        CONSULTAR CUENTA <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" />
-                    </button>
-                </form>
-
-
+                <div className="text-center mt-4 md:mt-6">
+                    <p className="text-slate-500 text-[9px] sm:text-[10px] font-bold tracking-widest uppercase opacity-60">
+                        © {new Date().getFullYear()} Plataforma Digital • Municipio de Almirante
+                    </p>
+                </div>
             </div>
-            <p className="mt-8 text-slate-400 text-xs">© 2024 Plataforma Digital Municipal</p>
         </div>
     );
 };

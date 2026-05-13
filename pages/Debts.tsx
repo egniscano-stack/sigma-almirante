@@ -47,13 +47,24 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
 
       // Check all months
       for (let m = 1; m <= currentMonth; m++) {
+        const monthName = new Date(currentYear, m - 1).toLocaleString('es-ES', { month: 'long' });
+
         // Commercial
         if (tp.hasCommercialActivity && activeStatuses.includes(tp.status)) {
-          const hasPaid = transactions.some(t => 
-            t.taxpayerId === tp.id && t.status === 'PAGADO' &&
-            (t.metadata?.month === m && t.metadata?.year === currentYear || 
-             (t.taxType === TaxType.COMERCIO && new Date(t.date).getMonth() + 1 === m && new Date(t.date).getFullYear() === currentYear))
-          );
+          const hasPaid = transactions.some(t => {
+            if (t.taxpayerId !== tp.id || t.status !== 'PAGADO') return false;
+            
+            // 1. Consolidated
+            if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
+              return t.metadata.originalItems.some((i: any) => i.label.includes(`Comercial - ${monthName}`));
+            }
+            if (t.taxType !== TaxType.COMERCIO) return false;
+            
+            // 2. Metadata / Description
+            if (t.metadata?.month === m && t.metadata?.year === currentYear) return true;
+            return t.description.includes(`Comercial - ${monthName}`);
+          });
+
           if (!hasPaid) {
             count++;
             const dueDate = `${currentYear}-${m.toString().padStart(2, '0')}-15`;
@@ -64,11 +75,20 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
 
         // Garbage
         if (tp.hasGarbageService && activeStatuses.includes(tp.status)) {
-          const hasPaid = transactions.some(t => 
-            t.taxpayerId === tp.id && t.status === 'PAGADO' &&
-            (t.metadata?.month === m && t.metadata?.year === currentYear || 
-             (t.taxType === TaxType.BASURA && new Date(t.date).getMonth() + 1 === m && new Date(t.date).getFullYear() === currentYear))
-          );
+          const hasPaid = transactions.some(t => {
+            if (t.taxpayerId !== tp.id || t.status !== 'PAGADO') return false;
+            
+            // 1. Consolidated
+            if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
+              return t.metadata.originalItems.some((i: any) => i.label.includes(`Tasa de Aseo - ${monthName}`));
+            }
+            if (t.taxType !== TaxType.BASURA) return false;
+
+            // 2. Metadata / Description
+            if (t.metadata?.month === m && t.metadata?.year === currentYear) return true;
+            return t.description.includes(`Tasa de Aseo - ${monthName}`);
+          });
+
           if (!hasPaid) {
             count++;
             const dueDate = `${currentYear}-${m.toString().padStart(2, '0')}-15`;
@@ -81,20 +101,22 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
       // Vehicles
       if (tp.vehicles && tp.vehicles.length > 0 && activeStatuses.includes(tp.status)) {
         tp.vehicles.forEach(v => {
-          const lastDigit = parseInt(v.plate.slice(-1)) || 1;
-          const renewalMonth = lastDigit === 0 ? 10 : lastDigit;
-          if (currentMonth >= renewalMonth) {
-            const hasPaid = transactions.some(t => 
-              t.taxpayerId === tp.id && t.status === 'PAGADO' && t.taxType === TaxType.VEHICULO &&
-              (t.metadata?.plateNumber === v.plate || t.description.includes(v.plate)) &&
-              new Date(t.date).getFullYear() === currentYear
-            );
-            if (!hasPaid) {
-              count++;
-              const dueDate = `${currentYear}-${renewalMonth.toString().padStart(2, '0')}-30`;
-              if (dueDate < earliest) earliest = dueDate;
-              if (currentMonth > renewalMonth) overdue = true;
+          const hasPaid = transactions.some(t => {
+            if (t.taxpayerId !== tp.id || t.status !== 'PAGADO') return false;
+            if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
+              return t.metadata.originalItems.some((i: any) => i.label.includes(`Placa ${v.plate}`));
             }
+            return t.taxType === TaxType.VEHICULO &&
+                   (t.metadata?.plateNumber === v.plate || t.description.includes(v.plate)) &&
+                   new Date(t.date).getFullYear() === currentYear;
+          });
+          if (!hasPaid) {
+            count++;
+            const lastDigit = parseInt(v.plate.slice(-1)) || 1;
+            const renewalMonth = lastDigit === 0 ? 10 : lastDigit;
+            const dueDate = `${currentYear}-${renewalMonth.toString().padStart(2, '0')}-30`;
+            if (dueDate < earliest) earliest = dueDate;
+            if (currentMonth > renewalMonth) overdue = true;
           }
         });
       }
@@ -216,10 +238,13 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center">
-                          <AlertCircle size={16} className="text-red-500 mr-2" />
-                          <span className="text-slate-700 font-medium">
-                            {item.debtCount} concepto(s) pendiente(s)
-                          </span>
+                          <div className="flex flex-col items-center justify-center bg-slate-50 w-10 h-10 rounded-lg border border-slate-200 mr-3">
+                             <span className="text-lg font-black text-slate-800 leading-none">{item.debtCount}</span>
+                          </div>
+                          <div className="text-left">
+                            <p className="text-sm font-bold text-slate-700 leading-tight">Concepto(s)</p>
+                            <p className="text-[10px] text-slate-400 uppercase font-bold">Pendiente(s)</p>
+                          </div>
                         </div>
                         {item.taxpayer.balance && item.taxpayer.balance > 0 && (
                           <div className="text-[10px] text-red-500 font-bold mt-0.5">Incluye Saldo Anterior</div>

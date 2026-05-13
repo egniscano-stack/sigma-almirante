@@ -1,5 +1,5 @@
 
--- SIGMA CHANGUINOLA v0.0.4 - COMPLETE SCHEMA FIX
+-- SIGMA ALMIRANTE v0.0.4 - COMPLETE SCHEMA FIX
 -- Run this in Supabase SQL Editor to resolve all sync errors related to schema mismatches.
 
 DO $$ 

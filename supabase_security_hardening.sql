@@ -1,6 +1,6 @@
 -- ============================================================
--- SIGMA Changuinola — Blindaje de Seguridad en Base de Datos
--- Gobierno de Panamá, Municipio de Changuinola
+-- SIGMA Almirante — Blindaje de Seguridad en Base de Datos
+-- Gobierno de Panamá, Municipio de Almirante
 -- 
 -- INSTRUCCIONES: Ejecutar este script en el Editor SQL de Supabase
 -- PROPÓSITO: Implementar Row Level Security (RLS) con políticas 

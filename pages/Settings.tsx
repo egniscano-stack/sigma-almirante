@@ -401,7 +401,7 @@ export const Settings: React.FC<SettingsProps> = ({
               </h4>
               <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                 <p className="text-xs text-slate-400 mb-4">
-                  Extraccion automatica desde <strong>panamaemprende.gob.pa</strong> para detectar negocios con Aviso de Operaciones en el Distrito de Changuinola que no estan en el padron municipal. Ver panel completo abajo.
+                  Extraccion automatica desde <strong>panamaemprende.gob.pa</strong> para detectar negocios con Aviso de Operaciones en el Distrito de Almirante que no estan en el padron municipal. Ver panel completo abajo.
                 </p>
                 <div className="space-y-2">
                   <button

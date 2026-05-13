@@ -1,6 +1,6 @@
 /**
- * SIGMA Changuinola — Módulo Antivirus / Escáner de Archivos
- * Gobierno de Panamá · Municipio de Changuinola
+ * SIGMA Almirante — Módulo Antivirus / Escáner de Archivos
+ * Gobierno de Panamá · Municipio de Almirante
  *
  * Implementa múltiples capas de detección de amenazas en archivos:
  * 1. Validación de Magic Bytes (firma binaria real del archivo)

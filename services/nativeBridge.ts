@@ -1,5 +1,5 @@
 /**
- * SIGMA Changuinola - Native Bridge for Capacitor (Android/iOS)
+ * SIGMA Almirante - Native Bridge for Capacitor (Android/iOS)
  * 
  * Provides the same backup/restore API as Electron's preload.cjs
  * but uses Capacitor's Preferences plugin (native SharedPreferences on Android).

@@ -13,6 +13,14 @@ interface TaxpayerPortalProps {
     onLogout: () => void;
 }
 
+// Helper to format currency with thousands separator (1,000.00)
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount || 0);
+};
+
 export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
     currentUser,
     taxpayer,
@@ -29,58 +37,120 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
     const [showReceipt, setShowReceipt] = useState(false);
     const [showPazSalvo, setShowPazSalvo] = useState(false);
 
-    // DYNAMIC PENDING TAXES LOGIC
-    // We check if there are paid transactions for the current month for each tax type applicable to the taxpayer.
-    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    // --- ROBUST UNIFIED DEBT CALCULATION (MATCHES CAJA & COBROS) ---
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+    const activeStatuses = ['ACTIVO', 'MOROSO'];
+    const pendingTaxes: any[] = [];
 
-    // Helper to check if paid this month
-    const isPaidThisMonth = (type: TaxType) => {
-        return transactions.some(t =>
-            t.taxpayerId === taxpayer.id &&
-            t.taxType === type &&
-            t.status === 'PAGADO' &&
-            t.date.startsWith(currentMonth)
-        );
-    };
-
-    const potentialTaxes = [];
-
-    // 0. Balance / Historical Debt
+    // 1. Balance / Historical (Prioritizing this)
     if ((taxpayer.balance || 0) > 0) {
-        potentialTaxes.push({
-            id: 'debt-balance',
-            type: 'DEUDA_HISTORICA', // Using a string here might require updating types or casting, let's stick to a known type or cast
-            label: 'Saldo Pendiente / Arrastre',
-            amount: taxpayer.balance
-        } as any);
-    }
-
-    // In a real app we'd check vehicle renewal month. Here we just check if paid recently.
-    if ((taxpayer.vehicles?.length || 0) > 0 && !isPaidThisMonth(TaxType.VEHICULO)) {
-        potentialTaxes.push({ id: 'tax-veh', type: TaxType.VEHICULO, label: 'Impuesto de Circulación (Placa)', amount: 25.00 });
-    }
-
-    // 2. Garbage Tax (If active)
-    if (taxpayer.hasGarbageService && !isPaidThisMonth(TaxType.BASURA)) {
-        potentialTaxes.push({
-            id: 'tax-bas',
-            type: TaxType.BASURA,
-            label: 'Tasa de Aseo - Mes Actual',
-            amount: taxpayer.type === 'JURIDICA' ? 15.00 : 5.00 // Simple logic based on type
+        pendingTaxes.push({
+            id: 'balance',
+            type: 'DEUDA_HISTORICA',
+            label: 'Deuda Acumulada (Años Anteriores)',
+            amount: taxpayer.balance,
+            description: `Saldo pendiente de periodos anteriores`
         });
     }
 
-    // 3. Commercial Tax (If commercial)
-    if (taxpayer.hasCommercialActivity && !isPaidThisMonth(TaxType.COMERCIO)) {
-        potentialTaxes.push({
-            id: 'tax-com',
-            type: TaxType.COMERCIO,
-            label: 'Impuesto Comercial - Declaración Mensual',
-            amount: 50.00 // Base amount or calculated
-        });
+    // 2. Commercial & 3. Garbage (Iterate through months of the current year)
+    for (let m = 1; m <= currentMonth; m++) {
+        const monthName = new Date(currentYear, m - 1).toLocaleString('es-ES', { month: 'long' });
+
+        // Commercial
+        if (taxpayer.hasCommercialActivity && activeStatuses.includes(taxpayer.status)) {
+            const hasPaidCom = transactions.some(t => {
+                if (t.taxpayerId !== taxpayer.id || t.status !== 'PAGADO') return false;
+                
+                // Check if paid via Consolidated Payment (Pay All)
+                if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
+                    return t.metadata.originalItems.some((i: any) => i.label.includes(`Comercial - ${monthName}`));
+                }
+
+                if (t.taxType !== TaxType.COMERCIO) return false;
+                
+                // Strict metadata check
+                if (t.metadata?.month === m && t.metadata?.year === currentYear) return true;
+                
+                // Fallback for simple transactions
+                return t.description.includes(`Comercial - ${monthName}`) || (new Date(t.date).getMonth() + 1 === m && new Date(t.date).getFullYear() === currentYear);
+            });
+
+            if (!hasPaidCom) {
+                pendingTaxes.push({
+                    id: `com-${m}-${currentYear}`,
+                    type: TaxType.COMERCIO,
+                    label: `Impuesto Comercial - ${monthName}`,
+                    amount: 50.00,
+                    description: `Mes de ${monthName} ${currentYear}`,
+                    metadata: { month: m, year: currentYear }
+                });
+            }
+        }
+
+        // Garbage
+        if (taxpayer.hasGarbageService && activeStatuses.includes(taxpayer.status)) {
+            const hasPaidBas = transactions.some(t => {
+                if (t.taxpayerId !== taxpayer.id || t.status !== 'PAGADO') return false;
+                
+                if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
+                    return t.metadata.originalItems.some((i: any) => i.label.includes(`Tasa de Aseo - ${monthName}`));
+                }
+
+                if (t.taxType !== TaxType.BASURA) return false;
+                
+                if (t.metadata?.month === m && t.metadata?.year === currentYear) return true;
+                
+                return t.description.includes(`Tasa de Aseo - ${monthName}`) || (new Date(t.date).getMonth() + 1 === m && new Date(t.date).getFullYear() === currentYear);
+            });
+
+            if (!hasPaidBas) {
+                pendingTaxes.push({
+                    id: `bas-${m}-${currentYear}`,
+                    type: TaxType.BASURA,
+                    label: `Tasa de Aseo - ${monthName}`,
+                    amount: taxpayer.type === 'JURIDICA' ? 15.00 : 5.00,
+                    description: `Mes de ${monthName} ${currentYear}`,
+                    metadata: { month: m, year: currentYear }
+                });
+            }
+        }
     }
 
-    const pendingTaxes = potentialTaxes;
+    // 4. Vehicles (Annual)
+    if (taxpayer.vehicles && taxpayer.vehicles.length > 0 && activeStatuses.includes(taxpayer.status)) {
+        taxpayer.vehicles.forEach(v => {
+            const lastDigit = parseInt(v.plate.slice(-1)) || 1;
+            const renewalMonth = lastDigit === 0 ? 10 : lastDigit;
+            
+            // Only count if the renewal month has strictly passed (matching administrative 5-count logic)
+            if (currentMonth >= renewalMonth) {
+                const hasPaid = transactions.some(t => {
+                    if (t.taxpayerId !== taxpayer.id || t.status !== 'PAGADO') return false;
+                    
+                    if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
+                        return t.metadata.originalItems.some((i: any) => i.label.includes(`Placa ${v.plate}`));
+                    }
+
+                    return t.taxType === TaxType.VEHICULO &&
+                           (t.metadata?.plateNumber === v.plate || t.description.includes(v.plate)) &&
+                           new Date(t.date).getFullYear() === currentYear;
+                });
+                if (!hasPaid) {
+                    pendingTaxes.push({
+                        id: `veh-${v.plate}-${currentYear}`,
+                        type: TaxType.VEHICULO,
+                        label: `Impuesto Vehicular (Placa ${v.plate})`,
+                        amount: 25.00,
+                        description: `Impuesto de Circulación - Placa ${v.plate}`,
+                        metadata: { plateNumber: v.plate, year: currentYear }
+                    });
+                }
+            }
+        });
+    }
 
     const myHistory = transactions.filter(t => t.taxpayerId === taxpayer.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -162,12 +232,12 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
             <header className="bg-slate-900 text-white shadow-lg relative z-10">
                 <div className="max-w-5xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
                     <div className="flex items-center gap-4 w-full sm:w-auto">
-                        <div className="bg-white p-1.5 rounded-full shadow-md ring-2 ring-emerald-500/50 shrink-0">
-                            <img src={`${import.meta.env.BASE_URL}municipio-logo-new.png`} alt="Escudo Municipal" className="h-12 w-12 sm:h-16 sm:w-16 object-contain" />
+                        <div className="bg-white p-1 rounded-full shadow-md ring-2 ring-emerald-500/50 shrink-0 overflow-hidden h-14 w-14 sm:h-20 sm:w-20">
+                            <img src={`${import.meta.env.BASE_URL}logo-municipio.png`} alt="Escudo Municipal" className="h-full w-full object-contain" />
                         </div>
                         <div className="min-w-0">
                             <h1 className="font-bold text-lg sm:text-2xl leading-none tracking-tight truncate">Sistema de Cobro Digital</h1>
-                            <p className="text-xs sm:text-base text-emerald-400 font-semibold mt-0.5 truncate">Municipio de Changuinola</p>
+                            <p className="text-xs sm:text-base text-emerald-400 font-semibold mt-0.5 truncate">Municipio de Almirante</p>
                         </div>
                     </div>
                     <button onClick={onLogout} className="w-full sm:w-auto flex items-center justify-center text-sm bg-slate-800 hover:bg-red-600/80 px-4 py-2 rounded-lg transition-colors border border-slate-700">
@@ -184,9 +254,13 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                         <h2 className="text-2xl font-bold mb-1">Bienvenido, {taxpayer.name}</h2>
                         <p className="opacity-90 flex items-center gap-2 text-sm"><User size={16} /> {taxpayer.docId} • N° {taxpayer.taxpayerNumber}</p>
                     </div>
-                    <div className="mt-4 md:mt-0 bg-white/10 px-6 py-3 rounded-xl backdrop-blur-sm text-center">
+                    <div className={`mt-4 md:mt-0 px-6 py-3 rounded-xl backdrop-blur-sm text-center border-2 ${pendingTaxes.length > 0 
+                        ? 'bg-red-500/20 border-red-400 animate-pulse' 
+                        : 'bg-white/10 border-transparent'}`}>
                         <p className="text-xs uppercase font-bold opacity-70">Estado de Cuenta</p>
-                        <p className="text-xl font-bold">Al Día</p>
+                        <p className={`text-xl font-black tracking-wider ${pendingTaxes.length > 0 ? 'text-red-200' : 'text-white'}`}>
+                            {pendingTaxes.length > 0 ? `MOROSO (${pendingTaxes.length})` : 'AL DÍA'}
+                        </p>
                     </div>
                 </div>
 
@@ -238,7 +312,7 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                                 <p className="text-slate-500 text-sm mb-6">Vence: 30 de este mes</p>
 
                                 <div className="flex justify-between items-center border-t border-slate-100 pt-4">
-                                    <span className="text-2xl font-extrabold text-slate-900">B/. {tax.amount.toFixed(2)}</span>
+                                    <span className="text-2xl font-extrabold text-slate-900">B/. {formatCurrency(tax.amount)}</span>
                                     <button
                                         onClick={() => handleInitiatePayment(tax)}
                                         className="bg-slate-900 hover:bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold transition-colors flex items-center gap-2 shadow-lg shadow-emerald-900/10"
@@ -268,10 +342,20 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                                             {tx.paymentMethod}
                                         </span>
                                     </div>
-                                    <p className="font-bold text-slate-800 text-sm mb-1">{tx.description}</p>
+                                    <p className="font-bold text-slate-800 text-sm mb-1 uppercase">{tx.description}</p>
+                                    {tx.metadata?.isConsolidated && tx.metadata?.originalItems && (
+                                        <div className="mt-2 border-l-2 border-emerald-200 pl-3 py-1 space-y-1 bg-emerald-50/30 rounded-r-lg mb-2">
+                                            {tx.metadata.originalItems.map((item: any, idx: number) => (
+                                                <div key={idx} className="flex justify-between text-[10px] text-slate-600">
+                                                    <span className="uppercase truncate pr-2">{item.label}</span>
+                                                    <span className="font-black whitespace-nowrap">B/. {formatCurrency(item.amount)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                     <p className="text-xs text-slate-400 font-mono mb-3">Ref: {tx.id}</p>
                                     <div className="flex justify-between items-center pt-2 border-t border-slate-100">
-                                        <span className="text-sm font-extrabold text-slate-900">B/. {tx.amount.toFixed(2)}</span>
+                                        <span className="text-sm font-extrabold text-slate-900">B/. {formatCurrency(tx.amount)}</span>
                                     </div>
                                 </div>
                             ))}
@@ -295,15 +379,27 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                                         <tr key={tx.id} className="hover:bg-slate-50">
                                             <td className="px-6 py-4 text-sm text-slate-600">{tx.date}</td>
                                             <td className="px-6 py-4 text-sm font-medium text-slate-800">
-                                                {tx.description}
-                                                <div className="text-xs text-slate-400 font-mono mt-0.5">{tx.id}</div>
+                                                <div className="flex flex-col max-w-[400px]">
+                                                    <span className="font-bold text-slate-800 uppercase">{tx.description}</span>
+                                                    {tx.metadata?.isConsolidated && tx.metadata?.originalItems && (
+                                                        <div className="mt-2 border-l-2 border-emerald-200 pl-3 py-1 space-y-1 bg-emerald-50/30 rounded-r-lg">
+                                                            {tx.metadata.originalItems.map((item: any, idx: number) => (
+                                                                <div key={idx} className="flex justify-between text-[10px] text-slate-600">
+                                                                    <span className="uppercase truncate pr-2">{item.label}</span>
+                                                                    <span className="font-black whitespace-nowrap">B/. {formatCurrency(item.amount)}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    <div className="text-xs text-slate-400 font-mono mt-2">ID: {tx.id}</div>
+                                                </div>
                                             </td>
                                             <td className="px-6 py-4 text-sm">
                                                 <span className={`px-2 py-1 rounded text-xs font-bold ${tx.paymentMethod === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'}`}>
                                                     {tx.paymentMethod}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-sm font-bold text-slate-900 text-right">B/. {tx.amount.toFixed(2)}</td>
+                                            <td className="px-6 py-4 text-sm font-bold text-slate-900 text-right">B/. {formatCurrency(tx.amount)}</td>
                                         </tr>
                                     ))}
                                     {myHistory.length === 0 && (
@@ -334,7 +430,7 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                         <form onSubmit={processPayment} className="p-6 space-y-4">
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-2">
                                 <p className="text-xs text-slate-500 uppercase font-bold mb-1">Monto a Pagar</p>
-                                <p className="text-2xl font-extrabold text-[#2C2A29]">B/. {paymentAmount.toFixed(2)}</p>
+                                <p className="text-2xl font-extrabold text-[#2C2A29]">B/. {formatCurrency(paymentAmount)}</p>
                                 <p className="text-xs text-slate-400 mt-1">{selectedTaxToPay}</p>
                             </div>
 
@@ -409,17 +505,17 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                         <div className="bg-white p-6 md:p-8 pb-4 relative z-10">
                             <div className="flex justify-center mb-6">
                                 <img
-                                    src={`${import.meta.env.BASE_URL}municipio-logo-bw.png`}
+                                    src={`${import.meta.env.BASE_URL}logo-municipio.png`}
                                     alt="Escudo Municipal"
-                                    className="h-32 object-contain grayscale"
+                                    className="h-44 object-contain"
                                 />
                             </div>
 
                             <div className="flex justify-between items-end border-b-2 border-slate-900 pb-4 mb-4">
                                 <div>
-                                    <h1 className="text-xl font-extrabold uppercase text-slate-900 leading-none">{municipalityInfo.name}</h1>
-                                    <p className="text-xs text-slate-600 font-medium mt-1">{municipalityInfo.province}</p>
-                                    <p className="text-xs text-slate-600">RUC: {municipalityInfo.ruc} • {municipalityInfo.phone}</p>
+                                    <h1 className="text-lg font-extrabold uppercase text-slate-900 leading-none">Municipio de Almirante</h1>
+                                    <p className="text-[10px] text-slate-600 font-medium mt-1 uppercase">Provincia de Bocas del Toro, República de Panamá</p>
+                                    <p className="text-[10px] text-slate-600 font-bold">RUC: 1-22-333 DV 44</p>
                                 </div>
                                 <div className="text-right">
                                     <h2 className="text-lg font-bold uppercase tracking-wider text-slate-800">Recibo Digital</h2>
@@ -454,7 +550,7 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                                                     </div>
                                                 </td>
                                                 <td className="py-2 text-right font-bold text-lg text-slate-800 align-top">
-                                                    B/. {lastTransaction.amount.toFixed(2)}
+                                                    B/. {formatCurrency(lastTransaction.amount)}
                                                 </td>
                                             </tr>
                                         </tbody>
@@ -466,7 +562,7 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                             <div className="mt-4 flex justify-end">
                                 <div className="bg-slate-100 px-6 py-2 rounded flex items-center gap-4 border border-slate-200">
                                     <span className="text-sm font-bold text-slate-600">TOTAL PAGADO</span>
-                                    <span className="text-xl font-bold text-slate-900">B/. {lastTransaction.amount.toFixed(2)}</span>
+                                    <span className="text-xl font-bold text-slate-900">B/. {formatCurrency(lastTransaction.amount)}</span>
                                 </div>
                             </div>
 
@@ -538,11 +634,10 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                                 {/* Certificate Header - Compressed */}
                                 {/* Certificate Header - Highly Compressed */}
                                 <div className="text-center w-full border-b-2 border-emerald-800 pb-2 mb-2 relative z-10 flex flex-col items-center">
-                                    <img src={`${import.meta.env.BASE_URL}municipio-logo-bw.png`} alt="Logo" className="h-16 w-auto mb-1 grayscale object-contain" />
-
+                                    <img src={`${import.meta.env.BASE_URL}logo-municipio.png`} alt="Logo" className="h-40 w-auto mb-1 object-contain" />
                                     <h1 className="text-lg font-bold uppercase tracking-widest text-slate-900 leading-none">República de Panamá</h1>
-                                    <h2 className="text-base font-bold text-emerald-800 uppercase tracking-wider leading-tight">Municipio de Changuinola</h2>
-                                    <p className="text-[10px] font-semibold text-slate-600 mt-0.5 uppercase tracking-wide">Departamento de Tesorería Municipal</p>
+                                    <h2 className="text-base font-bold text-emerald-800 uppercase tracking-wider leading-tight">Municipio de Almirante</h2>
+                                    <p className="text-[10px] font-semibold text-slate-600 mt-0.5 uppercase tracking-wide">RUC: 1-22-333 DV 44 • Departamento de Tesorería</p>
                                 </div>
 
                                 <h2 className="text-3xl font-extrabold uppercase my-2 tracking-widest text-slate-900 decoration-4 underline decoration-emerald-500 underline-offset-4 relative z-10 text-center">Paz y Salvo</h2>
@@ -553,7 +648,7 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                                         <strong>A QUIEN CONCIERNA:</strong>
                                     </p>
                                     <p className="text-base mb-2 indent-8">
-                                        La Tesorería Municipal de Changuinola CERTIFICA por este medio que el contribuyente descrito a continuación, se encuentra legalmente registrado en nuestra base de datos:
+                                        La Tesorería Municipal de Almirante CERTIFICA por este medio que el contribuyente descrito a continuación, se encuentra legalmente registrado en nuestra base de datos:
                                     </p>
 
                                     <div className="bg-slate-50 border border-slate-200 p-3 my-2 rounded-lg shadow-sm mx-4">
@@ -582,7 +677,7 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
 
                                     <p className="text-sm text-right mt-4 italic text-slate-600">
                                         Válido por 30 días calendario.
-                                        <br />Dado en Changuinola, el {new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.
+                                        <br />Dado en Almirante, el {new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.
                                     </p>
                                 </div>
 
@@ -591,7 +686,7 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                                     <div className="text-center">
                                         <div className="h-20 w-20 bg-white border border-slate-200 mb-1 mx-auto flex items-center justify-center p-1">
                                             <img
-                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://changuinola.gob.pa/verify/${taxpayer.id}/${Date.now()}`}
+                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://almirante.gob.pa/verify/${taxpayer.id}/${Date.now()}`}
                                                 alt="QR Verificación"
                                                 className="w-full h-full object-contain"
                                                 crossOrigin="anonymous"

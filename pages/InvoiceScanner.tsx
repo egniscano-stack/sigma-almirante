@@ -75,7 +75,7 @@ export const InvoiceScanner: React.FC<InvoiceScannerProps> = ({ onScanComplete }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  /* --- HEURISTIC PARSERS (UPDATED FOR CHANGUINOLA) --- */
+  /* --- HEURISTIC PARSERS (UPDATED FOR ALMIRANTE) --- */
   const extractDataFromText = (text: string): ExtractedInvoiceData => {
     console.log("OCR Text:", text);
     const result: ExtractedInvoiceData = {
@@ -125,7 +125,7 @@ export const InvoiceScanner: React.FC<InvoiceScannerProps> = ({ onScanComplete }
     }
 
     // 3. ID / RUC / TAXPAYER NUMBER
-    // Changuinola format: ID: 1-789-456
+    // Almirante format: ID: 1-789-456
     const idRegex = /(?:ID|RUC|CEDULA)[:.]?\s*([\d-]{5,20})/; // e.g. ID: 1-789-456
     const idMatch = text.match(idRegex);
     if (idMatch) result.docId = idMatch[1];

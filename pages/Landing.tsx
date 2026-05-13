@@ -20,7 +20,7 @@ export const Landing: React.FC<LandingProps> = ({ onNavigate }) => {
                 {/* Municipality Badge - Light Theme */}
                 <div className="inline-flex items-center gap-2 bg-white px-4 py-1.5 md:px-5 md:py-2 rounded-full border border-slate-200 shadow-sm mb-6 md:mb-8 animate-fade-in hover:border-emerald-200 transition-colors cursor-default select-none">
                     <ShieldCheck size={16} className="text-emerald-600 md:w-[18px] md:h-[18px]" />
-                    <span className="text-slate-700 font-medium tracking-wide text-xs md:text-sm uppercase">Municipio de Changuinola</span>
+                    <span className="text-slate-700 font-medium tracking-wide text-xs md:text-sm uppercase">Municipio de Almirante</span>
                 </div>
 
                 {/* Main Logo */}
@@ -31,7 +31,7 @@ export const Landing: React.FC<LandingProps> = ({ onNavigate }) => {
                         <img
                             src={`${import.meta.env.BASE_URL}sigma-logo-final.png`}
                             alt="SIGMA Logo"
-                            className="relative h-28 sm:h-32 md:h-48 w-auto object-contain drop-shadow-xl hover:scale-105 transition-transform duration-300 pointer-events-none select-none"
+                            className="relative h-32 sm:h-40 md:h-60 w-auto object-contain drop-shadow-xl hover:scale-105 transition-transform duration-300 pointer-events-none select-none"
                         />
                     </div>
                 </div>
@@ -93,7 +93,7 @@ export const Landing: React.FC<LandingProps> = ({ onNavigate }) => {
             </div>
 
             <div className="text-slate-400 text-[10px] md:text-xs text-center w-full z-10 py-4 mt-auto">
-                © {new Date().getFullYear()} Alcaldía de Changuinola • Tecnología al servicio del ciudadano
+                © {new Date().getFullYear()} Alcaldía de Almirante • Tecnología al servicio del ciudadano
             </div>
         </div>
     );

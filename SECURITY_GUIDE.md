@@ -1,6 +1,6 @@
-# 🔒 Guía de Seguridad — SIGMA Changuinola
+# 🔒 Guía de Seguridad — SIGMA Almirante
 ## Sistema Integral de Gestión Municipal
-### Gobierno de Panamá · Municipio de Changuinola · Bocas del Toro
+### Gobierno de Panamá · Municipio de Almirante · Bocas del Toro
 
 ---
 
@@ -10,7 +10,7 @@
 
 ## 📋 Resumen Ejecutivo de Seguridad
 
-Este documento describe todas las medidas de seguridad implementadas en el sistema SIGMA Changuinola para proteger información financiera sensible de contribuyentes y transacciones del Municipio de Changuinola.
+Este documento describe todas las medidas de seguridad implementadas en el sistema SIGMA Almirante para proteger información financiera sensible de contribuyentes y transacciones del Municipio de Almirante.
 
 ---
 
@@ -183,6 +183,6 @@ VITE_GEMINI_API_KEY=[tu-clave-gemini]
 
 ---
 
-*Documento preparado para el Gobierno de Panamá · Municipio de Changuinola*  
+*Documento preparado para el Gobierno de Panamá · Municipio de Almirante*  
 *Sistema SIGMA v2.0 — Implementado con estándares de seguridad gubernamental*  
 *Fecha: Marzo 2026*

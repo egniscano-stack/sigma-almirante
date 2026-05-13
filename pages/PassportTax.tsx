@@ -10,6 +10,14 @@ import {
 } from 'lucide-react';
 import { MunicipalityInfo } from '../types';
 
+// Helper to format currency with thousands separator (1,000.00)
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount || 0);
+};
+
 interface PassportTaxProps {
     currentUserName: string;
     municipalityInfo: MunicipalityInfo;
@@ -46,7 +54,7 @@ const ENTRY_PORTS = [
     'Aeropuerto Internacional de Bocas del Toro',
     'Puesto de Control Guabito',
     'Puerto de Almirante',
-    'Puesto de Control Sixaola-Changuinola',
+    'Puesto de Control Sixaola-Almirante',
     'Marina de Bocas Town',
     'Otro',
 ];
@@ -280,7 +288,7 @@ export const PassportTax: React.FC<PassportTaxProps> = ({ currentUserName, munic
 
         const verificationCode = `TURISMO-${Date.now().toString(36).toUpperCase()}-${formData.passportNumber.slice(-4).toUpperCase()}`;
         const invoiceId = `TUR-${Date.now()}`;
-        const qrUrl = `https://changuinola.gob.pa/verify/tourism/${invoiceId}?code=${verificationCode}`;
+        const qrUrl = `https://almirante.gob.pa/verify/tourism/${invoiceId}?code=${verificationCode}`;
 
         const newInvoice: TourismInvoice = {
             invoiceId,
@@ -414,13 +422,13 @@ export const PassportTax: React.FC<PassportTaxProps> = ({ currentUserName, munic
                                     Comprobante de Impuesto al Turismo
                                 </h2>
                                 <p className="text-teal-100 text-[10px] font-medium">
-                                    Ley Municipal de Turismo — Municipio de Changuinola
+                                    Ley Municipal de Turismo — Municipio de Almirante
                                 </p>
                             </div>
                         </div>
                         <div className="text-right">
                             <p className="text-teal-100 text-xs font-bold">TOTAL</p>
-                            <p className="text-white font-extrabold text-2xl">B/. {invoice.amount.toFixed(2)}</p>
+                            <p className="text-white font-extrabold text-2xl">B/. {formatCurrency(invoice.amount)}</p>
                         </div>
                     </div>
 
@@ -502,11 +510,11 @@ export const PassportTax: React.FC<PassportTaxProps> = ({ currentUserName, munic
                             <div>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Concepto</p>
                                 <p className="text-slate-800 font-bold text-sm">{invoice.taxType}</p>
-                                <p className="text-[10px] text-slate-500 mt-0.5 tracking-tighter uppercase font-medium">Tasa Única por Estadía — Municipio de Changuinola</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5 tracking-tighter uppercase font-medium">Tasa Única por Estadía — Municipio de Almirante</p>
                             </div>
                             <div className="text-right">
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Cancelado</p>
-                                <p className="text-2xl font-black text-slate-900 tracking-tighter">B/. {invoice.amount.toFixed(2)}</p>
+                                <p className="text-2xl font-black text-slate-900 tracking-tighter">B/. {formatCurrency(invoice.amount)}</p>
                             </div>
                         </div>
 
@@ -545,8 +553,8 @@ export const PassportTax: React.FC<PassportTaxProps> = ({ currentUserName, munic
                                 </p>
                             </div>
                             <p className="text-[8px] text-slate-400 text-right leading-relaxed max-w-[200px]">
-                                Generado por Plataforma SIGMA Digital • Municipio de Changuinola, Panamá •{' '}
-                                Verificable en: <span className="font-mono font-bold">changuinola.gob.pa/verify</span>
+                                Generado por Plataforma SIGMA Digital • Municipio de Almirante, Panamá •{' '}
+                                Verificable en: <span className="font-mono font-bold">almirante.gob.pa/verify</span>
                             </p>
                         </div>
                     </div>
@@ -598,7 +606,7 @@ export const PassportTax: React.FC<PassportTaxProps> = ({ currentUserName, munic
                 <Globe size={36} className="opacity-80 flex-shrink-0" />
                 <div className="flex-1">
                     <p className="text-teal-100 text-xs font-bold uppercase tracking-wider">Tasa Municipal de Turismo</p>
-                    <p className="text-3xl font-extrabold">B/. {TOURISM_TAX_RATE.toFixed(2)} <span className="text-lg font-medium text-teal-200">/ por viajero</span></p>
+                    <p className="text-3xl font-extrabold">B/. {formatCurrency(TOURISM_TAX_RATE)} <span className="text-lg font-medium text-teal-200">/ por viajero</span></p>
                 </div>
                 <div className="text-right text-xs text-teal-100">
                     <p className="font-bold">La factura generada incluye</p>
@@ -850,7 +858,7 @@ export const PassportTax: React.FC<PassportTaxProps> = ({ currentUserName, munic
                         </div>
                         <div className="text-right">
                             <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Monto a Cobrar</p>
-                            <p className="text-3xl font-extrabold text-teal-700">B/. {TOURISM_TAX_RATE.toFixed(2)}</p>
+                            <p className="text-3xl font-extrabold text-teal-700">B/. {formatCurrency(TOURISM_TAX_RATE)}</p>
                         </div>
                     </div>
 
@@ -859,7 +867,7 @@ export const PassportTax: React.FC<PassportTaxProps> = ({ currentUserName, munic
                         className="w-full py-4 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-extrabold text-lg shadow-xl shadow-teal-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
                     >
                         <Globe size={22} />
-                        COBRAR B/. {TOURISM_TAX_RATE.toFixed(2)} Y GENERAR FACTURA CON QR
+                        COBRAR B/. {formatCurrency(TOURISM_TAX_RATE)} Y GENERAR FACTURA CON QR
                     </button>
                     <p className="text-center text-xs text-slate-400 mt-3 flex items-center justify-center gap-1">
                         <Shield size={12} />

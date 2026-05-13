@@ -124,11 +124,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin, validUsers }) => {
         <div className="bg-white p-4 rounded-full mb-6 shadow-2xl ring-4 ring-emerald-500/30">
           <img
             src={`${import.meta.env.BASE_URL}sigma-logo-final.png`}
-            alt="SIGMA Changuinola Logo"
+            alt="SIGMA Almirante Logo"
             className="h-56 w-56 object-contain rounded-full"
           />
         </div>
-        <h1 className="text-4xl font-extrabold text-white tracking-tight mb-2">SIGMA <span className="text-emerald-400">Changuinola</span></h1>
+        <h1 className="text-4xl font-extrabold text-white tracking-tight mb-2">SIGMA <span className="text-emerald-400">Almirante</span></h1>
         <p className="text-emerald-200 text-lg font-medium tracking-wide">Precisión fiscal, gestión inteligente</p>
       </div>
 
@@ -257,7 +257,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, validUsers }) => {
         </form>
       </div>
 
-      <p className="text-slate-500 text-xs mt-8">© {new Date().getFullYear()} Municipio de Changuinola, Bocas del Toro. Sistema SIGMA v2.0</p>
+      <p className="text-slate-500 text-xs mt-8">© {new Date().getFullYear()} Municipio de Almirante, Bocas del Toro. Sistema SIGMA v2.0</p>
     </div>
   );
 };

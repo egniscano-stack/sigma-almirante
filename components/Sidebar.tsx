@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, Receipt, ScanLine, Settings, LogOut, FileText, X, AlertCircle, Banknote, MessageCircle, Globe } from 'lucide-react';
+import { LayoutDashboard, Users, Receipt, ScanLine, Settings, LogOut, FileText, X, AlertCircle, Banknote, MessageCircle, Globe, Building2 } from 'lucide-react';
 import { UserRole } from '../types';
 
 interface SidebarProps {
@@ -19,10 +19,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavig
     { id: 'taxpayers', label: 'Contribuyentes', icon: Users, roles: ['ADMIN', 'CAJERO', 'AUDITOR', 'REGISTRO'] },
     // Split into Caja and Cobros
     { id: 'caja', label: 'Caja', icon: Banknote, roles: ['ADMIN', 'CAJERO'] },
+    { id: 'construction', label: 'Cobro de Construcción', icon: Building2, roles: ['ADMIN', 'CAJERO'] },
     { id: 'cobros', label: 'Gestión de Cobros', icon: AlertCircle, roles: ['ADMIN', 'CAJERO', 'AUDITOR'] },
-
     { id: 'scanner', label: 'Digitalizador IA', icon: ScanLine, roles: ['ADMIN', 'CAJERO', 'REGISTRO'] },
-    { id: 'turismo', label: 'Impuesto de Turismo', icon: Globe, roles: ['ADMIN', 'CAJERO'] },
     { id: 'reports', label: 'Reportes', icon: FileText, roles: ['ADMIN', 'AUDITOR'] },
     { id: 'settings', label: 'Administración', icon: Settings, roles: ['ADMIN'] },
   ];

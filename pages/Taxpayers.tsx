@@ -6,6 +6,13 @@ import { AntivirusScanner } from '../components/AntivirusScanner';
 import { FileScanResult } from '../services/antivirus';
 import { getSession } from '../services/security';
 
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount || 0);
+};
+
 interface TaxpayersProps {
   taxpayers: Taxpayer[];
   transactions: Transaction[]; // Receive transactions to filter history
@@ -300,10 +307,252 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
   const totalPaidHistory = taxpayerHistory.reduce((acc, t) => acc + t.amount, 0);
 
   return (
-    <div className="space-y-6 pb-20 relative min-h-screen bg-slate-50 -m-4 sm:-m-8 p-4 sm:p-8">
+    <div id="taxpayers-root" className="space-y-6 pb-20 relative min-h-screen bg-slate-50 -m-4 sm:-m-8 p-4 sm:p-8">
+      {/* --- MODALS AT TOP FOR BETTER VISIBILITY --- */}
+      {/* --- HISTORY MODAL --- */}
+      {historyTaxpayer && (
+        <div className="fixed inset-0 bg-slate-900/90 flex items-start justify-center z-[100] p-4 pt-10 backdrop-blur-md animate-fade-in overflow-y-auto">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl flex flex-col max-h-[85vh] overflow-hidden border border-white/20">
+            {/* Modal Header */}
+            <div className="p-6 bg-slate-900 text-white flex justify-between items-center flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-500 rounded-xl">
+                   <History size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black tracking-tight">Historial de Transacciones</h3>
+                  <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Auditoría de Pagos y Recaudación</p>
+                </div>
+              </div>
+              <button onClick={() => setHistoryTaxpayer(null)} className="p-2 hover:bg-white/10 rounded-xl transition-all">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Modal Body Info */}
+            <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">{historyTaxpayer.name}</h2>
+                  <p className="text-sm font-bold text-slate-500 mt-1">ID: <span className="font-mono text-indigo-600">{historyTaxpayer.docId}</span></p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm min-w-[200px]">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Acumulado Histórico</p>
+                  <p className="text-3xl font-black text-emerald-600 tracking-tighter">B/. {formatCurrency(totalPaidHistory)}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Transaction Table */}
+            <div className="flex-1 overflow-y-auto p-8">
+              {taxpayerHistory.length > 0 ? (
+                <table className="w-full text-left border-separate border-spacing-y-2">
+                  <thead className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                    <tr>
+                      <th className="pb-4 px-4">Fecha / Hora</th>
+                      <th className="pb-4 px-4">Concepto Detallado</th>
+                      <th className="pb-4 px-4 text-right">Monto Neto</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-sm">
+                    {taxpayerHistory.map((t) => (
+                      <tr key={t.id} className="group bg-slate-50 hover:bg-indigo-50/50 transition-all">
+                        <td className="py-4 px-4 rounded-l-2xl border-l-4 border-indigo-500">
+                          <div className="font-bold text-slate-900">{t.date}</div>
+                          <div className="text-[10px] text-slate-400 font-medium">{t.time}</div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className="font-black text-slate-700 uppercase text-xs">{t.description || t.taxType}</span>
+                          {t.metadata?.isConsolidated && t.metadata?.originalItems && (
+                            <div className="mt-2 space-y-1 border-l-2 border-slate-200 pl-3 py-1">
+                              {t.metadata.originalItems.map((item: any, idx: number) => (
+                                <div key={idx} className="flex justify-between text-[9px] font-bold text-slate-500">
+                                  <span className="uppercase opacity-70">{item.label}</span>
+                                  <span className="text-slate-900">B/. {formatCurrency(item.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-4 px-4 text-right rounded-r-2xl">
+                          <span className="text-lg font-black text-slate-900 tracking-tighter">B/. {formatCurrency(t.amount)}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-center py-20 text-slate-300">
+                  <FileText size={64} className="mx-auto mb-4 opacity-20" />
+                  <p className="font-black text-xs uppercase tracking-widest opacity-40">No se encontraron transacciones</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-slate-100 bg-white flex justify-end gap-3">
+              <button
+                onClick={() => setHistoryTaxpayer(null)}
+                className="px-8 py-3 bg-slate-900 hover:bg-black text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-lg"
+              >
+                Cerrar Historial
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- VIEW DETAILS (FICHA) MODAL --- */}
+      {viewTaxpayer && (
+        <div className="fixed inset-0 bg-slate-900/90 flex items-start justify-center z-[100] p-4 pt-10 backdrop-blur-md animate-fade-in overflow-y-auto">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl flex flex-col max-h-[85vh] overflow-hidden border border-white/20">
+            {/* Header */}
+            <div className="p-8 bg-slate-900 text-white flex justify-between items-center flex-shrink-0">
+              <div className="flex items-center gap-5">
+                <div className="p-4 bg-indigo-500 rounded-2xl shadow-lg">
+                   <User size={32} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black tracking-tight">Ficha de Identidad</h2>
+                  <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Información Maestra del Contribuyente</p>
+                </div>
+              </div>
+              <button onClick={() => setViewTaxpayer(null)} className="p-3 hover:bg-white/10 rounded-2xl transition-all">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Content handled below in original location, but we move it here for visibility */}
+            <div className="flex-1 overflow-y-auto p-10 bg-slate-50/50">
+               {/* Ficha Content Re-rendered here for true Modal Behavior */}
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                 <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 border-b border-slate-100 pb-3">Identidad & Estatus</h3>
+                    <div className="space-y-6">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nombre Completo</p>
+                        <p className="text-xl font-black text-slate-900 tracking-tight">{viewTaxpayer.name}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-6">
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Identificación</p>
+                          <p className="text-base font-mono font-bold text-indigo-600">{viewTaxpayer.docId} {viewTaxpayer.dv ? `DV-${viewTaxpayer.dv}` : ''}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">N° Contribuyente</p>
+                          <p className="text-base font-mono font-bold text-slate-700 bg-slate-100 px-2 rounded-lg">{viewTaxpayer.taxpayerNumber || 'N/A'}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 pt-2">
+                         <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${getStatusColor(viewTaxpayer.status)}`}>
+                           {viewTaxpayer.status}
+                         </span>
+                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Desde: {viewTaxpayer.createdAt}</span>
+                      </div>
+                    </div>
+                 </div>
+
+                 <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 border-b border-slate-100 pb-3">Ubicación & Contacto</h3>
+                    <div className="space-y-6">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Dirección Registrada</p>
+                        <p className="text-base font-bold text-slate-700 leading-relaxed">{viewTaxpayer.address}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Corregimiento</p>
+                        <p className="text-base font-black text-indigo-700 uppercase tracking-tight">{viewTaxpayer.corregimiento || 'No registrado'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-6 pt-2">
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Teléfono</p>
+                          <p className="text-sm font-bold text-slate-700">{viewTaxpayer.phone || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Email</p>
+                          <p className="text-sm font-bold text-slate-700 truncate">{viewTaxpayer.email || 'N/A'}</p>
+                        </div>
+                      </div>
+                    </div>
+                 </div>
+
+                 <div className="md:col-span-2 bg-slate-900 rounded-[2.5rem] p-10 text-white relative overflow-hidden shadow-2xl">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-[80px] -mr-32 -mt-32"></div>
+                    <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-8 border-b border-white/5 pb-4">Servicios & Activos Vinculados</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                       <div className={`p-6 rounded-2xl border ${viewTaxpayer.hasCommercialActivity ? 'bg-white/5 border-indigo-500/30' : 'bg-white/5 border-transparent opacity-30'}`}>
+                          <Store className="text-indigo-400 mb-4" size={28} />
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Actividad Comercial</p>
+                          <p className="font-bold text-sm truncate">{viewTaxpayer.commercialName || 'Inactivo'}</p>
+                       </div>
+                       <div className={`p-6 rounded-2xl border ${viewTaxpayer.hasGarbageService ? 'bg-white/5 border-emerald-500/30' : 'bg-white/5 border-transparent opacity-30'}`}>
+                          <Trash2 className="text-emerald-400 mb-4" size={28} />
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Recolección Basura</p>
+                          <p className="font-bold text-sm">{viewTaxpayer.hasGarbageService ? 'Vigente' : 'Inactivo'}</p>
+                       </div>
+                       <div className="p-6 rounded-2xl bg-white/5 border border-blue-500/30">
+                          <Car className="text-blue-400 mb-4" size={28} />
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Vehículos</p>
+                          <p className="font-bold text-sm">{viewTaxpayer.vehicles?.length || 0} Registrados</p>
+                       </div>
+                    </div>
+                 </div>
+
+                 {/* 4. Digital Documents (New Integration) */}
+                 {viewTaxpayer.documents && Object.keys(viewTaxpayer.documents).length > 0 && (
+                   <div className="md:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
+                     <div className="flex items-center gap-3 mb-8 border-b border-slate-100 pb-4">
+                       <div className="p-2 bg-slate-100 rounded-lg text-slate-500">
+                         <FileText size={20} />
+                       </div>
+                       <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Expediente Digital & Documentación</h3>
+                     </div>
+                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                       {Object.entries(viewTaxpayer.documents).map(([key, url]) => (
+                         <a
+                           key={key}
+                           href={url}
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           className="group block p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-center"
+                         >
+                           <div className="w-12 h-12 mx-auto bg-white rounded-xl shadow-sm flex items-center justify-center text-slate-400 group-hover:text-indigo-600 mb-3 transition-colors">
+                             {key.includes('photo') || key.includes('sketch') || key.includes('store') ? <ImageIcon size={24} /> : <FileText size={24} />}
+                           </div>
+                           <p className="text-[10px] font-black text-slate-600 group-hover:text-indigo-800 uppercase tracking-tighter leading-tight">
+                             {{
+                               taxpayer_photo: 'Foto Perfil',
+                               id_card: 'Cédula / ID',
+                               public_registry: 'Reg. Público',
+                               operation_notice: 'Aviso Op.',
+                               store_photo: 'Fachada Neg.',
+                               residence_sketch: 'Croquis Ubic.',
+                               vehicle_docs: 'Docs. Vehículo'
+                             }[key] || key.replace(/_/g, ' ')}
+                           </p>
+                           <div className="mt-2 text-[8px] font-black text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest">Ver Archivo &rarr;</div>
+                         </a>
+                       ))}
+                     </div>
+                   </div>
+                 )}
+               </div>
+            </div>
+
+            <div className="p-8 bg-white border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => setViewTaxpayer(null)}
+                className="px-10 py-4 bg-slate-900 hover:bg-black text-white font-black text-xs uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl active:scale-95"
+              >
+                Cerrar Ficha
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- TOP SEARCH BAR (Sticky) --- */}
-      <div className="sticky top-0 z-40 bg-white/90 backdrop-blur-md shadow-sm border-b border-slate-200 -mx-4 sm:-mx-8 px-4 sm:px-8 py-4 mb-6">
+      <div id="taxpayer-top" className="sticky top-0 z-40 bg-white/90 backdrop-blur-md shadow-sm border-b border-slate-200 -mx-4 sm:-mx-8 px-4 sm:px-8 py-4 mb-6">
         <div className="max-w-4xl mx-auto relative">
           <div className="relative">
             <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
@@ -340,6 +589,9 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                             setHistoryTaxpayer(tp);
                             setSearchTerm('');
                             setIsSearching(false);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                            document.documentElement.scrollTop = 0;
+                            document.body.scrollTop = 0;
                           }}
                           className="w-full text-left px-4 py-3 hover:bg-indigo-50 transition-colors flex items-center justify-between group"
                         >
@@ -355,6 +607,9 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleEditInit(tp);
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                                document.documentElement.scrollTop = 0;
+                                document.body.scrollTop = 0;
                               }}
                               className="text-slate-400 hover:text-indigo-600 flex items-center group/edit"
                               title="Editar Contribuyente"
@@ -368,6 +623,9 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                                 setViewTaxpayer(tp);
                                 setSearchTerm('');
                                 setIsSearching(false);
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                                document.documentElement.scrollTop = 0;
+                                document.body.scrollTop = 0;
                               }}
                               className="text-slate-400 hover:text-blue-600 flex items-center group/view mr-2"
                               title="Ver Ficha Completa"
@@ -376,10 +634,14 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                               <span className="text-xs font-bold underline decoration-transparent group-hover/view:decoration-blue-600 transition-all">Ficha</span>
                             </button>
                             <button
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setHistoryTaxpayer(tp);
                                 setSearchTerm('');
                                 setIsSearching(false);
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                                document.documentElement.scrollTop = 0;
+                                document.body.scrollTop = 0;
                               }}
                               className="text-slate-400 hover:text-indigo-500 flex items-center"
                             >
@@ -873,295 +1135,6 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
           </form>
         </div>
       </div>
-
-
-      {/* --- HISTORY MODAL --- */}
-      {
-        historyTaxpayer && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] overflow-hidden animate-fade-in">
-
-              {/* Modal Header */}
-              <div className="p-4 md:p-6 bg-slate-900 text-white flex justify-between items-center flex-shrink-0">
-                <div>
-                  <h3 className="text-lg md:text-xl font-bold flex items-center">
-                    <History className="mr-2" /> Historial
-                  </h3>
-                </div>
-                <button onClick={() => setHistoryTaxpayer(null)} className="text-slate-400 hover:text-white p-1">
-                  <X size={24} />
-                </button>
-              </div>
-
-              {/* Modal Body Info */}
-              <div className="p-4 md:p-6 border-b border-slate-100 bg-slate-50 flex-shrink-0">
-                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                  <div>
-                    <h2 className="text-xl md:text-2xl font-bold text-slate-800">{historyTaxpayer.name}</h2>
-                    <p className="text-sm text-slate-500 font-mono">
-                      ID: {historyTaxpayer.docId}
-                    </p>
-                  </div>
-                  <div className="text-left sm:text-right bg-emerald-50 p-3 rounded-lg border border-emerald-100 sm:bg-transparent sm:border-0 sm:p-0">
-                    <p className="text-xs text-slate-500 uppercase font-bold">Total Pagado</p>
-                    <p className="text-2xl font-bold text-emerald-600">B/. {totalPaidHistory.toFixed(2)}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Transaction Table */}
-              <div className="flex-1 overflow-y-auto p-4 md:p-6">
-                {taxpayerHistory.length > 0 ? (
-                  <table className="w-full text-left border-collapse">
-                    <thead className="text-xs text-slate-400 uppercase border-b border-slate-200 sticky top-0 bg-white">
-                      <tr>
-                        <th className="py-2">Fecha</th>
-                        <th className="py-2 hidden sm:table-cell">Recibo #</th>
-                        <th className="py-2">Descripción</th>
-                        <th className="py-2 text-right">Monto</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-sm">
-                      {taxpayerHistory.map((t) => (
-                        <tr key={t.id} className="hover:bg-slate-50">
-                          <td className="py-3 text-slate-500 font-medium whitespace-nowrap align-top">
-                            {t.date}
-                            <div className="text-[10px] text-slate-400 sm:hidden">{t.time}</div>
-                          </td>
-                          <td className="py-3 font-mono text-slate-600 hidden sm:table-cell align-top">{t.id}</td>
-                          <td className="py-3 text-slate-700 align-top">
-                            <span className="block font-medium text-xs md:text-sm">{t.taxType}</span>
-                            <span className="text-[10px] md:text-xs text-slate-400 line-clamp-2">{t.description}</span>
-                          </td>
-                          <td className="py-3 text-right font-bold text-slate-800 align-top whitespace-nowrap">
-                            B/. {t.amount.toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <div className="text-center py-12 text-slate-400 flex flex-col items-center">
-                    <FileText size={48} className="mb-4 opacity-20" />
-                    <p>No se encontraron transacciones registradas.</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="p-4 border-t border-slate-200 text-right bg-white flex-shrink-0">
-                <button
-                  onClick={() => setHistoryTaxpayer(null)}
-                  className="w-full sm:w-auto px-6 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg transition-colors active:scale-95"
-                >
-                  Cerrar
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )
-      }
-      {/* --- VIEW DETAILS (FICHA) MODAL --- */}
-      {viewTaxpayer && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[90vh] overflow-hidden animate-fade-in">
-            {/* Header */}
-            <div className="p-6 bg-slate-900 text-white flex justify-between items-center flex-shrink-0">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-white/10 rounded-full">
-                  <User size={32} />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold">Ficha Técnica</h2>
-                  <p className="text-slate-400 text-sm">Información General del Contribuyente</p>
-                </div>
-              </div>
-              <button onClick={() => setViewTaxpayer(null)} className="text-slate-400 hover:text-white p-2 hover:bg-white/10 rounded-full transition-all">
-                <X size={24} />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-8 bg-slate-50">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-
-                {/* 1. Identity */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Identidad & Estado</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-xs text-slate-500 font-bold mb-1">Nombre / Razón Social</p>
-                      <p className="text-lg font-bold text-slate-900">{viewTaxpayer.name}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs text-slate-500 font-bold mb-1">Identificación (Cédula/RUC)</p>
-                        <p className="text-base font-mono text-slate-700">{viewTaxpayer.docId} {viewTaxpayer.dv ? `DV-${viewTaxpayer.dv}` : ''}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500 font-bold mb-1">N° Contribuyente</p>
-                        <p className="text-base font-mono text-slate-700 bg-slate-100 inline-block px-2 rounded">{viewTaxpayer.taxpayerNumber || 'N/A'}</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs text-slate-500 font-bold mb-1">Tipo Persona</p>
-                        <p className="text-sm text-slate-700 font-medium">{viewTaxpayer.type}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500 font-bold mb-1">Estado Actual</p>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(viewTaxpayer.status)}`}>
-                          {viewTaxpayer.status}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. Contact */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Ubicación & Contacto</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-xs text-slate-500 font-bold mb-1">Dirección Física</p>
-                      <p className="text-base text-slate-800 flex items-start gap-2">
-                        <MapPin size={16} className="mt-1 text-slate-400 flex-shrink-0" />
-                        {viewTaxpayer.address}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 font-bold mb-1">Corregimiento</p>
-                      <p className="text-base text-slate-800">{viewTaxpayer.corregimiento || 'No registrado'}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 pt-2">
-                      <div>
-                        <p className="text-xs text-slate-500 font-bold mb-1">Teléfono</p>
-                        <p className="text-sm text-slate-700">{viewTaxpayer.phone || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500 font-bold mb-1">Correo Electrónico</p>
-                        <p className="text-sm text-slate-700 truncate" title={viewTaxpayer.email}>{viewTaxpayer.email || 'N/A'}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. Services - Commercial */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Servicios & Activos</h3>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Activity */}
-                    <div className={`p-4 rounded-xl border ${viewTaxpayer.hasCommercialActivity ? 'bg-indigo-50 border-indigo-100' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                      <div className="flex items-center gap-3 mb-2">
-                        <Store className={viewTaxpayer.hasCommercialActivity ? 'text-indigo-600' : 'text-slate-400'} size={24} />
-                        <p className="font-bold text-slate-700">Comercio</p>
-                      </div>
-                      {viewTaxpayer.hasCommercialActivity ? (
-                        <div className="text-sm">
-                          <p className="font-bold text-indigo-900">{viewTaxpayer.commercialName || 'Sin Nombre'}</p>
-                          <p className="text-indigo-700/70 text-xs">{viewTaxpayer.commercialCategory}</p>
-                        </div>
-                      ) : <p className="text-xs text-slate-400 italic">Inactivo</p>}
-                    </div>
-
-                    {/* Garage/Construction */}
-                    <div className="space-y-4">
-                      <div className={`p-3 rounded-xl border flex items-center justify-between ${viewTaxpayer.hasGarbageService ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                        <div className="flex items-center gap-3">
-                          <Trash2 size={20} className={viewTaxpayer.hasGarbageService ? 'text-emerald-600' : 'text-slate-400'} />
-                          <span className="text-sm font-bold text-slate-700">Recolección Basura</span>
-                        </div>
-                        {viewTaxpayer.hasGarbageService ? <CheckCircle size={16} className="text-emerald-500" /> : <span className="text-xs text-slate-400">No</span>}
-                      </div>
-
-                      <div className={`p-3 rounded-xl border flex items-center justify-between ${viewTaxpayer.hasConstruction ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                        <div className="flex items-center gap-3">
-                          <Hammer size={20} className={viewTaxpayer.hasConstruction ? 'text-amber-600' : 'text-slate-400'} />
-                          <span className="text-sm font-bold text-slate-700">Construcción</span>
-                        </div>
-                        {viewTaxpayer.hasConstruction ? <CheckCircle size={16} className="text-amber-500" /> : <span className="text-xs text-slate-400">No</span>}
-                      </div>
-                    </div>
-
-                    {/* Vehicles */}
-                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Car className="text-blue-600" size={20} />
-                        <p className="font-bold text-blue-900 text-sm">Vehículos ({viewTaxpayer.vehicles?.length || 0})</p>
-                      </div>
-                      {viewTaxpayer.vehicles && viewTaxpayer.vehicles.length > 0 ? (
-                        <div className="space-y-2 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
-                          {viewTaxpayer.vehicles.map((v, i) => (
-                            <div key={i} className="bg-white p-2 rounded border border-blue-200 text-xs">
-                              <div className="flex justify-between font-bold text-slate-700">
-                                <span>{v.brand} {v.model}</span>
-                                <span className="bg-blue-100 text-blue-700 px-1 rounded">{v.plate}</span>
-                              </div>
-                              <div className="text-slate-500 text-[10px] mt-0.5">
-                                Año {v.year} • {v.color}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-blue-400 italic text-center py-2">Sin vehículos registrados</p>
-                      )}
-                    </div>
-
-                  </div>
-                </div>
-
-              </div>
-
-              {/* 4. Documents (New) */}
-              {viewTaxpayer.documents && Object.keys(viewTaxpayer.documents).length > 0 && (
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2 mt-8">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Expediente Digital</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {Object.entries(viewTaxpayer.documents).map(([key, url]) => (
-                      <a
-                        key={key}
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block p-4 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all group text-center"
-                      >
-                        <div className="w-10 h-10 mx-auto bg-slate-100 group-hover:bg-white rounded-full flex items-center justify-center text-slate-500 group-hover:text-indigo-600 mb-2 transition-colors">
-                          {key.includes('photo') || key.includes('sketch') ? <ImageIcon size={20} /> : <FileText size={20} />}
-                        </div>
-                        <p className="text-xs font-bold text-slate-700 group-hover:text-indigo-800 capitalize">
-                          {{
-                            taxpayer_photo: 'Foto Contribuyente',
-                            id_card: 'Cédula Identidad',
-                            public_registry: 'Registro Público',
-                            operation_notice: 'Aviso Operaciones',
-                            store_photo: 'Fachada Comercio',
-                            residence_sketch: 'Croquis Dirección',
-                            vehicle_docs: 'Docs. Vehiculares'
-                          }[key] || key.replace(/_/g, ' ')}
-                        </p>
-                        <span className="text-[10px] text-indigo-400 mt-1 inline-block opacity-0 group-hover:opacity-100 transition-opacity">Ver Documento &rarr;</span>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 bg-white border-t border-slate-200 flex justify-end">
-              <button
-                onClick={() => setViewTaxpayer(null)}
-                className="bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-transform active:scale-95"
-              >
-                Cerrar Ficha
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

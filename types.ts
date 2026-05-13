@@ -5,6 +5,7 @@ export enum TaxType {
   CONSTRUCCION = 'CONSTRUCCION',
   BASURA = 'BASURA',
   COMERCIO = 'COMERCIO',
+  PAZ_Y_SALVO = 'PAZ Y SALVO',
 }
 
 export enum TaxpayerType {
@@ -63,7 +64,7 @@ export enum Corregimiento {
   BARANCO = 'Baranco',
   BARRIADA_4_ABRIL = 'Barriada 4 Abril',
   LA_GLORIA = 'La Gloria',
-  CHANGUINOLA = 'Changuinola',
+  ALMIRANTE = 'Almirante',
   LA_MESA = 'La Mesa',
 }
 
@@ -103,7 +104,7 @@ export interface Taxpayer {
 
 export interface Transaction {
   id: string;
-  taxpayerId: string;
+  taxpayerId: string | null;
   taxType: TaxType;
   amount: number;
   date: string;

@@ -37,7 +37,7 @@ interface GovScraperProps {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const CORREGIMIENTOS = [
-    'Changuinola', 'Almirante', 'Banca', 'Basimento', 'Bocas del Toro', 'Boca del Drago',
+    'Almirante', 'Almirante', 'Banca', 'Basimento', 'Bocas del Toro', 'Boca del Drago',
     'Caldera', 'Chiriqui Grande', 'El Empalme', 'Guabito', 'Las Delicias', 'Miramar',
     'Punta Pena', 'Rambala', 'San San', 'El Silencio', 'Teribe', 'Valle Escondido',
 ];
@@ -69,11 +69,11 @@ function guessCorregimiento(text: string): string {
         ['boca del drago', 'Boca del Drago'], ['drago', 'Boca del Drago'],
         ['miramar', 'Miramar'], ['rambala', 'Rambala'], ['san san', 'San San'],
         ['teribe', 'Teribe'], ['punta pena', 'Punta Pena'], ['valle escondido', 'Valle Escondido'],
-        ['banca', 'Banca'], ['changuinola', 'Changuinola'],
+        ['banca', 'Banca'], ['almirante', 'Almirante'],
     ];
     const t = text.toLowerCase();
     for (const [key, val] of map) { if (t.includes(key)) return val; }
-    return 'Changuinola';
+    return 'Almirante';
 }
 
 // ============================================================
@@ -148,7 +148,7 @@ function parseFileContent(text: string): ScrapedBusiness[] {
             nombrePropietario: get(row, 'propietario') || undefined,
             direccion: get(row, 'direccion') || undefined,
             corregimiento: corr,
-            distrito: 'Changuinola',
+            distrito: 'Almirante',
             provincia: 'Bocas del Toro',
             source: 'PANAMA_EMPRENDE',
         });
@@ -170,7 +170,7 @@ const STEPS = [
     {
         icon: <MousePointer size={20} className="text-indigo-400" />,
         title: 'Buscar por ubicación',
-        desc: 'En el campo "Razón Social" escribe "Changuinola" y haz clic en Buscar. Luego repite con "Almirante", "Guabito", etc.',
+        desc: 'En el campo "Razón Social" escribe "Almirante" y haz clic en Buscar. Luego repite con "Almirante", "Guabito", etc.',
     },
     {
         icon: <FileDown size={20} className="text-indigo-400" />,
@@ -290,7 +290,7 @@ export const GovScraper: React.FC<GovScraperProps> = ({
             dv: biz.dv || '',
             name: biz.nombreComercial,
             address: biz.direccion || biz.corregimiento || '',
-            corregimiento: (biz.corregimiento || 'Changuinola') as Corregimiento,
+            corregimiento: (biz.corregimiento || 'Almirante') as Corregimiento,
             phone: '', email: '',
             hasCommercialActivity: true,
             commercialCategory: CommercialCategory.CLASE_B,
@@ -318,7 +318,7 @@ export const GovScraper: React.FC<GovScraperProps> = ({
         const lines = rows.map(b => `"${b.nombreComercial}","${b.ruc || ''}","${b.dv || ''}","${b.actividad || ''}","${b.corregimiento || ''}","${b.avisoOperaciones || ''}","${b.fechaAviso || ''}","${b.estado || ''}"`);
         const csv = [header, ...lines].join('\n');
         const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
-        const a = Object.assign(document.createElement('a'), { href: url, download: `no_inscritos_changuinola_${new Date().toISOString().split('T')[0]}.csv` });
+        const a = Object.assign(document.createElement('a'), { href: url, download: `no_inscritos_almirante_${new Date().toISOString().split('T')[0]}.csv` });
         a.click(); URL.revokeObjectURL(url);
     };
 
@@ -366,7 +366,7 @@ export const GovScraper: React.FC<GovScraperProps> = ({
                             <ExternalLink size={12} /> panamaemprende.gob.pa
                         </a>
                         <span className="text-slate-300">•</span>
-                        <span className="text-xs text-slate-500 flex items-center gap-1"><MapPin size={12} /> Distrito de Changuinola</span>
+                        <span className="text-xs text-slate-500 flex items-center gap-1"><MapPin size={12} /> Distrito de Almirante</span>
                     </div>
                 </div>
 
@@ -429,7 +429,7 @@ export const GovScraper: React.FC<GovScraperProps> = ({
                                     {/* Tip */}
                                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
                                         <p className="text-amber-800 text-[11px] font-medium leading-relaxed">
-                                            💡 <strong>Tip:</strong> En el portal, busca por <em>Changuinola</em>, <em>Almirante</em>, <em>Guabito</em>, etc. en el campo "Razón Social". Exporta cada resultado y carga el archivo aquí.
+                                            💡 <strong>Tip:</strong> En el portal, busca por <em>Almirante</em>, <em>Almirante</em>, <em>Guabito</em>, etc. en el campo "Razón Social". Exporta cada resultado y carga el archivo aquí.
                                         </p>
                                     </div>
 
@@ -558,7 +558,7 @@ export const GovScraper: React.FC<GovScraperProps> = ({
                                 <h3 className="font-bold text-sm">Consulta Automática</h3>
                             </div>
                             <p className="text-indigo-200 text-xs leading-relaxed mb-3">
-                                La Edge Function de Supabase intenta conectar al portal MICI. Si detecta reCAPTCHA, usa la base de referencia del Distrito de Changuinola.
+                                La Edge Function de Supabase intenta conectar al portal MICI. Si detecta reCAPTCHA, usa la base de referencia del Distrito de Almirante.
                             </p>
                             {autoMessage && (
                                 <div className="bg-white/10 rounded-xl p-2.5 text-indigo-100 text-[11px] leading-relaxed">{autoMessage}</div>

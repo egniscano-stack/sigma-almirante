@@ -20,7 +20,7 @@ export const analyzeInvoiceImage = async (base64Data: string, originalMimeType: 
 
   // Prompt Definition
   const prompt = `
-      Actúa como un auditor experto del Municipio de Changuinola. 
+      Actúa como un auditor experto del Municipio de Almirante. 
       Analiza este documento (factura o recibo antiguo). 
       Extrae la información clave. 
       Si el documento no parece una factura, devuelve un nivel de confianza bajo.

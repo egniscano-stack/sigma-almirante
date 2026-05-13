@@ -15,7 +15,7 @@
     "electron:build:win": "vite build && electron-builder --win -c.extraMetadata.main=electron.cjs",
     "electron:build:mac": "vite build && electron-builder --mac -c.extraMetadata.main=electron.cjs",
     "cap:sync": "vite build && npx cap sync android",
-    "cap:build:android": "vite build && npx cap sync android && cd android && JAVA_HOME=$HOME/Library/Java/jdk-21/Contents/Home ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew assembleDebug && cd .. && cp android/app/build/outputs/apk/debug/app-debug.apk release/SIGMA-Changuinola-v0.0.7-android.apk && echo 'APK generated in release/'",
+    "cap:build:android": "vite build && npx cap sync android && cd android && JAVA_HOME=$HOME/Library/Java/jdk-21/Contents/Home ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew assembleDebug && cd .. && cp android/app/build/outputs/apk/debug/app-debug.apk release/SIGMA-Almirante-v0.0.7-android.apk && echo 'APK generated in release/'",
     "dist": "npm run electron:build"
   },
   "homepage": "./",

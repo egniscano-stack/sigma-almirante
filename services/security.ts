@@ -1,6 +1,6 @@
 /**
- * SIGMA Changuinola - Security Module
- * Gobierno de Panamá - Municipio de Changuinola
+ * SIGMA Almirante - Security Module
+ * Gobierno de Panamá - Municipio de Almirante
  * 
  * Este módulo implementa medidas de seguridad críticas para proteger
  * información financiera y datos sensibles de contribuyentes.

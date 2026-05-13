@@ -10,16 +10,16 @@ import { Taxpayers } from './pages/Taxpayers';
 import { TaxCollection } from './pages/TaxCollection';
 import { Debts } from './pages/Debts';
 import { InvoiceScanner } from './pages/InvoiceScanner';
-import { PassportTax } from './pages/PassportTax';
 import { Settings } from './pages/Settings';
 import { Reports } from './pages/Reports';
+import { ConstructionTax } from './pages/ConstructionTax';
 import { INITIAL_CONFIG } from './services/mockData';
 import { TaxpayerPortal } from './pages/TaxpayerPortal';
 import { Landing } from './pages/Landing';
 import { AlcaldeDashboard } from './pages/AlcaldeDashboard';
 import { SecretariaDashboard } from './pages/SecretariaDashboard';
 import { TaxConfig, Taxpayer, Transaction, User, MunicipalityInfo, TaxpayerType, CommercialCategory, TaxpayerStatus, AdminRequest, RequestStatus } from './types';
-import { Menu, ArrowLeft, Wifi, WifiOff, RefreshCw, Bell, AlertCircle, CheckCircle, XCircle, LogOut, Download, Archive, Edit, X, Shield, Clock } from 'lucide-react';
+import { Menu, ArrowLeft, Wifi, WifiOff, RefreshCw, Bell, AlertCircle, CheckCircle, XCircle, LogOut, Download, Archive, Edit, X, Shield, Clock, Trash2 } from 'lucide-react';
 import { db, mapTaxpayerFromDB, mapTransactionFromDB } from './services/db';
 import {
   createSession,
@@ -35,12 +35,12 @@ import { isCapacitorNative, isDesktopOrMobile } from './services/nativeBridge';
 
 // Initial Municipality Info
 const INITIAL_MUNICIPALITY_INFO: MunicipalityInfo = {
-  name: 'Municipio de Changuinola',
+  name: 'Municipio de Almirante',
   province: 'Provincia de Bocas del Toro, República de Panamá',
-  ruc: '1-22-333 DV 44',
-  phone: '758-1234',
-  email: 'tesoreria@changuinola.gob.pa',
-  address: 'Ave. 17 de Abril, Changuinola'
+  ruc: '1-88-999 DV 00',
+  phone: '758-5678',
+  email: 'tesoreria@almirante.gob.pa',
+  address: 'Calle Principal, Almirante'
 };
 
 function App() {
@@ -315,7 +315,7 @@ function App() {
           setRegisteredUsers(usersB);
         } else {
           // Hard fallback for first-time offline access
-          const defaultAdmin: User = { username: 'admin', password: 'admin123', name: 'Admin Changuinola', role: 'ADMIN' };
+          const defaultAdmin: User = { username: 'admin', password: 'admin123', name: 'Admin Almirante', role: 'ADMIN' };
           const defaultRegistro: User = { username: 'registro', password: '123', name: 'Oficial Registro', role: 'REGISTRO' };
           setRegisteredUsers([defaultAdmin, defaultRegistro]);
         }
@@ -381,14 +381,14 @@ function App() {
       window.addEventListener('offline', handleOffline);
     }
 
-    // Initial load of offline items from Backup
-    loadBackup('transactions').then(res => {
+    // Initial load of offline items from EXCLUSIVE pending keys
+    loadBackup('pending_transactions').then(res => {
       if (res && res.length > 0) setPendingSyncTransactions(res);
     });
-    loadBackup('taxpayers').then(res => {
+    loadBackup('pending_taxpayers').then(res => {
       if (res && res.length > 0) setPendingSyncTaxpayers(res);
     });
-    loadBackup('requests').then(res => {
+    loadBackup('pending_requests').then(res => {
       if (res && res.length > 0) setPendingSyncRequests(res);
     });
 
@@ -570,6 +570,36 @@ function App() {
     if (!confirm(`Se intentarán enviar ${totalPending} elementos a la base de datos. ¿Continuar?`)) return;
 
     await syncOfflineData(true);
+  };
+
+  const handleClearSync = async () => {
+    if (!confirm("¿Está seguro de eliminar TODOS los datos pendientes por sincronizar? Esta acción no se puede deshacer.")) return;
+    
+    try {
+      // Clear states
+      setPendingSyncTransactions([]);
+      setPendingSyncTaxpayers([]);
+      setPendingSyncRequests([]);
+      
+      // CRITICAL: Filter out any local transactions (starting with TX-) from the active state
+      setTransactions(prev => prev.filter(t => !t.id.startsWith('TX-')));
+      
+      // Clear EXCLUSIVE pending backups
+      await saveBackup('pending_transactions', []);
+      await saveBackup('pending_taxpayers', []);
+      await saveBackup('pending_requests', []);
+      
+      setNotificationToast({
+        title: 'Sincronización Limpia',
+        message: 'Se han eliminado los datos locales de la memoria y el disco.'
+      });
+
+      // Refresh data from server
+      fetchData();
+    } catch (e) {
+      console.error("Error clearing sync:", e);
+      alert("Error al limpiar los datos de sincronización.");
+    }
   };
 
   // Close sidebar automatically on route change if on mobile
@@ -783,7 +813,7 @@ function App() {
         });
 
         // SPECIAL LOGIC: Update Taxpayer Balance if it was a historical debt payment
-        const targetTaxpayer = taxpayers.find(tp => tp.id === paymentData.taxpayerId);
+        const targetTaxpayer = paymentData.taxpayerId ? taxpayers.find(tp => tp.id === paymentData.taxpayerId) : null;
         if (targetTaxpayer) {
           let needsUpdate = false;
           let newBalance = targetTaxpayer.balance || 0;
@@ -818,7 +848,7 @@ function App() {
       saveOffline(newTransaction);
       
       // Update local state even in offline mode so UI reflects it immediately
-      const targetTaxpayer = taxpayers.find(tp => tp.id === paymentData.taxpayerId);
+      const targetTaxpayer = paymentData.taxpayerId ? taxpayers.find(tp => tp.id === paymentData.taxpayerId) : null;
       if (targetTaxpayer) {
         if (paymentData.description.includes("Deuda Acumulada") || paymentData.description.includes("Pago Total")) {
            setTaxpayers(prev => prev.map(tp => tp.id === targetTaxpayer.id ? { ...tp, balance: 0 } : tp));
@@ -834,7 +864,7 @@ function App() {
   const saveOffline = async (tx: Transaction) => {
     const updatedPending = [...pendingSyncTransactions, tx];
     setPendingSyncTransactions(updatedPending);
-    await saveBackup('transactions', updatedPending);
+    await saveBackup('pending_transactions', updatedPending);
 
     // Also show it in the main list temporarily as "Local"
     setTransactions(prev => [tx, ...prev]);
@@ -970,6 +1000,15 @@ function App() {
     switch (currentPage) {
       case 'dashboard':
         return (user?.role === 'ADMIN' || user?.role === 'AUDITOR') ? <Dashboard transactions={transactions} taxpayers={taxpayers} config={config} onRefresh={() => fetchData(true)} /> : null;
+      case 'construction':
+        return (
+          <ConstructionTax
+            currentUserName={user?.name || user?.username || 'Cajero'}
+            municipalityInfo={municipalityInfo}
+            onBack={() => setCurrentPage('dashboard')}
+            onPayment={handlePayment}
+          />
+        );
       case 'taxpayers':
         return (
           <Taxpayers
@@ -1135,14 +1174,6 @@ function App() {
             onScanComplete={(newTx) => setTransactions([newTx, ...transactions])}
           />
         );
-      case 'turismo':
-        return (
-          <PassportTax
-            currentUserName={user?.name || 'Cajero'}
-            municipalityInfo={municipalityInfo}
-            onBack={() => setCurrentPage('caja')}
-          />
-        );
       case 'reports':
         return (user?.role === 'ADMIN' || user?.role === 'AUDITOR') ? <Reports transactions={transactions} users={registeredUsers} currentUser={user} taxpayers={taxpayers} config={config} /> : null;
       case 'settings':
@@ -1276,7 +1307,7 @@ function App() {
                 {currentPage === 'reports' && 'Reportes'}
                 {currentPage === 'settings' && 'Ajustes'}
               </h2>
-              <p className="text-[10px] md:text-xs text-slate-500 hidden md:block">SIGMA Changuinola • Bocas del Toro</p>
+              <p className="text-[10px] md:text-xs text-slate-500 hidden md:block">SIGMA Almirante • Bocas del Toro</p>
             </div>
 
             {/* Security: Session Warning Banner */}
@@ -1344,18 +1375,28 @@ function App() {
               )}
 
               {pendingSyncTransactions.length > 0 && (
-                <button
-                  onClick={handleSync}
-                  disabled={isLoading}
-                  className={`ml-2 flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-sm ${
-                    isLoading 
-                      ? 'bg-blue-100 text-blue-700 cursor-wait' 
-                      : 'bg-amber-100 hover:bg-amber-200 text-amber-800 animate-pulse'
-                  }`}
-                >
-                  <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-                  <span>{isLoading ? 'Sincronizando...' : `Sincronizar (${pendingSyncTransactions.length})`}</span>
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleSync}
+                    disabled={isLoading}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-sm ${
+                      isLoading 
+                        ? 'bg-blue-100 text-blue-700 cursor-wait' 
+                        : 'bg-amber-100 hover:bg-amber-200 text-amber-800 animate-pulse'
+                    }`}
+                  >
+                    <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+                    <span>{isLoading ? 'Sincronizando...' : `Sincronizar (${pendingSyncTransactions.length})`}</span>
+                  </button>
+                  
+                  <button
+                    onClick={handleClearSync}
+                    className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-full transition-colors"
+                    title="Limpiar datos locales"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               )}
             </div>
 

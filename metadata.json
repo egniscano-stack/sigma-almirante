@@ -1,6 +1,6 @@
 {
-  "name": "SIGMA Changuinola",
-  "description": "Sistema Inteligente de Gestión Municipal y Administrativa para el Distrito de Changuinola.",
+  "name": "SIGMA Almirante",
+  "description": "Sistema Inteligente de Gestión Municipal y Administrativa para el Distrito de Almirante.",
   "requestFramePermissions": [
     "camera",
     "microphone"

@@ -3,6 +3,7 @@ import { Taxpayer, TaxConfig, TaxType, CommercialCategory, PaymentMethod, Transa
 import { Car, Building2, Trash2, Store, CreditCard, Search, Banknote, Printer, CheckCircle, XCircle, X, ArrowLeft, Save, User as UserIcon, MapPin, Download, AlertCircle, Lock, History, RefreshCw, Bell } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface TaxCollectionProps {
   taxpayers: Taxpayer[];
@@ -21,6 +22,13 @@ interface TaxCollectionProps {
   onDirectAdminAuth?: (password: string, req: AdminRequest) => Promise<boolean>;
 }
 
+// Helper to format currency with thousands separator (1,000.00)
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount || 0);
+};
 
 export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transactions, config, onPayment, currentUser, municipalityInfo, initialTaxpayer, adminRequests = [], onCreateRequest, onArchiveRequest, onRefresh, onDirectAdminAuth }) => {
   const [selectedTax, setSelectedTax] = useState<TaxType>(TaxType.VEHICULO);
@@ -41,8 +49,19 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
   // Invoice State
   const [lastTransaction, setLastTransaction] = useState<Transaction | null>(null);
   const [showInvoice, setShowInvoice] = useState(false);
-  const [showPazSalvo, setShowPazSalvo] = useState(false); // New State
+  const [showPazSalvo, setShowPazSalvo] = useState(false);
+  const [showClosingModal, setShowClosingModal] = useState(false);
+  const [closingTransactions, setClosingTransactions] = useState<Transaction[]>([]);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  const getPaymentMethodLabel = (method: string) => {
+    if (!method) return 'Efectivo';
+    const m = method.toUpperCase();
+    if (m === 'EFECTIVO') return 'Efectivo';
+    if (m.includes('TARJETA')) return 'Tarjeta';
+    if (m.includes('ONLINE') || m.includes('YAPPY') || m.includes('TRANSFERENCIA') || m.includes('ACH')) return 'Online';
+    return 'Efectivo';
+  };
 
   // Request Management State
   const [showRequestModal, setShowRequestModal] = useState(false);
@@ -59,6 +78,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
 
   // History Filter for Cashier
   const [historyFilterDate, setHistoryFilterDate] = useState(new Date().toLocaleDateString('en-CA')); // YYYY-MM-DD
+  const [manualConstDesc, setManualConstDesc] = useState('');
   const [showRequestsDropdown, setShowRequestsDropdown] = useState(false);
 
   // Centralized notifications now handled in App.tsx to avoid Admin/Cashier confusion
@@ -183,27 +203,33 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
     // 4. Vehicles (Annual)
     if (activeTaxpayer.vehicles && activeTaxpayer.vehicles.length > 0) {
       activeTaxpayer.vehicles.forEach(v => {
-        const hasPaid = transactions.some(t => {
-          if (t.taxpayerId !== activeTaxpayer.id || t.status !== 'PAGADO') return false;
-          
-          // Check if paid via Consolidated Payment
-          if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
-            return t.metadata.originalItems.some((i: any) => i.label.includes(`Placa ${v.plate}`));
-          }
+        const lastDigit = parseInt(v.plate.slice(-1)) || 1;
+        const renewalMonth = lastDigit === 0 ? 10 : lastDigit;
 
-          return t.taxType === TaxType.VEHICULO &&
-                 t.metadata?.plateNumber === v.plate &&
-                 new Date(t.date).getFullYear() === currentYear;
-        });
-        if (!hasPaid) {
-          debts.push({
-            id: `veh-${v.plate}-${currentYear}`,
-            type: TaxType.VEHICULO,
-            label: `Impuesto Vehicular (Placa ${v.plate})`,
-            amount: config?.plateCost || 0,
-            description: `Impuesto de Circulación - Placa ${v.plate}`,
-            metadata: { plateNumber: v.plate, year: currentYear }
+        // ONLY show as debt if the renewal month has reached or passed
+        if (currentMonth >= renewalMonth) {
+          const hasPaid = transactions.some(t => {
+            if (t.taxpayerId !== activeTaxpayer.id || t.status !== 'PAGADO') return false;
+            
+            // Check if paid via Consolidated Payment
+            if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
+              return t.metadata.originalItems.some((i: any) => i.label.includes(`Placa ${v.plate}`));
+            }
+
+            return t.taxType === TaxType.VEHICULO &&
+                   (t.metadata?.plateNumber === v.plate || t.description.includes(v.plate)) &&
+                   new Date(t.date).getFullYear() === currentYear;
           });
+          if (!hasPaid) {
+            debts.push({
+              id: `veh-${v.plate}-${currentYear}`,
+              type: TaxType.VEHICULO,
+              label: `Impuesto Vehicular (Placa ${v.plate})`,
+              amount: config?.plateCost || 25.00,
+              description: `Impuesto de Circulación - Placa ${v.plate}`,
+              metadata: { plateNumber: v.plate, year: currentYear }
+            });
+          }
         }
       });
     }
@@ -320,9 +346,10 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
       return;
     }
 
-    // Auto-assign to oldest debt if applicable
+    // 1. Metadata for specific tax types
     let finalMetadata: any = { plateNumber, constArea, trashType };
     
+    // 2. Auto-assign to oldest debt for monthly taxes
     if (selectedTax === TaxType.BASURA || selectedTax === TaxType.COMERCIO) {
       const oldestDebt = taxpayerDebts.find(d => d.type === selectedTax);
       if (oldestDebt && oldestDebt.metadata) {
@@ -333,10 +360,17 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
     const tx = onPayment({
       taxType: selectedTax,
       taxpayerId: selectedTaxpayerId,
-      amount: amount,
+      amount: selectedTax === TaxType.CONSTRUCCION ? constArea : calculateTotal(),
       paymentMethod: paymentMethod,
-      description: getTaxDescription(),
-      metadata: finalMetadata
+      description: selectedTax === TaxType.CONSTRUCCION 
+        ? (manualConstDesc || 'Cobro Manual de Impuesto de Construcción')
+        : getTaxDescription(),
+      metadata: {
+        ...finalMetadata,
+        plateNumber: selectedTax === TaxType.VEHICULO ? plateNumber : undefined,
+        trashType: selectedTax === TaxType.BASURA ? trashType : undefined,
+        constArea: selectedTax === TaxType.CONSTRUCCION ? constArea : undefined,
+      }
     });
 
     setLastTransaction(tx);
@@ -354,6 +388,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
       // Normal Reset
       setPlateNumber('');
       setConstArea(0);
+      setManualConstDesc('');
       setSearchTerm('');
       setSelectedTaxpayerId('');
       setPaymentMethod(PaymentMethod.EFECTIVO);
@@ -412,163 +447,25 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
     }
   };
 
-  const downloadPazSalvo = async () => {
-    const element = document.getElementById('paz-salvo-certificate');
-    if (!element) return;
-
-    try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff'
-      });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('l', 'mm', 'letter');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Paz_y_Salvo_${activeTaxpayer?.docId}.pdf`);
-    } catch (error) {
-      console.error("Error generating Certificate", error);
-      alert("Error al generar el documento: " + (error as any).message);
-    }
-  };
-
   const handleDailyClosing = () => {
-    const today = new Date().toLocaleDateString('en-CA');
-    const myTxs = transactions.filter(t => t.date === today && t.tellerName === currentUser.name);
+    try {
+      console.log("Iniciando Cierre del Día...", { today: new Date().toLocaleDateString('en-CA'), user: currentUser.name });
+      const today = new Date().toLocaleDateString('en-CA');
+      const myTxs = transactions.filter(t => 
+        t.date === today && 
+        t.tellerName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
+      );
 
-    if (myTxs.length === 0) {
-      alert("No hay transacciones registradas hoy para generar el cierre.");
-      return;
+      if (myTxs.length === 0) {
+        alert("No hay transacciones registradas hoy para su usuario (" + currentUser.name + ").");
+        return;
+      }
+
+      setClosingTransactions(myTxs);
+      setShowClosingModal(true);
+    } catch (err) {
+      console.error("Error preparing daily closing:", err);
     }
-
-    const total = myTxs.reduce((acc, t) => acc + t.amount, 0);
-
-    // Reuse similar logic to Reports but simplified for immediate download
-    // Landscape mode for more columns
-    const pdf = new jsPDF('l', 'mm', 'a4');
-
-    // Header
-    pdf.setFontSize(22);
-    pdf.setTextColor(30, 41, 59);
-    pdf.text("Cierre de Caja Diario Detallado", 148, 20, { align: 'center' });
-
-    pdf.setFontSize(10);
-    pdf.setTextColor(100, 116, 139);
-    pdf.text(`Fecha del Reporte: ${today}`, 20, 35);
-    pdf.text(`Cajero Responsable: ${currentUser?.name || 'S/N'} (${currentUser?.username || 'N/A'})`, 20, 42);
-    pdf.text(`Sucursal: Tesorería Municipal de Changuinola`, 20, 49);
-
-    // Summary Box
-    pdf.setDrawColor(226, 232, 240);
-    pdf.setFillColor(248, 250, 252);
-    pdf.rect(220, 30, 57, 25, 'F');
-    pdf.setTextColor(71, 85, 105);
-    pdf.setFontSize(10);
-    pdf.text("TOTAL RECAUDADO NETO", 225, 38);
-    pdf.setFontSize(16);
-    pdf.setFont("helvetica", "bold");
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(`B/. ${total.toFixed(2)}`, 225, 48);
-
-    // Table Header
-    let y = 65;
-    pdf.setFontSize(9);
-    pdf.setFillColor(241, 245, 249);
-    pdf.rect(20, y - 5, 257, 8, 'F');
-    pdf.setTextColor(71, 85, 105);
-    pdf.setFont("helvetica", "bold");
-    
-    pdf.text("FECHA / HORA", 22, y);
-    pdf.text("CONTRIBUYENTE / CORREGIMIENTO", 60, y);
-    pdf.text("CONCEPTO / DETALLE", 140, y);
-    pdf.text("MÉTODO", 205, y);
-    pdf.text("ESTADO", 230, y);
-    pdf.text("MONTO", 272, y, { align: 'right' });
-
-    y += 8;
-
-    pdf.setFont("helvetica", "normal");
-    pdf.setTextColor(51, 65, 85);
-    
-    myTxs.forEach(t => {
-      if (y > 185) { pdf.addPage('l'); y = 20; }
-      
-      const isVoidRecord = t.id.startsWith('VOID-');
-      const isAnnulledOriginal = t.status === 'ANULADO' && !isVoidRecord;
-      
-      if (isVoidRecord || isAnnulledOriginal) {
-        pdf.setTextColor(220, 38, 38); // Red-600
-      } else {
-        pdf.setTextColor(30, 41, 59);
-      }
-
-      // Format Date for table: DD/MM/YY
-      const dateParts = t.date.split('-'); // YYYY-MM-DD
-      const shortDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0].slice(-2)}`;
-      const timeDisplay = `${shortDate}\n${t.time}`;
-
-      // Lookup Taxpayer Info
-      const tp = taxpayers.find(taxp => taxp.id === t.taxpayerId);
-      const tpDisplay = `${tp?.name || 'S/N'}\n(${tp?.corregimiento || 'Sin Corregimiento'})`;
-
-      // Clean Concepto (Translation)
-      let concepto = '';
-      switch(t.taxType) {
-        case TaxType.VEHICULO: concepto = 'PLACA'; break;
-        case TaxType.BASURA: concepto = 'BASURA'; break;
-        case TaxType.COMERCIO: concepto = 'NEGOCIO'; break;
-        case TaxType.CONSTRUCCION: concepto = 'CONSTRUCCIÓN'; break;
-        default: concepto = t.taxType;
-      }
-      
-      // If it's a void, prefix it
-      if (isVoidRecord) concepto = `ANULACIÓN: ${concepto}`;
-
-      pdf.setFontSize(8);
-      pdf.text(timeDisplay, 22, y);
-      
-      pdf.text(tpDisplay, 60, y);
-      
-      pdf.setFontSize(9);
-      // Clean description to remove "Mes de ...", years, and date formats
-      const cleanDesc = t.description
-        .replace(/Mes de \w+ \d{4}/gi, '') // Remove "Mes de Enero 2026"
-        .replace(/Mes de \w+/gi, '')       // Remove "Mes de Enero"
-        .replace(/\d{4}/g, '')             // Remove any 4-digit year
-        .replace(/\d{4}-\d{2}-\d{2}/g, '') // Remove YYYY-MM-DD
-        .replace(/\d{2}\/\d{2}\/\d{2,4}/g, '') // Remove DD/MM/YY
-        .replace(/\s\s+/g, ' ')            // Remove double spaces
-        .trim();
-
-      const displayConcept = cleanDesc && cleanDesc.length > 1 ? `${concepto} - ${cleanDesc}` : concepto;
-      pdf.text(displayConcept.substring(0, 50), 140, y);
-      
-      pdf.text(t.paymentMethod || 'EFECTIVO', 205, y);
-      pdf.text(t.status === 'ANULADO' ? 'ANULADO' : 'PAGADO', 230, y);
-      pdf.text(t.amount.toFixed(2), 272, y, { align: 'right' });
-      
-      pdf.setDrawColor(241, 245, 249);
-      pdf.line(20, y + 5, 277, y + 5);
-      
-      y += 12;
-    });
-
-    // Footer with signatures
-    if (y > 170) { pdf.addPage('l'); y = 20; }
-    y += 20;
-    pdf.setTextColor(71, 85, 105);
-    pdf.setFontSize(10);
-    pdf.text("__________________________", 50, y);
-    pdf.text("Firma del Cajero", 65, y + 7);
-    
-    pdf.text("__________________________", 190, y);
-    pdf.text("Firma de Auditoría / Tesorería", 195, y + 7);
-
-    pdf.save(`Cierre_Caja_${currentUser?.username || 'user'}_${today}.pdf`);
   };
 
   return (
@@ -576,95 +473,375 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
 
       {/* --- PAZ Y SALVO MODAL --- */}
       {showPazSalvo && activeTaxpayer && (
-        <div className="fixed inset-0 bg-black/90 flex flex-col items-center justify-center z-50 p-4 backdrop-blur-md overflow-y-auto">
-          <style>{`
-                        @media print {
-                            @page { size: landscape; margin: 0; }
-                            body * { visibility: hidden; }
-                            #paz-salvo-certificate, #paz-salvo-certificate * { visibility: visible; }
-                            #paz-salvo-certificate { 
-                                position: absolute; left: 0; right: 0; top: 0; bottom: 0;
-                                width: 100%; height: 100%;
-                                margin: 0; padding: 0; box-shadow: none; border: none; 
-                                transform: none;
-                            }
-                            .no-print { display: none !important; }
-                            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                        }
-                    `}</style>
-          <div className="flex justify-between w-full max-w-5xl mb-4 text-white no-print">
-            <h3 className="text-xl font-bold flex items-center gap-2"><CheckCircle /> Documento Oficial (Formato Horizontal)</h3>
-            <button onClick={() => setShowPazSalvo(false)} className="hover:text-red-400"><XCircle className="text-white" size={24} /></button>
-          </div>
-          <div className="flex-1 w-full flex flex-col items-center justify-center overflow-y-auto py-4 min-h-0">
-            <div className="relative flex-shrink-0 my-4 transform-gpu">
-              <div id="paz-salvo-certificate" className="bg-white w-[279.4mm] h-[215.9mm] p-16 shadow-2xl relative text-slate-900 font-serif mx-auto scale-[0.35] sm:scale-[0.45] md:scale-[0.6] lg:scale-[0.75] origin-top flex flex-col justify-between shrink-0">
-                {/* Watermark */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none select-none overflow-hidden">
-                  <div className="text-[20rem] font-black -rotate-12 text-slate-900 whitespace-nowrap">SIGMA</div>
+        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto pt-10 no-print">
+          <style>
+            {`
+              @media print {
+                @page { size: letter portrait; margin: 0; }
+                body { visibility: hidden; background: white !important; }
+                #paz-salvo-certificate, #paz-salvo-certificate * { visibility: visible !important; }
+                #paz-salvo-certificate { 
+                    position: absolute !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 215.9mm !important;
+                    height: 279.4mm !important;
+                    margin: 0 !important;
+                    padding: 15mm !important;
+                    box-shadow: none !important;
+                    border: none !important;
+                    background: white !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                }
+                .no-print { display: none !important; visibility: hidden !important; }
+              }
+            `}
+          </style>
+          
+          <div className="flex flex-col items-center gap-6 max-w-[215.9mm] w-full">
+            {/* Document Container */}
+            <div id="paz-salvo-certificate" className="bg-white w-[215.9mm] h-[279.4mm] p-8 shadow-2xl relative text-slate-900 font-serif mx-auto origin-top flex flex-col justify-between shrink-0 no-print:rounded-lg">
+                {/* Watermark - Municipal Logo */}
+                <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none overflow-hidden">
+                  <img src={`${import.meta.env.BASE_URL}logo-municipio.png`} alt="Watermark" className="w-[120%] object-contain" />
                 </div>
-                {/* Certificate Header */}
-                <div className="text-center w-full border-b-2 border-emerald-800 pb-2 mb-2 relative z-10 flex flex-col items-center">
-                  <img src={`${import.meta.env.BASE_URL}municipio-logo-bw.png`} alt="Logo" className="h-16 w-auto mb-1 grayscale object-contain" />
-                  <h1 className="text-lg font-bold uppercase tracking-widest text-slate-900 leading-none">República de Panamá</h1>
-                  <h2 className="text-base font-bold text-emerald-800 uppercase tracking-wider leading-tight">Municipio de Changuinola</h2>
-                  <p className="text-[10px] font-semibold text-slate-600 mt-0.5 uppercase tracking-wide">Departamento de Tesorería Municipal</p>
-                </div>
-                <h2 className="text-3xl font-extrabold uppercase my-2 tracking-widest text-slate-900 decoration-4 underline decoration-emerald-500 underline-offset-4 relative z-10 text-center">Paz y Salvo</h2>
-                {/* Certificate Body */}
-                <div className="w-full relative z-10 text-justify leading-snug px-4 flex-1 flex flex-col justify-center">
-                  <p className="text-base mb-2"><strong>A QUIEN CONCIERNA:</strong></p>
-                  <p className="text-base mb-2 indent-8">La Tesorería Municipal de Changuinola CERTIFICA por este medio que el contribuyente descrito a continuación, se encuentra legalmente registrado en nuestra base de datos:</p>
-                  <div className="bg-slate-50 border border-slate-200 p-3 my-2 rounded-lg shadow-sm mx-4">
-                    <div className="flex justify-between items-center text-center">
-                      <div className="text-left">
-                        <p className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Nombre / Razón Social</p>
-                        <p className="text-xl font-bold text-slate-900 leading-tight">{activeTaxpayer.name}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Cédula / RUC</p>
-                        <p className="text-xl font-mono font-bold text-slate-900 leading-tight">{activeTaxpayer.docId}</p>
-                      </div>
-                    </div>
-                    <div className="border-t border-slate-200 mt-2 pt-2 flex justify-between items-center">
-                      <span className="text-sm text-slate-500 font-mono">N° Contribuyente: {activeTaxpayer.taxpayerNumber}</span>
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                        <span className="text-xs font-bold text-emerald-700 uppercase">Estado: SOLVENTE</span>
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-base mb-1 indent-8 mt-2">Por lo cual, se le declara <strong>PAZ Y SALVO</strong> con el Tesoro Municipal en concepto de Impuestos, Tasas, Derechos y Contribuciones Municipales hasta la fecha de emisión.</p>
-                  <p className="text-sm text-right mt-4 italic text-slate-600">Válido por 30 días calendario.<br />Dado en Changuinola, el {new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.</p>
-                </div>
-                {/* Footer / Signatures */}
-                <div className="w-full mt-2 pt-2 border-t border-slate-300 relative z-10 flex justify-between items-end">
+                
+                {/* Certificate Header - Centered Style */}
+                <div className="w-full flex flex-col items-center border-b-2 border-emerald-800 pb-4 mb-4 relative z-20">
+                  <img 
+                    src={`${import.meta.env.BASE_URL}logo-municipio.png?v=${Date.now()}`} 
+                    alt="Logo Municipio Almirante" 
+                    className="h-40 w-auto mb-2 relative z-30" 
+                    style={{ 
+                      display: 'block',
+                      imageRendering: 'auto'
+                    }}
+                  />
                   <div className="text-center">
-                    <div className="h-20 w-20 bg-white border border-slate-200 mb-1 mx-auto flex items-center justify-center p-1">
-                      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://changuinola.gob.pa/verify/${activeTaxpayer.id}/${Date.now()}`} alt="QR Verificación" className="w-full h-full object-contain" crossOrigin="anonymous" />
-                    </div>
-                    <p className="text-[7px] font-mono text-slate-500 tracking-wider">ESCANEAR PARA VERIFICAR<br />{`SIGMA-${Date.now().toString().slice(-8)}`}</p>
-                  </div>
-                  <div className="text-center flex-1 px-4">
-                    <p className="text-[8px] text-slate-400 leading-tight">Generado por Plataforma SIGMA Digital.<br />Válido por Ley 83 de 2012 (Gobierno Electrónico).<br />Verificar autenticidad escaneando el código QR.<br /><strong>Vence: {new Date(new Date().setDate(new Date().getDate() + 30)).toLocaleDateString('es-ES')}</strong></p>
-                  </div>
-                  <div className="text-center w-48">
-                    <div className="border-b-2 border-slate-900 mb-1 h-10 flex items-end justify-center pb-1">
-                      <span className="font-script text-lg text-blue-900 opacity-80 rotate-[-5deg]">Tesorero Municipal</span>
-                    </div>
-                    <p className="font-bold text-[9px] uppercase">Tesorero Municipal</p>
-                    <p className="text-[8px] text-slate-500">Autoridad Competente</p>
+                    <h1 className="text-xl font-bold uppercase tracking-[0.2em] text-slate-900 leading-none mb-1">República de Panamá</h1>
+                    <h2 className="text-lg font-bold text-emerald-800 uppercase tracking-widest leading-tight">Municipio de Almirante</h2>
+                    <p className="text-[11px] font-bold text-slate-600 mt-2 uppercase tracking-[0.05em] flex items-center justify-center gap-2">
+                      <span style={{ fontVariantNumeric: 'lining-nums' }}>RUC: 1-22-333 DV 44</span>
+                      <span className="text-emerald-800 text-lg leading-none">•</span>
+                      <span>Tesorería Municipal</span>
+                    </p>
                   </div>
                 </div>
-                <div className="absolute top-0 left-0 right-0 h-2 bg-emerald-800 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] print:h-2"></div>
-                <div className="absolute bottom-0 left-0 right-0 h-2 bg-emerald-800 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] print:h-2"></div>
-              </div>
+
+                <div className="relative z-10 flex-1 flex flex-col items-center">
+                  <h2 className="text-3xl font-black uppercase mb-8 tracking-[0.3em] text-slate-900 border-b-4 border-emerald-500 pb-2">Paz y Salvo</h2>
+                  
+                  <div className="w-full text-justify leading-relaxed px-8 space-y-4 text-base">
+                    <p className="font-bold text-lg">A QUIEN CONCIERNA:</p>
+                    
+                    <p className="indent-12">
+                      La Tesorería Municipal de Almirante, en uso de sus facultades legales, hace constar que el contribuyente:
+                    </p>
+
+                    <div className="bg-slate-50 border-2 border-slate-200 p-4 rounded-xl shadow-inner my-4">
+                      <div className="grid grid-cols-2 gap-8 text-center">
+                        <div className="text-left border-r border-slate-300 pr-4">
+                          <p className="text-[10px] uppercase font-black text-slate-400 mb-1 tracking-wider">Nombre / Razón Social</p>
+                          <p className="text-xl font-black text-slate-900 leading-tight uppercase">{activeTaxpayer.name}</p>
+                        </div>
+                        <div className="text-right pl-4">
+                          <p className="text-[10px] uppercase font-black text-slate-400 mb-1 tracking-wider">Cédula / RUC</p>
+                          <p className="text-xl font-mono font-black text-slate-900 leading-tight">{activeTaxpayer.docId}</p>
+                        </div>
+                      </div>
+                      <div className="border-t-2 border-slate-200 mt-2 pt-2 flex justify-between items-center">
+                        <span className="text-xs text-slate-500 font-bold tracking-widest uppercase">Registro Nº {activeTaxpayer.taxpayerNumber}</span>
+                        <div className={`flex items-center gap-3 px-4 py-1 rounded-full border ${activeTaxpayer.status === 'ACTIVO' ? 'bg-emerald-100 border-emerald-200' : 'bg-red-100 border-red-200'}`}>
+                          <div className={`h-2 w-2 rounded-full ${activeTaxpayer.status === 'ACTIVO' ? 'bg-emerald-600 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-600 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`}></div>
+                          <span className={`text-xs font-black uppercase tracking-widest ${activeTaxpayer.status === 'ACTIVO' ? 'text-emerald-800' : 'text-red-800'}`}>Estado: {activeTaxpayer.status}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="indent-12">
+                      Se encuentra legalmente <strong>PAZ Y SALVO</strong> con el Tesoro Municipal de Almirante por concepto de Impuestos, Tasas, Derechos y Contribuciones Municipales, según los registros que reposan en esta institución hasta la fecha de emisión del presente documento.
+                    </p>
+
+                    <p className="text-sm text-right mt-12 italic text-slate-500">
+                      Válido por 30 días calendario a partir de su emisión.<br />
+                      Dado en el distrito de Almirante, el {new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Footer / Signatures / QR */}
+                <div className="w-full mt-8 pt-8 border-t-2 border-slate-200 relative z-10 flex justify-between items-center px-8">
+                  <div className="text-center w-32">
+                    <div className="mb-2 mx-auto flex items-center justify-center">
+                      <QRCodeSVG 
+                        value={`https://almirante.gob.pa/valida/${activeTaxpayer.id}`} 
+                        size={120} 
+                        level="H" 
+                        includeMargin={false}
+                      />
+                    </div>
+                    <p className="text-[8px] font-bold text-slate-600 tracking-widest uppercase leading-tight">Documento Validado Digitalmente<br />{`SIGMA-${activeTaxpayer.taxpayerNumber}`}</p>
+                  </div>
+
+                  <div className="text-center flex-1 px-8">
+                    {/* Empty spacer or room for future text */}
+                  </div>
+
+                  <div className="text-center w-64">
+                    <div className="relative mb-1 h-16 flex items-center justify-center">
+                      <img 
+                        src={`${import.meta.env.BASE_URL}logo-municipio.png`} 
+                        className="absolute h-14 opacity-10 grayscale" 
+                        alt="Sello"
+                      />
+                      <span className="font-script text-3xl text-blue-900 opacity-60 rotate-[-12deg] relative z-10 select-none">Tesorero Municipal</span>
+                    </div>
+                    <div className="border-t-2 border-slate-900 w-full mb-1"></div>
+                    <p className="font-black text-xs uppercase tracking-widest text-slate-900">Tesorero Municipal</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Autoridad Competente</p>
+                  </div>
+                </div>
+
+                <div className="absolute inset-0 border-[1mm] border-slate-100 pointer-events-none"></div>
+            </div>
+
+            {/* Action Buttons - Attached to document */}
+            <div className="bg-slate-800/90 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex flex-row gap-4 no-print w-full shadow-2xl mb-12">
+              <button
+                onClick={async () => {
+                  const element = document.getElementById('paz-salvo-certificate');
+                  if (!element) return;
+                  setIsGeneratingPdf(true);
+                  try {
+                    const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new jsPDF('p', 'mm', 'letter');
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+                    pdf.save(`Paz_y_Salvo_${activeTaxpayer.docId}.pdf`);
+                  } finally {
+                    setIsGeneratingPdf(false);
+                  }
+                }}
+                disabled={isGeneratingPdf}
+                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all"
+              >
+                <Download size={18} /> <span>{isGeneratingPdf ? 'Generando...' : 'Descargar PDF'}</span>
+              </button>
+              <button 
+                onClick={async () => {
+                  const element = document.getElementById('paz-salvo-certificate');
+                  if (!element) return;
+                  setIsGeneratingPdf(true);
+                  try {
+                    const canvas = await html2canvas(element, { 
+                      scale: 3, 
+                      useCORS: true, 
+                      backgroundColor: '#ffffff'
+                    });
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const printWindow = window.open('', '_blank');
+                    if (printWindow) {
+                      printWindow.document.write(`
+                        <html>
+                          <head>
+                            <title>Imprimir Paz y Salvo</title>
+                            <style>
+                              @page { size: letter portrait; margin: 0; }
+                              body { margin: 0; display: flex; justify-content: center; background: white; }
+                              img { width: 215.9mm; height: 279.4mm; object-fit: contain; }
+                            </style>
+                          </head>
+                          <body onload="setTimeout(() => { window.print(); window.close(); }, 500)">
+                            <img src="${dataUrl}" />
+                          </body>
+                        </html>
+                      `);
+                      printWindow.document.close();
+                    }
+                  } finally {
+                    setIsGeneratingPdf(false);
+                  }
+                }} 
+                className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all"
+              >
+                <Printer size={18} /> <span>{isGeneratingPdf ? '...' : 'Imprimir'}</span>
+              </button>
+              <button 
+                onClick={() => setShowPazSalvo(false)} 
+                className="flex-1 flex items-center justify-center gap-2 bg-slate-600 hover:bg-slate-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all"
+              >
+                <X size={18} /> <span>Cerrar</span>
+              </button>
             </div>
           </div>
-          <div className="w-full flex justify-center gap-4 bg-black/50 p-4 rounded-xl backdrop-blur-sm z-50 sticky bottom-4 no-print shrink-0 mt-[-100px] sm:mt-[-150px] md:mt-[-200px] lg:mt-[-100px]">
-            <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-8 rounded-full shadow-lg transition-transform active:scale-95 flex items-center gap-2"><Printer size={20} /> Imprimir</button>
-            <button onClick={downloadPazSalvo} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-8 rounded-full shadow-lg transition-transform active:scale-95 flex items-center gap-2"><Download size={20} /> Descargar PDF</button>
-            <button onClick={() => setShowPazSalvo(false)} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transition-transform active:scale-95">Cerrar</button>
+        </div>
+      )}
+
+      {/* --- CIERRE DE CAJA PREVIEW MODAL --- */}
+      {showClosingModal && (
+        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-slate-900/80 backdrop-blur-sm p-4 overflow-y-auto pt-10 no-print">
+          <div className="flex flex-col items-center gap-6 max-w-[215.9mm] w-full">
+            {/* Report Content */}
+            <div id="closing-report-content" className="bg-white w-full min-h-[279.4mm] shadow-2xl p-12 flex flex-col font-sans relative">
+              <div className="flex justify-between items-center border-b-2 border-slate-900 pb-6 mb-8 gap-4">
+                {/* Left: Info */}
+                <div className="w-1/3 text-left">
+                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-wider mb-1">Información de Cierre</p>
+                  <p className="text-xs text-slate-800 font-bold">FECHA: {new Date().toLocaleDateString('es-ES')}</p>
+                  <p className="text-xs text-slate-800 font-bold uppercase">CAJERO: {currentUser?.name}</p>
+                </div>
+
+                {/* Center: Logo & Titles */}
+                <div className="w-1/3 flex flex-col items-center text-center">
+                  <img src={`${import.meta.env.BASE_URL}logo-municipio.png`} alt="Logo" className="h-40 w-auto mb-2" />
+                  <h1 className="text-lg font-black uppercase text-slate-900">Cierre de Caja</h1>
+                  <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Tesorería Municipal de Almirante</p>
+                </div>
+
+                {/* Right: Total Box */}
+                <div className="w-1/3 flex justify-end">
+                  <div className="bg-slate-900 text-white px-6 py-3 rounded-xl shadow-lg text-right min-w-[180px]">
+                    <p className="text-[9px] uppercase font-bold opacity-70 mb-1">Total Recaudado Hoy</p>
+                    <p className="text-2xl font-black">B/. {formatCurrency(closingTransactions.reduce((acc, t) => acc + t.amount, 0))}</p>
+                  </div>
+                </div>
+              </div>
+
+              <table className="w-full text-left mb-12">
+                <thead>
+                  <tr className="bg-slate-50 border-y border-slate-200">
+                    <th className="py-3 px-4 text-[10px] font-bold uppercase text-slate-500">Hora</th>
+                    <th className="py-3 px-4 text-[10px] font-bold uppercase text-slate-500">Contribuyente</th>
+                    <th className="py-3 px-4 text-[10px] font-bold uppercase text-slate-500">Concepto</th>
+                    <th className="py-3 px-4 text-[10px] font-bold uppercase text-slate-500 text-center">Estado</th>
+                    <th className="py-3 px-4 text-[10px] font-bold uppercase text-slate-500 text-right">Monto</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {closingTransactions.map(t => (
+                    <tr key={t.id} className="text-xs border-b border-slate-50 hover:bg-slate-50/50">
+                      <td className="py-4 px-4 text-slate-600">{t.time}</td>
+                      <td className="py-4 px-4 font-bold text-slate-800 uppercase">
+                        {taxpayers.find(tp => tp.id === t.taxpayerId)?.name || t.metadata?.manualPayer || 'S/N'}
+                      </td>
+                      <td className="py-4 px-4 text-slate-500">
+                        <div className="flex flex-col">
+                          <span className="text-slate-700 font-bold uppercase">{t.description || t.taxType}</span>
+                          {t.metadata?.isConsolidated && t.metadata?.originalItems && (
+                            <div className="mt-1 mb-1 border-l-2 border-indigo-100 pl-3 py-1 space-y-1 bg-slate-50/50 rounded-r-lg">
+                              {t.metadata.originalItems.map((item: any, idx: number) => (
+                                <div key={idx} className="flex justify-between text-[10px] text-slate-500">
+                                  <span className="uppercase">{item.label}</span>
+                                  <span className="font-bold text-slate-600">B/. {formatCurrency(item.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <span className="text-[10px] font-bold text-slate-400 mt-0.5">PAGO EN: {getPaymentMethodLabel(t.paymentMethod).toUpperCase()}</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-center">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold ${
+                          t.status === 'ANULADO' 
+                            ? 'bg-red-100 text-red-600' 
+                            : 'bg-emerald-100 text-emerald-600'
+                        }`}>
+                          {t.status === 'ANULADO' ? 'ANULADO' : 'PAGADO'}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-right font-bold text-slate-900">
+                        B/. {formatCurrency(t.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="mt-auto pt-20 flex justify-around">
+                <div className="text-center">
+                  <div className="border-t border-slate-400 w-48 mb-2"></div>
+                  <p className="text-xs font-bold text-slate-500 uppercase">Firma del Cajero</p>
+                </div>
+                <div className="text-center">
+                  <div className="border-t border-slate-400 w-48 mb-2"></div>
+                  <p className="text-xs font-bold text-slate-500 uppercase">Firma de Auditoría</p>
+                </div>
+              </div>
+              
+              <div className="absolute bottom-8 left-0 right-0 text-center">
+                <p className="text-[9px] text-slate-300 font-mono tracking-widest uppercase">SIGMA Digital - Municipio de Almirante</p>
+              </div>
+            </div>
+
+            {/* Action Bar */}
+            <div className="bg-slate-800/95 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex flex-row gap-4 no-print w-full shadow-2xl mb-20">
+              <button
+                onClick={async () => {
+                  const element = document.getElementById('closing-report-content');
+                  if (!element) return;
+                  setIsGeneratingPdf(true);
+                  try {
+                    const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new jsPDF('p', 'mm', 'letter');
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+                    pdf.save(`Cierre_Caja_${currentUser?.username}_${new Date().toLocaleDateString('en-CA')}.pdf`);
+                  } finally {
+                    setIsGeneratingPdf(false);
+                  }
+                }}
+                disabled={isGeneratingPdf}
+                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all"
+              >
+                <Download size={18} /> <span>{isGeneratingPdf ? 'Generando...' : 'Descargar PDF'}</span>
+              </button>
+              <button 
+                onClick={async () => {
+                  const element = document.getElementById('closing-report-content');
+                  if (!element) return;
+                  setIsGeneratingPdf(true);
+                  try {
+                    const canvas = await html2canvas(element, { scale: 3, useCORS: true, backgroundColor: '#ffffff' });
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const printWindow = window.open('', '_blank');
+                    if (printWindow) {
+                      printWindow.document.write(`
+                        <html>
+                          <head>
+                            <title>Cierre de Caja</title>
+                            <style>
+                              @page { size: letter portrait; margin: 0; }
+                              body { margin: 0; display: flex; justify-content: center; }
+                              img { width: 215.9mm; height: auto; }
+                            </style>
+                          </head>
+                          <body onload="setTimeout(() => { window.print(); window.close(); }, 500)">
+                            <img src="${dataUrl}" />
+                          </body>
+                        </html>
+                      `);
+                      printWindow.document.close();
+                    }
+                  } finally {
+                    setIsGeneratingPdf(false);
+                  }
+                }}
+                className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all"
+              >
+                <Printer size={18} /> <span>Imprimir</span>
+              </button>
+              <button 
+                onClick={() => setShowClosingModal(false)} 
+                className="flex-1 flex items-center justify-center gap-2 bg-slate-600 hover:bg-slate-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all"
+              >
+                <X size={18} /> <span>Cerrar</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -674,13 +851,12 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <style>{`
                 @media print {
-                    @page { size: landscape; margin: 0; }
+                    @page { size: portrait; margin: 0; }
                     body * { visibility: hidden; }
                     #invoice-modal-content, #invoice-modal-content * { visibility: visible; }
                     #invoice-modal-content { 
-                        position: absolute; left: 50%; top: 50%; 
-                        transform: translate(-50%, -50%) scale(0.9); /* Scale down slightly to ensure fit */
-                        width: 100%; max-width: 900px;
+                        position: absolute; left: 0; top: 0; 
+                        width: 80mm;
                         margin: 0; padding: 0; box-shadow: none; border: none; 
                     }
                     .no-print { display: none !important; }
@@ -688,106 +864,125 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                 }
             `}</style>
 
-          <div id="invoice-modal-content" className="bg-white shadow-2xl w-full max-w-4xl rounded-lg overflow-hidden flex flex-col">
+          <div id="invoice-modal-content" className="bg-white shadow-2xl w-full max-w-[320px] rounded-lg overflow-hidden flex flex-col relative">
+            
+            {/* Status Badge - Floating Corner */}
+            <div className="absolute top-4 right-4 z-10">
+              <span className={`px-2 py-1 rounded border-2 text-[8px] font-black tracking-tighter uppercase shadow-sm ${
+                lastTransaction.status === 'ANULADO' 
+                  ? 'bg-red-50 text-red-600 border-red-200' 
+                  : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+              }`}>
+                {lastTransaction.status === 'ANULADO' ? '● ANULADO' : '● PAGADO'}
+              </span>
+            </div>
 
-            {/* Invoice Header - Compact */}
-            <div className="bg-white p-6 md:p-8 pb-4">
-              {/* New Top Centered Municipal Logo */}
-              <div className="flex justify-center mb-6">
+            {/* Invoice Header - Thermal Optimized (80mm) */}
+            <div className="bg-white p-2 text-center overflow-hidden">
+              {/* Centered Logo */}
+              <div className="flex justify-center mb-1">
                 <img
-                  src={`${import.meta.env.BASE_URL}municipio-logo-bw.png`}
+                  src={`${import.meta.env.BASE_URL}logo-municipio.png`}
                   alt="Escudo Municipal"
-                  className="h-32 object-contain grayscale"
+                  className="h-24 object-contain"
                 />
               </div>
 
-              <div className="flex justify-between items-end border-b-2 border-slate-900 pb-4 mb-4">
-                <div className="flex items-center gap-4">
-                  <div>
-                    <h1 className="text-xl font-extrabold uppercase text-slate-900 leading-none">{municipalityInfo.name}</h1>
-                    <p className="text-xs text-slate-600 font-medium mt-1">{municipalityInfo.province}</p>
-                    <p className="text-xs text-slate-600">RUC: {municipalityInfo.ruc} • {municipalityInfo.phone}</p>
+              {/* Municipal Header - Compact & Centered */}
+              <div className="border-b border-dashed border-slate-400 pb-2 mb-2">
+                <h1 className="text-sm font-extrabold uppercase text-slate-900 leading-tight">Municipio de Almirante</h1>
+                <p className="text-[9px] text-slate-600 font-medium uppercase leading-tight">República de Panamá</p>
+                <p className="text-[10px] text-slate-700 font-bold uppercase">RUC: 1-22-333 DV 44</p>
+                <p className="text-[9px] text-slate-500 uppercase">Tesorería Municipal</p>
+              </div>
+
+              {/* Receipt Info */}
+              <div className="mb-2">
+                <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Recibo de Caja</h2>
+                <p className="font-mono text-sm font-black text-slate-900">Nº {lastTransaction.id}</p>
+                <p className="text-[9px] text-slate-500 font-medium">{lastTransaction.date} | {lastTransaction.time}</p>
+              </div>
+
+              {/* Taxpayer Info - Compact */}
+              <div className="bg-slate-50 p-2 rounded mb-3 border border-slate-100 text-left">
+                <p className="text-[8px] font-bold text-slate-400 uppercase">Contribuyente:</p>
+                <p className="font-bold text-[11px] text-slate-900 leading-tight uppercase">{activeTaxpayer.name}</p>
+                <p className="text-[9px] font-mono text-slate-600">DOC: {activeTaxpayer.docId}</p>
+              </div>
+
+              {/* Transaction Detail & Breakdown */}
+              <div className="border-b border-dashed border-slate-400 pb-2 mb-2">
+                <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase mb-1">
+                  <span>Concepto</span>
+                  <span>Monto</span>
+                </div>
+                
+                {lastTransaction.metadata?.isConsolidated ? (
+                  <div className="space-y-1">
+                    {(lastTransaction.metadata.originalItems || []).map((item: any, idx: number) => (
+                      <div key={idx} className="flex justify-between items-start text-left">
+                        <p className="text-[9px] font-bold text-slate-800 leading-tight uppercase max-w-[180px]">{item.label}</p>
+                        <p className="text-[9px] font-bold text-slate-900">{formatCurrency(item.amount)}</p>
+                      </div>
+                    ))}
+                    <p className="text-[8px] text-slate-500 italic mt-2">Método: {getPaymentMethodLabel(lastTransaction.paymentMethod)}</p>
                   </div>
-                </div>
-                <div className="text-right">
-                  <h2 className="text-lg font-bold uppercase tracking-wider text-slate-800">Recibo de Caja</h2>
-                  <p className="font-mono text-base font-bold text-red-600">#{lastTransaction.id}</p>
-                  <p className="text-xs text-slate-500">{lastTransaction.date} {lastTransaction.time}</p>
-                </div>
+                ) : (
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="text-left">
+                      <p className="text-[10px] font-extrabold text-slate-800 leading-tight uppercase">{lastTransaction.description}</p>
+                      {lastTransaction.metadata?.plateNumber && <p className="text-[8px] text-slate-500 mt-0.5">Placa: {lastTransaction.metadata.plateNumber}</p>}
+                      <p className="text-[8px] text-slate-500 italic">Método: {getPaymentMethodLabel(lastTransaction.paymentMethod)}</p>
+                    </div>
+                    <p className="font-black text-xs text-slate-900 whitespace-nowrap">B/. {formatCurrency(lastTransaction.amount)}</p>
+                  </div>
+                )}
               </div>
 
-              {/* Content - Two Columns Compact */}
-              <div className="flex flex-row gap-6">
-                {/* Left: Taxpayer */}
-                <div className="w-1/3 border-r border-slate-200 pr-4">
-                  <p className="text-xs font-bold text-slate-400 uppercase mb-1">Recibimos de:</p>
-                  <p className="font-bold text-base text-slate-900 leading-tight mb-1">{activeTaxpayer.name}</p>
-                  <p className="text-xs font-mono text-slate-600 mb-2">ID: {activeTaxpayer.docId}</p>
-                  <p className="text-xs text-slate-500">{activeTaxpayer.address}</p>
-                </div>
-
-                {/* Right: Details */}
-                <div className="w-2/3">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase">
-                        <th className="py-1">Concepto</th>
-                        <th className="py-1 text-right">Valor</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="py-2 pr-2">
-                          <p className="font-bold text-slate-800">{lastTransaction.description}</p>
-                          <div className="text-xs text-slate-500 mt-1">
-                            {lastTransaction.metadata?.plateNumber && `Placa: ${lastTransaction.metadata.plateNumber} | `}
-                            {lastTransaction.metadata?.trashType && `Tipo: ${lastTransaction.metadata.trashType} | `}
-                            Método: {lastTransaction.paymentMethod}
-                          </div>
-                        </td>
-                        <td className="py-2 text-right font-bold text-lg text-slate-800 align-top">
-                          B/. {(lastTransaction.amount || 0).toFixed(2)}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+              {/* Total Box */}
+              <div className="flex justify-between items-center py-2 px-1 border-b-2 border-slate-900 mb-4">
+                <span className="text-[10px] font-black text-slate-900 uppercase">Total Pagado:</span>
+                <span className="text-sm font-black text-slate-900">B/. {formatCurrency(lastTransaction.amount)}</span>
               </div>
 
-              {/* Total Bar Compact */}
-              <div className="mt-4 flex justify-end">
-                <div className="bg-slate-100 px-6 py-2 rounded flex items-center gap-4 border border-slate-200">
-                  <span className="text-sm font-bold text-slate-600">TOTAL PAGADO</span>
-                  <span className="text-xl font-bold text-slate-900">B/. {(lastTransaction.amount || 0).toFixed(2)}</span>
+              {/* Signatures & Legal */}
+              <div className="space-y-4">
+                <div className="flex flex-col items-center">
+                  <div className="border-b border-slate-300 w-24 mb-1"></div>
+                  <p className="text-[8px] font-bold text-slate-500 uppercase">Cajero: {lastTransaction.tellerName}</p>
                 </div>
-              </div>
-
-              {/* Footer Compact */}
-              <div className="mt-6 pt-4 border-t border-slate-100 flex justify-between items-end">
-                <div className="text-[10px] text-slate-400 max-w-xs leading-tight">
-                  Este recibo es comprobante de pago oficial. Conserve para reclamos.
-                </div>
-                <div className="text-center">
-                  <div className="border-b border-slate-300 w-32 mb-1"></div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase">Cajero: {lastTransaction.tellerName}</p>
+                <p className="text-[8px] text-slate-400 italic leading-tight px-4">
+                  Comprobante oficial de pago. Verifique sus datos antes de retirarse.
+                </p>
+                <div className="pt-2">
+                    <p className="text-[7px] font-mono text-slate-300 uppercase tracking-widest">SIGMA - MUNICIPIO DE ALMIRANTE</p>
                 </div>
               </div>
             </div>
 
-            {/* Action Bar (Hidden in Print) */}
-            <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end gap-3 no-print">
+            {/* Action Bar (Hidden in Print) - Uniform Buttons */}
+            <div className="bg-slate-50 p-3 border-t border-slate-200 flex flex-row gap-2 no-print w-full">
               <button
                 onClick={downloadPDF}
                 disabled={isGeneratingPdf}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-sm transition-all"
+                className="flex-1 flex flex-col items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-bold text-[10px] shadow-sm transition-all"
+                title="Descargar PDF"
               >
-                <Download size={16} /> {isGeneratingPdf ? '...' : 'PDF'}
+                <Download size={14} /> <span>{isGeneratingPdf ? '...' : 'PDF'}</span>
               </button>
-              <button onClick={printInvoice} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-sm transition-all">
-                <Printer size={16} /> Imprimir
+              <button 
+                onClick={printInvoice} 
+                className="flex-1 flex flex-col items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-md font-bold text-[10px] shadow-sm transition-all"
+                title="Imprimir Recibo"
+              >
+                <Printer size={14} /> <span>Imprimir</span>
               </button>
-              <button onClick={handleFinishCollection} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-sm transition-all">
-                <ArrowLeft size={16} /> Finalizar
+              <button 
+                onClick={handleFinishCollection} 
+                className="flex-1 flex flex-col items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-md font-bold text-[10px] shadow-sm transition-all"
+                title="Regresar a Caja"
+              >
+                <ArrowLeft size={14} /> <span>Finalizar</span>
               </button>
             </div>
           </div>
@@ -977,7 +1172,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
               </div>
             )}
           </div>
-        ) : (
+          ) : (
           <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-4 text-white shadow-lg flex justify-between items-center">
             <div className="flex items-center gap-4">
               <div className="bg-white/10 p-2 rounded-full"><UserIcon size={24} className="text-emerald-400" /></div>
@@ -1053,7 +1248,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                 <AlertCircle size={20} /> Deudas Pendientes
               </h3>
               <div className="flex items-center gap-3">
-                <span className="text-xs bg-white/20 px-2 py-1 rounded font-mono">Total: B/. {(taxpayerDebts.reduce((acc, d) => acc + (d.amount || 0), 0) || 0).toFixed(2)}</span>
+                <span className="text-xs bg-white/20 px-2 py-1 rounded font-mono">Total: B/. {formatCurrency(taxpayerDebts.reduce((acc, d) => acc + (d.amount || 0), 0))}</span>
                 {taxpayerDebts.length > 1 && (
                   <button
                     onClick={handlePayAllDebts}
@@ -1081,7 +1276,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                         <p className="text-xs text-slate-500">{debt.description}</p>
                       </td>
                       <td className="px-6 py-4 text-right font-extrabold text-red-600">
-                        B/. {(debt.amount || 0).toFixed(2)}
+                        B/. {formatCurrency(debt.amount)}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button
@@ -1106,7 +1301,6 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { id: TaxType.VEHICULO, label: 'Placa', icon: Car, enabled: activeTaxpayer?.vehicles && activeTaxpayer.vehicles.length > 0 },
-              { id: TaxType.CONSTRUCCION, label: 'Construcción', icon: Building2, enabled: activeTaxpayer?.hasConstruction },
               { id: TaxType.BASURA, label: 'Basura', icon: Trash2, enabled: activeTaxpayer?.hasGarbageService },
               { id: TaxType.COMERCIO, label: 'Comercio', icon: Store, enabled: activeTaxpayer?.hasCommercialActivity },
             ].filter(t => !activeTaxpayer || t.enabled).map((tax) => {
@@ -1146,20 +1340,6 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
             </div>
           )}
 
-          {selectedTax === TaxType.CONSTRUCCION && (
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Metros Cuadrados</label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={constArea}
-                onChange={(e) => setConstArea(Number(e.target.value))}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-lg focus:ring-2 focus:ring-emerald-500"
-              />
-              <p className="text-xs text-right mt-1 text-slate-500">Tasa: B/. {config.constructionRatePerSqm}/m²</p>
-            </div>
-          )}
 
           {selectedTax === TaxType.BASURA && (
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
@@ -1169,8 +1349,8 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                 onChange={(e) => setTrashType(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white"
               >
-                <option value="RESIDENCIAL">Residencial (B/. {(config?.garbageResidentialRate || 0).toFixed(2)})</option>
-                <option value="COMERCIAL">Comercial (B/. {(config?.garbageCommercialRate || 0).toFixed(2)})</option>
+                <option value="RESIDENCIAL">Residencial (B/. {formatCurrency(config?.garbageResidentialRate)})</option>
+                <option value="COMERCIAL">Comercial (B/. {formatCurrency(config?.garbageCommercialRate)})</option>
               </select>
             </div>
           )}
@@ -1186,7 +1366,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
 
           <div className="flex justify-between items-center bg-slate-800 text-white p-4 rounded-lg">
             <span className="font-medium text-sm">Total a Pagar</span>
-            <span className="font-mono text-2xl font-bold">B/. {(calculateTotal() || 0).toFixed(2)}</span>
+            <span className="font-mono text-2xl font-bold">B/. {formatCurrency(calculateTotal())}</span>
           </div>
 
           <button
@@ -1433,18 +1613,35 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                   <tr key={tx.id} className={`hover:bg-slate-50 transition-colors ${tx.status === 'ANULADO' ? 'bg-red-50/30 opacity-80' : ''}`}>
                     <td className="px-6 py-4 font-mono text-xs">{tx.time}</td>
                     <td className="px-6 py-4 font-bold text-slate-700">
-                      {taxpayers.find(tp => tp.id === tx.taxpayerId)?.name || 'Desconocido'}
+                      {taxpayers.find(tp => tp.id === tx.taxpayerId)?.name || tx.metadata?.manualPayer || 'Desconocido'}
                     </td>
-                    <td className="px-6 py-4 text-slate-600 truncate max-w-[200px]">{tx.description}</td>
+                    <td className="px-6 py-4 text-slate-600">
+                      <div className="flex flex-col max-w-[300px]">
+                        <span className="font-bold text-slate-800 uppercase text-xs">{tx.description}</span>
+                        {tx.metadata?.isConsolidated && tx.metadata?.originalItems && (
+                          <div className="mt-2 border-l-2 border-indigo-200 pl-3 py-1 space-y-1 bg-indigo-50/30 rounded-r-lg">
+                            {tx.metadata.originalItems.map((item: any, idx: number) => (
+                              <div key={idx} className="flex justify-between text-[10px] text-slate-600">
+                                <span className="uppercase truncate pr-2">{item.label}</span>
+                                <span className="font-black whitespace-nowrap">B/. {formatCurrency(item.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <span className="text-[9px] font-bold text-slate-400 mt-1">MÉTODO: {getPaymentMethodLabel(tx.paymentMethod).toUpperCase()}</span>
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        tx.status === 'ANULADO' ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                      <span className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-tight border-2 shadow-sm ${
+                        tx.status === 'ANULADO' 
+                          ? 'bg-red-50 text-red-600 border-red-200' 
+                          : 'bg-emerald-50 text-emerald-600 border-emerald-200'
                       }`}>
-                        {tx.status}
+                        {tx.status === 'ANULADO' ? 'ANULADO' : 'PAGADO'}
                       </span>
                     </td>
                     <td className={`px-6 py-4 text-right font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-                      B/. {(tx.amount || 0).toFixed(2)}
+                      B/. {formatCurrency(tx.amount)}
                     </td>
                     <td className="px-6 py-4 text-right">
                       {tx.status !== 'ANULADO' && (

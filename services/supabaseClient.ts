@@ -37,7 +37,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     global: {
         headers: {
             // Add custom security header for request identification
-            'X-Client-Info': 'sigma-changuinola/2.0',
+            'X-Client-Info': 'sigma-almirante/2.0',
         },
     },
     realtime: {

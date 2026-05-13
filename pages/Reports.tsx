@@ -1,12 +1,21 @@
 import React, { useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, Legend
+  PieChart, Pie, Cell, LineChart, Line, Legend, AreaChart, Area
 } from 'recharts';
 import { Transaction, TaxType, User, Taxpayer, Corregimiento, TaxConfig, CommercialCategory } from '../types';
-import { Download, FileText, TrendingUp, Calendar, Filter, User as UserIcon, Printer, PieChart as PieChartIcon, Map as MapIcon } from 'lucide-react';
+import { Download, FileText, TrendingUp, Calendar, Filter, User as UserIcon, Printer, PieChart as PieChartIcon, Map as MapIcon, X, Clock } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
+
+// Helper to format currency with thousands separator (1,000.00)
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount || 0);
+};
 
 interface ReportsProps {
   transactions: Transaction[];
@@ -22,15 +31,71 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
   const [startDate, setStartDate] = React.useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = React.useState(new Date().toISOString().split('T')[0]);
   const [selectedTeller, setSelectedTeller] = React.useState('ALL');
+  const [showPreviewModal, setShowPreviewModal] = React.useState(false);
+  const [previewType, setPreviewType] = React.useState<'ARQUEO' | 'GENERAL' | null>(null);
+  const [previewData, setPreviewData] = React.useState<any>(null);
+  const [isGenerating, setIsGenerating] = React.useState(false);
+
+  // New Report Filters
+  const [reportSubFilter, setReportSubFilter] = React.useState<'TODOS' | 'CORREGIMIENTO' | 'ACTIVIDAD'>('TODOS');
+  const [filterCorregimiento, setFilterCorregimiento] = React.useState<Corregimiento | 'ALL'>('ALL');
+  const [filterActivity, setFilterActivity] = React.useState<TaxType | 'ALL'>('ALL');
+
+  const getPaymentMethodLabel = (method: string) => {
+    if (!method) return 'Efectivo';
+    const m = method.toUpperCase();
+    if (m === 'EFECTIVO') return 'Efectivo';
+    if (m.includes('TARJETA')) return 'Tarjeta';
+    if (m.includes('ONLINE') || m.includes('YAPPY') || m.includes('TRANSFERENCIA') || m.includes('ACH')) return 'Online';
+    return 'Efectivo';
+  };
 
   // --- Data Processing ---
   const stats = useMemo(() => {
     // 1. Filter Data based on UI State
-    const filtered = transactions.filter(t => {
+    const filtered = transactions.reduce((acc: Transaction[], t) => {
       const matchDate = t.date >= startDate && t.date <= endDate;
       const matchTeller = selectedTeller === 'ALL' || t.tellerName === selectedTeller;
-      return matchDate && matchTeller;
-    });
+      
+      if (!matchDate || !matchTeller) return acc;
+
+      // Activity filtering: Extract ONLY the relevant portion of consolidated payments
+      if (reportSubFilter === 'ACTIVIDAD' && filterActivity !== 'ALL') {
+        const searchTerms = filterActivity.toUpperCase();
+        
+        // Match by formal type OR if the description contains the name (useful for Paz y Salvo)
+        if (t.taxType === filterActivity || t.description?.toUpperCase().includes(searchTerms)) {
+          acc.push(t);
+        } else if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
+          const matchingItems = t.metadata.originalItems.filter((item: any) => 
+            item.type === filterActivity || item.label?.toUpperCase().includes(filterActivity.toUpperCase())
+          );
+          
+          if (matchingItems.length > 0) {
+            const partialAmount = matchingItems.reduce((sum: number, item: any) => sum + item.amount, 0);
+            acc.push({
+              ...t,
+              amount: partialAmount,
+              taxType: filterActivity, // Ensure the virtual tx matches the filter type for labels
+              description: `${t.description} (PARTE ${filterActivity})`,
+              metadata: { ...t.metadata, isConsolidated: false, originalItems: matchingItems }
+            });
+          }
+        }
+        return acc;
+      }
+
+      // Corregimiento filtering
+      if (reportSubFilter === 'CORREGIMIENTO' && filterCorregimiento !== 'ALL') {
+        const tp = taxpayers.find(tp => tp.id === t.taxpayerId);
+        if (tp?.corregimiento === filterCorregimiento) acc.push(t);
+        return acc;
+      }
+
+      // Global Case
+      acc.push(t);
+      return acc;
+    }, []);
 
     const workingSet = filtered;
 
@@ -41,14 +106,11 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
     // Group by Tax Type
     const byTypeMap = new Map<string, number>();
     workingSet.forEach(t => {
-      // Don't sum voided ones in the breakdown if we want clean charts?
-      // Actually, standard is to show Net Revenue. 
-      // If t is negative (void), it subtracts.
       const current = byTypeMap.get(t.taxType) || 0;
       byTypeMap.set(t.taxType, current + t.amount);
     });
 
-    const byTypeData = Array.from(byTypeMap.entries()).map(([name, value]) => ({ name, value })).filter(v => v.value > 0); // Hide negative categories if any
+    const byTypeData = Array.from(byTypeMap.entries()).map(([name, value]) => ({ name, value })).filter(v => v.value > 0); 
 
     // Group by Date 
     const byDateMap = new Map<string, number>();
@@ -61,10 +123,8 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
 
     const byDateData = Array.from(byDateMap.entries()).map(([date, amount]) => ({ date, amount }));
 
-    // IMPORTANT: User wants them "removed from history" but "appear as annulled".
-    // This implies visually distinct. We return all, but render carefully.
     return { totalRevenue, avgTicket, paidTransactions, byTypeData, byDateData, filteredTransactions: filtered };
-  }, [transactions, startDate, endDate, selectedTeller]);
+  }, [transactions, startDate, endDate, selectedTeller, reportSubFilter, filterCorregimiento, filterActivity]);
 
   // --- Handlers ---
   const handleExportCSV = () => {
@@ -77,7 +137,7 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
       t.taxpayerId,
       `"${t.description}"`, // Quote to handle commas
       t.status,
-      t.amount.toFixed(2),
+      formatCurrency(t.amount),
       t.tellerName
     ]);
 
@@ -95,71 +155,48 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
   };
 
   const handlePrintClosing = () => {
-    // Use the already filtered stats
     const filteredForReport = stats.filteredTransactions;
-    const total = filteredForReport.reduce((acc, t) => acc + t.amount, 0);
-
-    const pdf = new jsPDF();
-
-    // Header
-    pdf.setFontSize(20);
-    pdf.text("Reporte de Cierre de Caja (Arqueo)", 105, 20, { align: 'center' });
-
-    pdf.setFontSize(12);
-    pdf.text(`Desde: ${startDate}  Hasta: ${endDate}`, 20, 35);
-    pdf.text(`Cajero: ${selectedTeller === 'ALL' ? 'TODOS' : selectedTeller}`, 20, 42);
-    pdf.text(`Generado por: ${currentUser.name}`, 20, 49);
-
-    // Summary
-    pdf.setDrawColor(0);
-    pdf.setFillColor(240, 240, 240);
-    pdf.rect(140, 30, 50, 20, 'F');
-    pdf.setFontSize(10);
-    pdf.text("Total Recaudado:", 145, 38);
-    pdf.setFontSize(14);
-    pdf.setFont("helvetica", "bold");
-    pdf.text(`B/. ${total.toFixed(2)}`, 145, 45);
-
-    // Table
-    autoTable(pdf, {
-      startY: 65,
-      head: [['Hora', 'ID', 'Descripción', 'Método', 'Monto']],
-      body: filteredForReport.map(t => [
-        t.time,
-        t.id,
-        t.description.length > 30 ? t.description.substring(0, 30) + '...' : t.description,
-        t.paymentMethod,
-        `B/. ${t.amount.toFixed(2)}`
-      ]),
-      theme: 'grid',
-      headStyles: { fillColor: [66, 66, 66] },
-      columnStyles: { 4: { halign: 'right' } }
+    setPreviewType('ARQUEO');
+    setPreviewData({
+      transactions: filteredForReport,
+      total: filteredForReport.reduce((acc, t) => acc + t.amount, 0),
+      startDate,
+      endDate,
+      teller: selectedTeller === 'ALL' ? 'TODOS' : selectedTeller
     });
-
-    const finalY = (pdf as any).lastAutoTable.finalY + 20;
-
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Firma del Cajero: __________________________", 20, finalY);
-    pdf.text("Firma del Supervisor: _______________________", 110, finalY);
-
-    pdf.save(`Arqueo_${startDate}_${endDate}_${selectedTeller}.pdf`);
+    setShowPreviewModal(true);
   };
 
   const handleGenerateGeneralReport = () => {
-    // 1. Prepare Data
-    // Corregimientos defined in enum
-    const corregimientoStats = Object.values(Corregimiento).map(corregimiento => {
-      // Find taxpayers in this corregimiento
-      const taxpayersInZone = taxpayers.filter(t => t.corregimiento === corregimiento);
-      const taxpayerIds = new Set(taxpayersInZone.map(t => t.id));
+    if (reportSubFilter === 'ACTIVIDAD') {
+      // Activity reports are better as transaction lists
+      setPreviewType('ARQUEO');
+      setPreviewData({
+        transactions: stats.filteredTransactions,
+        total: stats.filteredTransactions.reduce((acc, t) => acc + t.amount, 0),
+        startDate,
+        endDate,
+        teller: selectedTeller === 'ALL' ? 'TODOS' : selectedTeller,
+        filterLabel: filterActivity === 'ALL' ? 'TODAS LAS ACTIVIDADES' : `IMPUESTO: ${filterActivity}`,
+        customTitle: filterActivity === 'ALL' ? 'Informe de Recaudación por Actividad' : `Informe Detallado: ${filterActivity}`
+      });
+      setShowPreviewModal(true);
+      return;
+    }
 
-      // Calculate Income (from filtered transactions - e.g., today/selected period)
-      // Note: We use 'stats.filteredTransactions' which respects the date filter chosen by user.
+    // Corregimiento / Global Reports use the Statistics view
+    const corregimientosToProcess = reportSubFilter === 'CORREGIMIENTO' && filterCorregimiento !== 'ALL'
+      ? [filterCorregimiento as Corregimiento]
+      : Object.values(Corregimiento);
+
+    const corregimientoStats = corregimientosToProcess.map(corregimiento => {
+      const taxpayersInZone = taxpayers.filter(tp => tp.corregimiento === corregimiento);
+      const taxpayerIds = new Set(taxpayersInZone.map(tp => tp.id));
+
       const income = stats.filteredTransactions
         .filter(t => taxpayerIds.has(t.taxpayerId))
         .reduce((sum, t) => sum + t.amount, 0);
 
-      // Calculate Debt & Delinquents in a single pass for consistency
       const currentMonth = new Date().getMonth() + 1;
       const currentYear = new Date().getFullYear();
 
@@ -167,9 +204,7 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
       let zoneDelinquentsCount = 0;
 
       taxpayersInZone.forEach(t => {
-        let tpDebt = t.balance || 0; // Base historical debt
-
-        // Commercial Debt
+        let tpDebt = t.balance || 0;
         if (t.hasCommercialActivity && (t.status === 'ACTIVO' || t.status === 'MOROSO')) {
           const hasPaid = transactions.some(tx =>
             tx.taxpayerId === t.id &&
@@ -177,12 +212,9 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
             new Date(tx.date).getMonth() + 1 === currentMonth &&
             new Date(tx.date).getFullYear() === currentYear
           );
-          if (!hasPaid) {
-            tpDebt += config.commercialBaseRate;
-          }
+          if (!hasPaid) tpDebt += config.commercialBaseRate;
         }
 
-        // Garbage Debt
         if (t.hasGarbageService && (t.status === 'ACTIVO' || t.status === 'MOROSO')) {
           const hasPaid = transactions.some(tx =>
             tx.taxpayerId === t.id &&
@@ -190,19 +222,11 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
             new Date(tx.date).getMonth() + 1 === currentMonth &&
             new Date(tx.date).getFullYear() === currentYear
           );
-          if (!hasPaid) {
-            tpDebt += config.garbageResidentialRate;
-          }
+          if (!hasPaid) tpDebt += config.garbageResidentialRate;
         }
 
         zoneTotalDebt += tpDebt;
-
-        // Count as delinquent if they have ANY debt calculated OR explicit bad status
-        // Count as delinquent ONLY if they have calculated debt.
-        // This prevents the inconsistency where a taxpayer is marked delinquent but has 0 debt shown.
-        if (tpDebt > 0) {
-          zoneDelinquentsCount++;
-        }
+        if (tpDebt > 0) zoneDelinquentsCount++;
       });
 
       return {
@@ -212,371 +236,607 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
         debt: zoneTotalDebt,
         delinquents: zoneDelinquentsCount
       };
-    }).sort((a, b) => b.income - a.income); // Sort by highest income
+    }).filter(c => c.income > 0 || c.debt > 0 || c.count > 0).sort((a, b) => b.income - a.income);
 
     const totalIncome = corregimientoStats.reduce((sum, c) => sum + c.income, 0);
     const totalDebt = corregimientoStats.reduce((sum, c) => sum + c.debt, 0);
 
-    // 2. Generate PDF
-    const pdf = new jsPDF();
-    const pageWidth = pdf.internal.pageSize.width;
-
-    // Header
-    pdf.setFillColor(44, 62, 80); // Dark Blue Header
-    pdf.rect(0, 0, pageWidth, 40, 'F');
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(22);
-    pdf.text("Informe General de Gestión", pageWidth / 2, 20, { align: 'center' });
-    pdf.setFontSize(12);
-    pdf.text(`Municipio de Changuinola | Periodo: ${startDate} - ${endDate}`, pageWidth / 2, 30, { align: 'center' });
-
-    // Executive Summary Section
-    pdf.setTextColor(44, 62, 80);
-    pdf.setFontSize(16);
-    pdf.text("Resumen Ejecutivo", 14, 55);
-
-    // Summary Cards (drawn as rectangles)
-    const cardY = 60;
-    const cardWidth = 55;
-    const cardHeight = 25;
-
-    // Card 1: Income
-    pdf.setFillColor(236, 253, 245); // Emerald 50
-    pdf.setDrawColor(16, 185, 129); // Emerald 500
-    pdf.rect(14, cardY, cardWidth, cardHeight, 'FD');
-    pdf.setFontSize(10);
-    pdf.setTextColor(16, 185, 129);
-    pdf.text("Ingresos (Periodo)", 19, cardY + 8);
-    pdf.setFontSize(14);
-    pdf.setTextColor(6, 78, 59); // Emerald 900
-    pdf.setFont("helvetica", "bold");
-    pdf.text(`B/. ${totalIncome.toFixed(2)}`, 19, cardY + 18);
-
-    // Card 2: Debt
-    pdf.setFillColor(254, 242, 242); // Red 50
-    pdf.setDrawColor(239, 68, 68); // Red 500
-    pdf.rect(14 + cardWidth + 10, cardY, cardWidth, cardHeight, 'FD');
-    pdf.setFontSize(10);
-    pdf.setTextColor(239, 68, 68);
-    pdf.text("Monto por Cobrar (Global)", 19 + cardWidth + 10, cardY + 8);
-    pdf.setFontSize(14);
-    pdf.setTextColor(127, 29, 29); // Red 900
-    pdf.text(`B/. ${totalDebt.toFixed(2)}`, 19 + cardWidth + 10, cardY + 18);
-
-    // Card 3: Transactions
-    pdf.setFillColor(239, 246, 255); // Blue 50
-    pdf.setDrawColor(59, 130, 246); // Blue 500
-    pdf.rect(14 + (cardWidth + 10) * 2, cardY, cardWidth, cardHeight, 'FD');
-    pdf.setFontSize(10);
-    pdf.setTextColor(59, 130, 246);
-    pdf.text("Transacciones", 19 + (cardWidth + 10) * 2, cardY + 8);
-    pdf.setFontSize(14);
-    pdf.setTextColor(30, 58, 138); // Blue 900
-    pdf.text(`${stats.paidTransactions}`, 19 + (cardWidth + 10) * 2, cardY + 18);
-
-
-    // CHART: Income by Tax Type (Simple Bar Chart representation)
-    let yPos = 100;
-    pdf.setFontSize(14);
-    pdf.setTextColor(44, 62, 80);
-    pdf.text("Distribución de Ingresos por Tipo", 14, yPos);
-    yPos += 10;
-
-    const maxVal = Math.max(...stats.byTypeData.map(d => d.value), 1);
-    const barHeight = 8;
-    stats.byTypeData.forEach((item, index) => {
-      const barWidth = (item.value / maxVal) * 100;
-      pdf.setFontSize(10);
-      pdf.setTextColor(60, 60, 60);
-      pdf.text(item.name, 14, yPos + 6);
-
-      pdf.setFillColor(59, 130, 246);
-      pdf.rect(50, yPos, barWidth, barHeight, 'F');
-
-      pdf.text(`B/. ${item.value.toFixed(2)}`, 55 + barWidth, yPos + 6);
-      yPos += 12;
+    setPreviewType('GENERAL');
+    setPreviewData({
+      corregimientos: corregimientoStats,
+      totalIncome,
+      totalDebt,
+      startDate,
+      endDate,
+      filterLabel: reportSubFilter === 'CORREGIMIENTO' ? (filterCorregimiento === 'ALL' ? 'TODOS LOS CORREGIMIENTOS' : `CORREGIMIENTO: ${filterCorregimiento}`) : 'RESUMEN GLOBAL'
     });
-
-    yPos += 10;
-
-    // SECTION: Details by Corregimiento
-    pdf.setFontSize(14);
-    pdf.setTextColor(44, 62, 80);
-    pdf.text("Análisis por Corregimiento (Ranking)", 14, yPos);
-
-    // AutoTable for Corregimientos
-    autoTable(pdf, {
-      startY: yPos + 5,
-      head: [['Corregimiento', 'Contrib.', 'Ingresos (Periodo)', 'Monto Deuda', '# Morosos']],
-      body: corregimientoStats.map(c => [
-        c.name,
-        c.count,
-        `B/. ${c.income.toFixed(2)}`,
-        `B/. ${c.debt.toFixed(2)}`,
-        c.delinquents
-      ]),
-      theme: 'striped',
-      headStyles: { fillColor: [44, 62, 80] },
-      columnStyles: {
-        2: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129] }, // Income Green
-        3: { halign: 'right', fontStyle: 'bold', textColor: [220, 38, 38] },  // Debt Red
-        4: { halign: 'center', fontStyle: 'bold', textColor: [234, 88, 12] }  // Morosos Orange/Red
-      },
-    });
-
-    // Footer
-    const totalPages = (pdf as any).internal.getNumberOfPages();
-    for (let i = 1; i <= totalPages; i++) {
-      pdf.setPage(i);
-      pdf.setFontSize(8);
-      pdf.setTextColor(150);
-      pdf.text(`Página ${i} de ${totalPages} - Generado el ${new Date().toLocaleString()}`, pageWidth / 2, pdf.internal.pageSize.height - 10, { align: 'center' });
-    }
-
-    pdf.save(`Informe_Gestion_${new Date().toISOString().split('T')[0]}.pdf`);
+    setShowPreviewModal(true);
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10 pb-24 animate-fade-in px-2 relative">
+      {/* Futuristic Background Elements */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none opacity-50">
+        <div className="absolute top-[5%] right-[-5%] w-[45%] h-[45%] rounded-full bg-indigo-100/40 blur-[140px]"></div>
+        <div className="absolute top-[40%] left-[-10%] w-[35%] h-[35%] rounded-full bg-blue-100/30 blur-[120px]"></div>
+        <div className="absolute bottom-[-10%] right-[10%] w-[40%] h-[40%] rounded-full bg-emerald-50/40 blur-[130px]"></div>
+      </div>
+
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800">Reportes Financieros</h2>
-          <p className="text-slate-500">Análisis detallado de recaudación y auditoría.</p>
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
+        <div className="space-y-1">
+          <h2 className="text-4xl font-black tracking-tighter text-slate-900 bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-indigo-700">
+            Reportes Financieros
+          </h2>
+          <p className="text-slate-500 font-medium text-lg">Análisis detallado de recaudación y auditoría</p>
         </div>
-        <div className="flex gap-2">
+        
+        <div className="flex gap-3">
           <button
             onClick={handleGenerateGeneralReport}
-            className="flex items-center gap-2 bg-indigo-700 text-white px-4 py-2 rounded-lg hover:bg-indigo-800 shadow-md transition-all font-bold animate-pulse"
-            title="Incluye análisis por corregimiento y métricas de deuda"
+            className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-[0_15px_30px_-5px_rgba(79,_70,_229,_0.4)] transition-all duration-300 active:scale-95"
+            title="Análisis detallado de recaudación"
           >
-            <FileText size={18} />
+            <FileText size={18} className="group-hover:scale-110 transition-transform" />
             Informe General PDF
           </button>
         </div>
       </div>
 
-      {/* Control Bar for Closing Report */}
-      <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row gap-4 items-end justify-between">
-        <div className="flex flex-col sm:flex-row gap-4 items-end w-full md:w-auto">
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Desde</label>
+      {/* Control Bar - Glass Container */}
+      <div className="bg-white/70 backdrop-blur-xl p-6 rounded-[2.5rem] shadow-[0_8px_40px_rgba(0,0,0,0.04)] border border-white/60">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-end">
+          <div className="space-y-2">
+            <label className="flex items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
+              <Calendar size={12} className="mr-2" /> Fecha Inicial
+            </label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-4 py-3 bg-white/50 border border-slate-200/60 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-slate-700 shadow-inner"
             />
           </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Hasta</label>
+          
+          <div className="space-y-2">
+            <label className="flex items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
+              <Calendar size={12} className="mr-2" /> Fecha Final
+            </label>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-4 py-3 bg-white/50 border border-slate-200/60 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-slate-700 shadow-inner"
             />
           </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cajero</label>
+
+          <div className="space-y-2">
+            <label className="flex items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
+              <UserIcon size={12} className="mr-2" /> Cajero Responsable
+            </label>
             <select
               value={selectedTeller}
               onChange={(e) => setSelectedTeller(e.target.value)}
-              className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 min-w-[200px]"
+              className="w-full px-4 py-3 bg-white/50 border border-slate-200/60 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-slate-700 shadow-inner appearance-none"
             >
-              <option value="ALL">Todos los Cajeros</option>
+              <option value="ALL">TODOS LOS CAJEROS</option>
               {users.filter(u => u.role === 'CAJERO' || u.role === 'ADMIN').map(u => (
                 <option key={u.username} value={u.name}>{u.name}</option>
               ))}
             </select>
           </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={handlePrintClosing}
+              className="flex-1 flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white px-4 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl transition-all active:scale-95"
+            >
+              <Printer size={16} /> Arqueo PDF
+            </button>
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center justify-center bg-white border border-slate-200 text-slate-600 p-3.5 rounded-2xl hover:bg-slate-50 transition-all shadow-sm active:scale-95"
+              title="Exportar CSV"
+            >
+              <Download size={20} />
+            </button>
+          </div>
         </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={handlePrintClosing}
-            className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-900 shadow-sm transition-all font-medium"
-          >
-            <Printer size={18} />
-            Arqueo PDF
-          </button>
-          <button
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 bg-white text-slate-700 border border-slate-300 px-4 py-2 rounded-lg hover:bg-slate-50 shadow-sm transition-all font-medium"
-          >
-            <Download size={18} />
-            CSV
-          </button>
+        {/* Dynamic Filters Section */}
+        <div className="mt-8 pt-8 border-t border-slate-100/60 flex flex-col xl:flex-row items-center justify-between gap-6">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="bg-indigo-50/50 p-1 rounded-2xl flex gap-1 border border-indigo-100/50">
+              {['TODOS', 'CORREGIMIENTO', 'ACTIVIDAD'].map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setReportSubFilter(filter as any)}
+                  className={`px-5 py-2 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all duration-300 ${reportSubFilter === filter
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+                    : 'text-indigo-400 hover:text-indigo-600'
+                    }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+
+            {reportSubFilter === 'CORREGIMIENTO' && (
+              <select
+                value={filterCorregimiento}
+                onChange={(e) => setFilterCorregimiento(e.target.value as any)}
+                className="px-4 py-2 border border-indigo-200 bg-white/50 rounded-xl focus:ring-4 focus:ring-indigo-500/10 font-bold text-xs text-indigo-700 shadow-sm"
+              >
+                <option value="ALL">TODOS LOS CORREGIMIENTOS</option>
+                {Object.values(Corregimiento).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+
+            {reportSubFilter === 'ACTIVIDAD' && (
+              <select
+                value={filterActivity}
+                onChange={(e) => setFilterActivity(e.target.value as any)}
+                className="px-4 py-2 border border-indigo-200 bg-white/50 rounded-xl focus:ring-4 focus:ring-indigo-500/10 font-bold text-xs text-indigo-700 shadow-sm"
+              >
+                <option value="ALL">TODOS LOS IMPUESTOS</option>
+                {Object.values(TaxType).map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            )}
+          </div>
+
+          <div className="flex items-center gap-4 bg-slate-900 text-white px-8 py-3 rounded-2xl shadow-[0_10px_25px_rgba(0,0,0,0.15)] border-b-4 border-indigo-500 group">
+            <div className="text-right">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1 group-hover:text-indigo-300 transition-colors">Total Seleccionado</p>
+              <p className="text-2xl font-black tracking-tighter">B/. {formatCurrency(stats.totalRevenue)}</p>
+            </div>
+            <div className="p-2 bg-white/10 rounded-xl text-indigo-400">
+               <TrendingUp size={24} />
+            </div>
+          </div>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <p className="text-sm font-medium text-slate-500">Ingresos Totales (Filtrado)</p>
-              <h3 className="text-3xl font-bold text-slate-800 mt-1">B/. {stats.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {[
+          { title: 'Ingresos Totales', value: `B/. ${formatCurrency(stats.totalRevenue)}`, icon: TrendingUp, color: 'bg-emerald-500', label: 'Monto Neto' },
+          { title: 'Tickets Pagados', value: stats.paidTransactions, icon: FileText, color: 'bg-indigo-500', label: 'Transacciones' },
+          { title: 'Promedio Cobro', value: `B/. ${formatCurrency(stats.avgTicket)}`, icon: MapIcon, color: 'bg-blue-500', label: 'Por Contribuyente' },
+        ].map((stat, idx) => (
+          <div key={idx} className="group relative bg-white/80 backdrop-blur-md p-8 rounded-3xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-white/40 flex flex-col justify-between hover:-translate-y-1 transition-all duration-300">
+            <div className={`absolute -right-10 -top-10 w-32 h-32 rounded-full opacity-5 blur-3xl ${stat.color}`}></div>
+            <div className="flex justify-between items-start mb-6 relative z-10">
+              <div className={`p-4 rounded-2xl ${stat.color} bg-opacity-10 text-slate-700 border border-white/50 group-hover:scale-110 transition-transform`}>
+                <stat.icon size={28} className={stat.color.replace('bg-', 'text-')} />
+              </div>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">{stat.label}</span>
             </div>
-            <div className="p-3 bg-emerald-100 rounded-lg text-emerald-600">
-              <TrendingUp size={24} />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <p className="text-sm font-medium text-slate-500">Transacciones (Filtrado)</p>
-              <h3 className="text-3xl font-bold text-slate-800 mt-1">{stats.paidTransactions}</h3>
-            </div>
-            <div className="p-3 bg-blue-100 rounded-lg text-blue-600">
-              <FileText size={24} />
+            <div className="relative z-10">
+              <h3 className="text-3xl font-black text-slate-900 tracking-tight mb-1">{stat.value}</h3>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-[0.15em] opacity-70">{stat.title}</p>
             </div>
           </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <p className="text-sm font-medium text-slate-500">Ticket Promedio</p>
-              <h3 className="text-3xl font-bold text-slate-800 mt-1">B/. {stats.avgTicket.toFixed(2)}</h3>
-            </div>
-            <div className="p-3 bg-amber-100 rounded-lg text-amber-600">
-              <Filter size={24} />
-            </div>
-          </div>
-        </div>
+        ))}
       </div>
 
       {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center">
-            <Calendar size={18} className="mr-2 text-slate-400" />
-            Tendencia de Recaudación (Filtrado)
-          </h3>
-          <div className="h-72 w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+        <div className="bg-white/80 backdrop-blur-xl p-10 rounded-[3rem] shadow-[0_8px_40px_rgba(0,0,0,0.03)] border border-white">
+          <div className="flex justify-between items-center mb-10">
+            <div>
+              <h3 className="text-xl font-black text-slate-900 tracking-tight">Tendencia Temporal</h3>
+              <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span> Histórico de Recaudación
+              </p>
+            </div>
+          </div>
+          <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={stats.byDateData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <AreaChart data={stats.byDateData}>
+                <defs>
+                  <linearGradient id="colorReport" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25}/>
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis
                   dataKey="date"
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: '#64748b', fontSize: 12 }}
-                  tickFormatter={(val) => new Date(val).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}
+                  tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+                  tickFormatter={(val) => new Date(val).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                  dy={10}
                 />
                 <YAxis
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: '#64748b', fontSize: 12 }}
-                  tickFormatter={(val) => `B/.${val}`}
+                  tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+                  tickFormatter={(val) => `B/.${val >= 1000 ? (val/1000).toFixed(1) + 'k' : val}`}
                 />
                 <Tooltip
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  formatter={(value: number) => [`B/. ${value.toFixed(2)}`, 'Monto']}
+                  contentStyle={{ 
+                    borderRadius: '24px', 
+                    border: 'none', 
+                    boxShadow: '0 30px 60px -12px rgba(0,0,0,0.25)',
+                    padding: '24px'
+                  }}
+                  formatter={(value: number) => [`B/. ${formatCurrency(value)}`, 'Ingresos']}
+                  labelStyle={{ fontWeight: 'black', color: '#1e293b', marginBottom: '8px' }}
                 />
-                <Line
+                <Area
                   type="monotone"
                   dataKey="amount"
-                  stroke="#3b82f6"
-                  strokeWidth={3}
-                  dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }}
-                  activeDot={{ r: 6 }}
+                  stroke="#6366f1"
+                  strokeWidth={6}
+                  fillOpacity={1}
+                  fill="url(#colorReport)"
+                  animationDuration={2000}
                 />
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center">
-            <PieChartIcon size={18} className="mr-2 text-slate-400" />
-            Distribución por Tipo de Impuesto
-          </h3>
-          <div className="h-72 w-full flex">
-            <ResponsiveContainer width="60%" height="100%">
+        <div className="bg-slate-900 p-10 rounded-[3rem] shadow-2xl border border-slate-800 relative overflow-hidden text-white group">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-[100px] -mr-40 -mt-40 transition-transform group-hover:scale-110"></div>
+          
+          <div className="flex justify-between items-center mb-10 relative z-10">
+            <h3 className="text-xl font-black tracking-tight">Distribución por Tipo</h3>
+            <div className="p-3 bg-white/5 rounded-2xl">
+              <PieChartIcon size={20} className="text-indigo-400" />
+            </div>
+          </div>
+          
+          <div className="h-72 w-full relative z-10">
+            <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={stats.byTypeData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={60}
-                  outerRadius={90}
-                  paddingAngle={5}
+                  innerRadius={75}
+                  outerRadius={100}
+                  paddingAngle={10}
                   dataKey="value"
+                  animationDuration={1500}
                 >
                   {stats.byTypeData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(255,255,255,0.05)" strokeWidth={3} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: number) => `B/. ${value.toFixed(2)}`} />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '20px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', padding: '16px' }}
+                  itemStyle={{ color: '#fff', fontSize: '12px', fontWeight: 'bold' }}
+                />
               </PieChart>
             </ResponsiveContainer>
-            <div className="w-[40%] flex flex-col justify-center space-y-3">
-              {stats.byTypeData.map((entry, index) => (
-                <div key={index} className="flex items-center text-sm">
-                  <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                  <div>
-                    <p className="text-slate-600 font-medium">{entry.name}</p>
-                    <p className="text-slate-900 font-bold">B/. {entry.value.toFixed(2)}</p>
-                  </div>
-                </div>
-              ))}
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+               <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Total</span>
+               <span className="text-3xl font-black">B/.</span>
             </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4 mt-8 relative z-10">
+            {stats.byTypeData.map((item, index) => (
+              <div key={item.name} className="flex justify-between items-center p-3 rounded-2xl bg-white/5 hover:bg-white/10 transition-colors">
+                <div className="flex items-center">
+                  <div className="w-2.5 h-2.5 rounded-full mr-3 shadow-glow" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{item.name}</span>
+                </div>
+                <span className="font-black text-sm">B/. {formatCurrency(item.value)}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Detailed Transaction Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 border-b border-slate-200">
-          <h3 className="text-lg font-bold text-slate-800">Detalle de Transacciones (Filtrado)</h3>
+      {/* Transaction List */}
+      <div className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] shadow-[0_8px_40px_rgba(0,0,0,0.04)] border border-white overflow-hidden">
+        <div className="p-10 border-b border-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h3 className="text-xl font-black text-slate-900 tracking-tight">Registro Maestro de Ingresos</h3>
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">Detalle cronológico de auditoría</p>
+          </div>
+          <div className="flex items-center gap-3">
+             <div className="px-5 py-2 bg-indigo-50 text-indigo-700 rounded-full font-black text-[10px] uppercase tracking-widest border border-indigo-100">
+               {stats.filteredTransactions.length} Resultados
+             </div>
+          </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+          <table className="w-full text-left border-separate border-spacing-0">
+            <thead className="bg-slate-50/50 text-[10px] uppercase font-black tracking-[0.2em] text-slate-400">
               <tr>
-                <th className="px-6 py-3 font-semibold">ID Transacción</th>
-                <th className="px-6 py-3 font-semibold">Fecha</th>
-                <th className="px-6 py-3 font-semibold">Tipo</th>
-                <th className="px-6 py-3 font-semibold">Descripción</th>
-                <th className="px-6 py-3 font-semibold">Cajero</th>
-                <th className="px-6 py-3 font-semibold text-right">Monto</th>
+                <th className="px-10 py-6 border-b border-slate-100">Transacción</th>
+                <th className="px-10 py-6 border-b border-slate-100">Contribuyente / Concepto</th>
+                <th className="px-10 py-6 border-b border-slate-100">Referencia / Tipo</th>
+                <th className="px-10 py-6 border-b border-slate-100 text-right">Monto Neto</th>
+                <th className="px-10 py-6 border-b border-slate-100 text-center">Estatus Operativo</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
+            <tbody className="text-sm">
               {stats.filteredTransactions.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 font-mono text-slate-600">{t.id}</td>
-                  <td className="px-6 py-4 text-slate-800">
-                    <div className="font-medium">{t.date}</div>
-                    <div className="text-xs text-slate-400">{t.time}</div>
+                <tr key={t.id} className="group hover:bg-slate-50/80 transition-all duration-300">
+                  <td className="px-10 py-8 border-b border-slate-50">
+                    <div className="flex flex-col">
+                       <span className="font-mono text-[10px] font-black text-slate-400 mb-1 tracking-tighter">#{t.id.slice(-10).toUpperCase()}</span>
+                       <span className="font-bold text-slate-500 flex items-center gap-2">
+                         <Clock size={12} /> {t.time}
+                       </span>
+                    </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="inline-block px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs font-bold">
-                      {t.taxType}
+                  <td className="px-10 py-8 border-b border-slate-50">
+                    <div className="flex flex-col">
+                      <span className="font-black text-slate-900 text-base mb-1 tracking-tight">
+                        {taxpayers.find(tp => tp.id === t.taxpayerId)?.name || 'Contribuyente Gral.'}
+                      </span>
+                      <span className="text-xs font-medium text-slate-500 italic opacity-80">{t.description}</span>
+                      {t.metadata?.isConsolidated && t.metadata?.originalItems && (
+                        <div className="mt-2 space-y-1.5 border-l-2 border-indigo-200/50 pl-3 py-1 bg-indigo-50/30 rounded-r-xl">
+                          {t.metadata.originalItems.map((item: any, idx: number) => (
+                            <div key={idx} className="flex justify-between items-center text-[9px] font-bold text-slate-500 tracking-tight">
+                              <span className="uppercase opacity-70">{item.label}</span>
+                              <span className="text-indigo-600">B/. {formatCurrency(item.amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-10 py-8 border-b border-slate-50">
+                    <div className="flex flex-col">
+                      <span className={`text-[10px] font-black uppercase tracking-widest mb-2 px-3 py-1 rounded-lg w-fit ${
+                        t.taxType === TaxType.COMERCIO ? 'bg-blue-50 text-blue-600 border border-blue-100' :
+                        t.taxType === TaxType.VEHICULO ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                        'bg-slate-100 text-slate-600 border border-slate-200'
+                      }`}>
+                        {t.taxType}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Calendar size={12} /> {t.date}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-10 py-8 border-b border-slate-50 text-right">
+                    <div className="flex flex-col items-end">
+                      <span className="text-xl font-black text-slate-900 tracking-tighter mb-1">B/. {formatCurrency(t.amount)}</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Neto Pagado</span>
+                    </div>
+                  </td>
+                  <td className="px-10 py-8 border-b border-slate-50 text-center">
+                    <span className={`inline-flex items-center px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm border ${
+                      t.status === 'PAGADO' 
+                        ? 'bg-emerald-500 text-white border-emerald-400' 
+                        : t.status === 'ANULADO'
+                          ? 'bg-rose-500 text-white border-rose-400'
+                          : 'bg-amber-400 text-slate-900 border-amber-300'
+                    }`}>
+                      {t.status}
                     </span>
-                  </td>
-                  <td className="px-6 py-4 text-slate-600 max-w-xs truncate" title={t.description}>
-                    {t.description}
-                  </td>
-                  <td className="px-6 py-4 text-slate-600">{t.tellerName}</td>
-                  <td className="px-6 py-4 text-right font-bold text-slate-800">
-                    B/. {t.amount.toFixed(2)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
           {stats.filteredTransactions.length === 0 && (
-            <div className="p-8 text-center text-slate-400">
-              No hay transacciones que coincidan con los filtros.
+            <div className="py-32 flex flex-col items-center justify-center text-slate-300">
+               <FileText size={64} className="mb-4 opacity-20" />
+               <p className="font-black text-xs uppercase tracking-[0.3em] opacity-40">Sin registros encontrados</p>
             </div>
           )}
         </div>
       </div>
+
+      {/* Report Preview Modal */}
+      {showPreviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-xl" onClick={() => setShowPreviewModal(false)}></div>
+          <div className="relative bg-white w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-[3rem] shadow-2xl flex flex-col animate-modal-in border border-white/20">
+            <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-lg">
+                  <FileText size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Vista Previa del Documento</h3>
+                  <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Generación de Reporte Institucional</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowPreviewModal(false)}
+                className="p-3 bg-white border border-slate-200 text-slate-400 hover:text-rose-500 hover:border-rose-100 rounded-2xl transition-all shadow-sm"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-10 bg-slate-100/50">
+              <div id="report-preview-content" className="bg-white p-12 shadow-2xl mx-auto w-[215.9mm] min-h-[279.4mm] relative">
+                {/* PDF Header */}
+                <div className="flex justify-between items-start border-b-2 border-slate-900 pb-8 mb-8">
+                  <div className="w-1/3 text-left">
+                    <p className="font-bold text-xs">REPÚBLICA DE PANAMÁ</p>
+                    <p className="font-bold text-xs">PROVINCIA DE BOCAS DEL TORO</p>
+                    <p className="font-black text-sm text-indigo-700">TESORERÍA MUNICIPAL DE ALMIRANTE</p>
+                  </div>
+                  <div className="w-1/3 flex justify-center">
+                    <img src="/sigma-logo-final.png" alt="Logo" className="h-28 object-contain" />
+                  </div>
+                  <div className="w-1/3 text-right">
+                    <p className="font-bold text-xs">FECHA: {new Date().toLocaleDateString()}</p>
+                    <p className="font-bold text-xs uppercase">CAJERO: {selectedTeller === 'ALL' ? 'SISTEMA CENTRAL' : selectedTeller}</p>
+                    <p className="font-black text-sm text-indigo-700">ESTADO: FINALIZADO</p>
+                  </div>
+                </div>
+
+                <div className="text-center mb-10">
+                   <h1 className="text-2xl font-black tracking-tight text-slate-900">
+                     {previewType === 'ARQUEO' ? (previewData?.customTitle || 'INFORME DE ARQUEO DE CAJA') : 'INFORME GENERAL DE RECAUDACIÓN'}
+                   </h1>
+                   <div className="inline-flex items-center px-4 py-1.5 bg-indigo-50 rounded-full text-indigo-700 text-[10px] font-black uppercase tracking-widest mt-3 border border-indigo-100">
+                     Período: {previewData?.startDate} al {previewData?.endDate}
+                   </div>
+                   {previewData?.filterLabel && (
+                     <div className="block mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                       Filtro: {previewData.filterLabel}
+                     </div>
+                   )}
+                </div>
+
+                {previewType === 'ARQUEO' ? (
+                  <table className="w-full text-xs mb-8 border-collapse">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-black uppercase tracking-widest">
+                        <th className="p-3 text-left border border-slate-900">Ref.</th>
+                        <th className="p-3 text-left border border-slate-900">Contribuyente</th>
+                        <th className="p-3 text-left border border-slate-900">Tipo</th>
+                        <th className="p-3 text-left border border-slate-900">Pago</th>
+                        <th className="p-3 text-right border border-slate-900">Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody className="font-medium">
+                      {previewData.transactions.map((t: any) => (
+                        <tr key={t.id} className="border-b border-slate-200">
+                          <td className="p-3 border border-slate-200 font-mono text-[9px]">#{t.id.slice(-8).toUpperCase()}</td>
+                          <td className="p-3 border border-slate-200">
+                            <p className="font-bold">{taxpayers.find(tp => tp.id === t.taxpayerId)?.name || 'C. Gral.'}</p>
+                            {t.metadata?.isConsolidated && t.metadata?.originalItems && (
+                              <div className="mt-1 border-t border-slate-100 pt-1">
+                                {t.metadata.originalItems.map((item: any, idx: number) => (
+                                  <div key={idx} className="flex justify-between text-[8px] text-slate-500 leading-tight">
+                                    <span className="uppercase">{item.label}</span>
+                                    <span className="font-bold">B/. {formatCurrency(item.amount)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 border border-slate-200 text-[9px] uppercase">{t.taxType}</td>
+                          <td className="p-3 border border-slate-200 text-center font-bold text-[9px] uppercase">{t.paymentMethod || 'Efectivo'}</td>
+                          <td className="p-3 border border-slate-200 text-right font-black">B/. {formatCurrency(t.amount)}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-indigo-50 font-black">
+                        <td colSpan={4} className="p-4 text-right border border-indigo-100 uppercase tracking-widest">Total Recaudado</td>
+                        <td className="p-4 text-right border border-indigo-100 text-lg">B/. {formatCurrency(previewData.total)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="w-full text-xs mb-8 border-collapse">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-black uppercase tracking-widest">
+                        <th className="p-3 text-left border border-slate-900">Corregimiento / Área</th>
+                        <th className="p-3 text-center border border-slate-900">Contribuyentes</th>
+                        <th className="p-3 text-right border border-slate-900">Recaudado</th>
+                        <th className="p-3 text-right border border-slate-900">Deuda Pendiente</th>
+                      </tr>
+                    </thead>
+                    <tbody className="font-medium">
+                      {previewData.corregimientos.map((c: any) => (
+                        <tr key={c.name} className="border-b border-slate-200">
+                          <td className="p-3 border border-slate-200 font-bold uppercase">{c.name}</td>
+                          <td className="p-3 border border-slate-200 text-center">{c.count}</td>
+                          <td className="p-3 border border-slate-200 text-right font-black">B/. {formatCurrency(c.income)}</td>
+                          <td className="p-3 border border-slate-200 text-right text-rose-600">B/. {formatCurrency(c.debt)}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-indigo-50 font-black">
+                        <td colSpan={2} className="p-4 text-right border border-indigo-100 uppercase tracking-widest">Balance Consolidado</td>
+                        <td className="p-4 text-right border border-indigo-100 text-base">B/. {formatCurrency(previewData.totalIncome)}</td>
+                        <td className="p-4 text-right border border-indigo-100 text-base text-rose-700">B/. {formatCurrency(previewData.totalDebt)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                )}
+
+                <div className="mt-20 flex justify-around">
+                  <div className="w-64 text-center">
+                    <div className="border-t-2 border-slate-900 pt-3">
+                      <p className="font-black text-xs uppercase">{selectedTeller === 'ALL' ? 'SISTEMA CENTRAL' : selectedTeller}</p>
+                      <p className="text-[10px] font-bold text-slate-500">FIRMA DEL RESPONSABLE</p>
+                    </div>
+                  </div>
+                  <div className="w-64 text-center">
+                    <div className="border-t-2 border-slate-900 pt-3">
+                      <p className="font-black text-xs uppercase">CONTROL INTERNO</p>
+                      <p className="text-[10px] font-bold text-slate-500">FISCALIZACIÓN / AUDITORÍA</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-8 border-t border-slate-100 bg-white flex flex-col sm:flex-row gap-4">
+              <button 
+                onClick={async () => {
+                  const element = document.getElementById('report-preview-content');
+                  if (!element) return;
+                  setIsGenerating(true);
+                  try {
+                    const canvas = await html2canvas(element, { scale: 3, useCORS: true, backgroundColor: '#ffffff' });
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const pdf = new jsPDF('p', 'mm', 'letter');
+                    const imgProps = pdf.getImageProperties(dataUrl);
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+                    pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                    pdf.save(`reporte_sigma_${new Date().getTime()}.pdf`);
+                  } finally {
+                    setIsGenerating(false);
+                  }
+                }}
+                disabled={isGenerating}
+                className="flex-1 flex items-center justify-center gap-3 bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-50"
+              >
+                <Download size={18} /> <span>{isGenerating ? 'PROCESANDO...' : 'DESCARGAR PDF'}</span>
+              </button>
+              <button 
+                onClick={async () => {
+                  const element = document.getElementById('report-preview-content');
+                  if (!element) return;
+                  setIsGenerating(true);
+                  try {
+                    const canvas = await html2canvas(element, { scale: 3, useCORS: true, backgroundColor: '#ffffff' });
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const printWindow = window.open('', '_blank');
+                    if (printWindow) {
+                      printWindow.document.write(`
+                        <html>
+                          <head>
+                            <title>Reporte SIGMA</title>
+                            <style>
+                              @page { size: letter portrait; margin: 0; }
+                              body { margin: 0; display: flex; justify-content: center; }
+                              img { width: 215.9mm; height: auto; }
+                            </style>
+                          </head>
+                          <body onload="setTimeout(() => { window.print(); window.close(); }, 500)">
+                            <img src="${dataUrl}" />
+                          </body>
+                        </html>
+                      `);
+                      printWindow.document.close();
+                    }
+                  } finally {
+                    setIsGenerating(false);
+                  }
+                }}
+                className="flex-1 flex items-center justify-center gap-3 bg-slate-900 hover:bg-black text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95"
+              >
+                <Printer size={18} /> <span>IMPRIMIR</span>
+              </button>
+              <button 
+                onClick={() => setShowPreviewModal(false)} 
+                className="flex-1 flex items-center justify-center gap-3 bg-slate-100 hover:bg-slate-200 text-slate-500 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95"
+              >
+                <X size={18} /> <span>CERRAR</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
