@@ -30,9 +30,10 @@ interface TaxpayersProps {
   onDelete: (id: string) => void;
   userRole: UserRole;
   onCreateRequest: (req: AdminRequest) => void;
+  onRefresh?: () => void;
 }
 
-export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, onAdd, onUpdate, onDelete, userRole, onCreateRequest }) => {
+export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, onAdd, onUpdate, onDelete, userRole, onCreateRequest, onRefresh }) => {
   const [showModal, setShowModal] = useState(false);
   const [viewTaxpayer, setViewTaxpayer] = useState<Taxpayer | null>(null);
   const [historyTaxpayer, setHistoryTaxpayer] = useState<Taxpayer | null>(null);
@@ -98,12 +99,6 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
     }
   };
 
-  // Temporary state for adding a vehicle inside the modal
-  const [tempVehicle, setTempVehicle] = useState<Partial<VehicleInfo>>({
-    plate: '', brand: '', model: '', year: '', color: '', motorSerial: '', chassisSerial: '', hasTransferDocuments: false
-  });
-  const [showVehicleForm, setShowVehicleForm] = useState(false);
-
   // Load Taxpayer into Form for Editing
   const handleEditInit = (tp: Taxpayer) => {
     setNewTp(tp);
@@ -114,9 +109,40 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
     window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll to form
   };
 
-  // Recalculate balance when magnitude or selected codes change
+  // Helper to calculate months of arrears based on start date
+  const calculateMonthsArrears = (startDateStr?: string) => {
+    if (!startDateStr) return 1; // Default to 1 month
+    const start = new Date(startDateStr);
+    if (isNaN(start.getTime())) return 1;
+    const now = new Date();
+    
+    const yearsDiff = now.getFullYear() - start.getFullYear();
+    const monthsDiff = now.getMonth() - start.getMonth();
+    
+    let totalMonths = yearsDiff * 12 + monthsDiff;
+    totalMonths += 1; // Inclusive counting (e.g. same month = 1)
+    return Math.max(1, totalMonths);
+  };
+
+  // Auto-generate taxpayer number for new records
   React.useEffect(() => {
-    let total = 0;
+    if (!isEditing && taxpayers.length > 0 && !newTp.taxpayerNumber) {
+      const maNumbers = taxpayers
+        .map(t => t.taxpayerNumber)
+        .filter(n => n?.startsWith('2026-MA-'))
+        .map(n => parseInt(n!.replace('2026-MA-', '')))
+        .filter(n => !isNaN(n));
+      
+      const maxNumber = maNumbers.length > 0 ? Math.max(...maNumbers) : 0;
+      const nextNumber = `2026-MA-${(maxNumber + 1).toString().padStart(2, '0')}`;
+      
+      setNewTp(prev => ({ ...prev, taxpayerNumber: nextNumber }));
+    }
+  }, [taxpayers, isEditing, newTp.taxpayerNumber]);
+
+  // Recalculate balance when magnitude, selected codes, or dates change
+  React.useEffect(() => {
+    let totalMonthly = 0;
     const newSelectedRates = { ...(newTp.selectedRates || {}) };
     let changed = false;
 
@@ -132,30 +158,35 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
             changed = true;
           }
           if (typeof newSelectedRates[code] === 'number') {
-            total += newSelectedRates[code];
+            totalMonthly += newSelectedRates[code];
           }
         } else if (typeof magnitudeRates === 'number') {
           if (newSelectedRates[code] !== magnitudeRates) {
             newSelectedRates[code] = magnitudeRates;
             changed = true;
           }
-          total += magnitudeRates;
+          totalMonthly += magnitudeRates;
         }
       }
     });
 
-    // Add manual adjustments
-    total += (newTp.rotuloAmount || 0);
-    total += (newTp.garbageAmount || 0);
+    // Add manual adjustments (monthly)
+    totalMonthly += (newTp.rotuloAmount || 0);
+    totalMonthly += (newTp.garbageAmount || 0);
 
-    if (changed || total !== newTp.balance) {
+    // Calculate arrears
+    const referenceDate = isEditing ? (newTp.paymentStartDate || newTp.businessStartDate) : newTp.businessStartDate;
+    const arrearsMonths = calculateMonthsArrears(referenceDate);
+    const totalDebt = totalMonthly * arrearsMonths;
+
+    if (changed || totalDebt !== newTp.balance) {
       setNewTp(prev => ({
         ...prev,
         selectedRates: newSelectedRates,
-        balance: total
+        balance: totalDebt
       }));
     }
-  }, [newTp.magnitude, newTp.selectedTaxCodes, newTp.rotuloAmount, newTp.garbageAmount]);
+  }, [newTp.magnitude, newTp.selectedTaxCodes, newTp.rotuloAmount, newTp.garbageAmount, newTp.businessStartDate, newTp.paymentStartDate, isEditing]);
 
   const handleCancelEdit = () => {
     setNewTp(initialFormState);
@@ -232,26 +263,13 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
       };
 
       if (isEditing && editingId) {
-        if (!editReason || editReason.trim().length < 5) {
-          alert('Por favor, ingrese un motivo válido para la edición (mínimo 5 caracteres).');
-          setIsUploading(false);
-          return;
-        }
-
-        const request: AdminRequest = {
-          id: `REQ-${Date.now()}`,
-          type: 'UPDATE_TAXPAYER',
-          status: 'PENDING',
-          requesterName: 'Cajero/Usuario',
-          taxpayerName: taxpayerData.name || 'Desconocido',
-          description: editReason,
-          taxpayerId: editingId,
-          payload: taxpayerData as Taxpayer,
-          createdAt: new Date().toISOString()
-        };
-
-        await onCreateRequest(request);
-        alert('Solicitud de edición enviada al Administrador.');
+        // Direct update - bypass request during update phase
+        await onUpdate({
+          ...taxpayerData,
+          id: editingId
+        } as Taxpayer);
+        
+        alert('Cambios guardados automáticamente.');
         handleCancelEdit();
         setFiles({});
         setEditReason('');
@@ -327,7 +345,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
 
   // Search Effect
   React.useEffect(() => {
-    if (searchTerm.length > 2 || selectedActivity !== 'ALL') {
+    if ((searchTerm.length > 2 || selectedActivity !== 'ALL') && !isEditing && !viewTaxpayer && !historyTaxpayer) {
       setIsSearching(true);
       const results = taxpayers.filter(t => {
         const matchesTerm = searchTerm.length <= 2 || 
@@ -358,38 +376,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
     }
   }, [searchTerm, taxpayers, selectedActivity]);
 
-  const handleAddVehicle = () => {
-    if (!tempVehicle.plate || !tempVehicle.brand) {
-      alert("Placa y Marca son obligatorios");
-      return;
-    }
-    const vehicle: VehicleInfo = {
-      plate: tempVehicle.plate!,
-      brand: tempVehicle.brand!,
-      model: tempVehicle.model || '',
-      year: tempVehicle.year || '',
-      color: tempVehicle.color || '',
-      motorSerial: tempVehicle.motorSerial || '',
-      chassisSerial: tempVehicle.chassisSerial || '',
-      hasTransferDocuments: tempVehicle.hasTransferDocuments || false
-    };
 
-    setNewTp({
-      ...newTp,
-      vehicles: [...(newTp.vehicles || []), vehicle]
-    });
-
-    // Reset vehicle form
-    setTempVehicle({ plate: '', brand: '', model: '', year: '', color: '', motorSerial: '', chassisSerial: '', hasTransferDocuments: false });
-    setShowVehicleForm(false);
-  };
-
-  const removeVehicle = (plate: string) => {
-    setNewTp({
-      ...newTp,
-      vehicles: newTp.vehicles?.filter(v => v.plate !== plate)
-    });
-  };
 
 
 
@@ -595,23 +582,84 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
 
                  <div className="md:col-span-2 bg-slate-900 rounded-[2.5rem] p-10 text-white relative overflow-hidden shadow-2xl">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-[80px] -mr-32 -mt-32"></div>
-                    <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-8 border-b border-white/5 pb-4">Servicios & Activos Vinculados</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                       <div className={`p-6 rounded-2xl border ${viewTaxpayer.hasCommercialActivity ? 'bg-white/5 border-indigo-500/30' : 'bg-white/5 border-transparent opacity-30'}`}>
-                          <Store className="text-indigo-400 mb-4" size={28} />
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Actividad Comercial</p>
-                          <p className="font-bold text-sm truncate">{viewTaxpayer.commercialName || 'Inactivo'}</p>
-                       </div>
-                       <div className={`p-6 rounded-2xl border ${viewTaxpayer.hasGarbageService ? 'bg-white/5 border-emerald-500/30' : 'bg-white/5 border-transparent opacity-30'}`}>
-                          <Trash2 className="text-emerald-400 mb-4" size={28} />
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Recolección Basura</p>
-                          <p className="font-bold text-sm">{viewTaxpayer.hasGarbageService ? 'Vigente' : 'Inactivo'}</p>
-                       </div>
-                       <div className="p-6 rounded-2xl bg-white/5 border border-blue-500/30">
-                          <Car className="text-blue-400 mb-4" size={28} />
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Vehículos</p>
-                          <p className="font-bold text-sm">{viewTaxpayer.vehicles?.length || 0} Registrados</p>
-                       </div>
+                    <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-8 border-b border-white/5 pb-4 flex justify-between items-center">
+                      <span>Servicios & Activos Vinculados</span>
+                      <span className="text-white bg-indigo-500/20 px-3 py-1 rounded-full border border-indigo-500/30">
+                        Total Mensual: B/. {formatCurrency(
+                          ((viewTaxpayer.selectedTaxCodes || []).reduce((acc, code) => {
+                            const struct = (taxStructure as any[]).find(s => s.code === code);
+                            if (!struct) return acc;
+                            const rate = viewTaxpayer.selectedRates?.[code];
+                            if (typeof rate === 'number') return acc + rate;
+                            const magnitudeRates = viewTaxpayer.magnitude === 'GRANDE' ? struct.rates.GRANDE : viewTaxpayer.magnitude === 'MEDIANO' ? struct.rates.MEDIANO : struct.rates.PEQUENO;
+                            return acc + (typeof magnitudeRates === 'number' ? magnitudeRates : (magnitudeRates[0] || 0));
+                          }, 0)) + (viewTaxpayer.rotuloAmount || 0) + (viewTaxpayer.garbageAmount || 0)
+                        )}
+                      </span>
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                       {(viewTaxpayer.selectedTaxCodes || []).map(code => {
+                         const struct = (taxStructure as any[]).find(s => s.code === code);
+                         const rate = viewTaxpayer.selectedRates?.[code];
+                         let finalRate = rate;
+                         if (typeof finalRate !== 'number' && struct) {
+                            const magnitudeRates = viewTaxpayer.magnitude === 'GRANDE' ? struct.rates.GRANDE : viewTaxpayer.magnitude === 'MEDIANO' ? struct.rates.MEDIANO : struct.rates.PEQUENO;
+                            finalRate = typeof magnitudeRates === 'number' ? magnitudeRates : magnitudeRates[0];
+                         }
+                         return (
+                           <div key={code} className="p-6 rounded-2xl bg-white/5 border border-indigo-500/30 relative overflow-hidden group hover:bg-white/10 transition-all">
+                             <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                               <Store size={48} />
+                             </div>
+                             <div className="flex justify-between items-start mb-4 relative z-10">
+                               <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300 bg-indigo-500/20 px-2 py-1 rounded">{code}</p>
+                             </div>
+                             <p className="font-bold text-sm leading-snug text-slate-200 mb-4 relative z-10">{struct?.name || 'Actividad Comercial'}</p>
+                             <div className="flex justify-between items-center relative z-10 border-t border-white/10 pt-3">
+                               <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Costo Mensual</span>
+                               <span className="text-base font-black text-indigo-400">B/. {formatCurrency(finalRate || 0)}</span>
+                             </div>
+                           </div>
+                         );
+                       })}
+                       
+                       {(viewTaxpayer.rotuloAmount || 0) > 0 && (
+                         <div className="p-6 rounded-2xl bg-white/5 border border-red-500/30 relative overflow-hidden group hover:bg-white/10 transition-all">
+                           <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                             <ImageIcon size={48} />
+                           </div>
+                           <div className="flex justify-between items-start mb-4 relative z-10">
+                             <p className="text-[10px] font-black uppercase tracking-widest text-red-300 bg-red-500/20 px-2 py-1 rounded">RÓTULO</p>
+                           </div>
+                           <p className="font-bold text-sm leading-snug text-slate-200 mb-4 relative z-10">Impuesto de Letreros y Rótulos</p>
+                           <div className="flex justify-between items-center relative z-10 border-t border-white/10 pt-3">
+                             <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Costo Mensual</span>
+                             <span className="text-base font-black text-red-400">B/. {formatCurrency(viewTaxpayer.rotuloAmount!)}</span>
+                           </div>
+                         </div>
+                       )}
+
+                       {(viewTaxpayer.garbageAmount || 0) > 0 && (
+                         <div className="p-6 rounded-2xl bg-white/5 border border-emerald-500/30 relative overflow-hidden group hover:bg-white/10 transition-all">
+                           <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                             <Trash2 size={48} />
+                           </div>
+                           <div className="flex justify-between items-start mb-4 relative z-10">
+                             <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/20 px-2 py-1 rounded">ASEO</p>
+                           </div>
+                           <p className="font-bold text-sm leading-snug text-slate-200 mb-4 relative z-10">Servicio de Recolección de Basura</p>
+                           <div className="flex justify-between items-center relative z-10 border-t border-white/10 pt-3">
+                             <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Costo Mensual</span>
+                             <span className="text-base font-black text-emerald-400">B/. {formatCurrency(viewTaxpayer.garbageAmount!)}</span>
+                           </div>
+                         </div>
+                       )}
+
+                       {!(viewTaxpayer.selectedTaxCodes?.length) && !(viewTaxpayer.rotuloAmount) && !(viewTaxpayer.garbageAmount) && (
+                         <div className="col-span-full p-8 text-center border border-dashed border-white/20 rounded-2xl bg-white/5">
+                           <p className="text-sm font-bold text-slate-400">No hay actividades ni servicios asignados a este contribuyente.</p>
+                         </div>
+                       )}
                     </div>
                  </div>
 
@@ -656,17 +704,56 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                </div>
             </div>
 
-            <div className="p-8 bg-white border-t border-slate-100 flex justify-between items-center">
-              <button
-                onClick={() => setShowDebtBreakdown(!showDebtBreakdown)}
-                className="flex items-center gap-2 px-6 py-4 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-black text-xs uppercase tracking-widest rounded-2xl transition-all"
-              >
-                <Calculator size={18} />
-                {showDebtBreakdown ? 'Ocultar Deuda' : 'Desglose de Deuda'}
-              </button>
+            <div className="p-8 bg-white border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+                <button
+                  onClick={() => setShowDebtBreakdown(!showDebtBreakdown)}
+                  className="flex items-center gap-2 px-6 py-4 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-black text-xs uppercase tracking-widest rounded-2xl transition-all shrink-0"
+                >
+                  <Calculator size={18} />
+                  {showDebtBreakdown ? 'Ocultar Deuda' : 'Desglose de Deuda'}
+                </button>
+                <div className="h-10 w-px bg-slate-200 hidden md:block"></div>
+                <button
+                  onClick={async () => {
+                    const confirm = window.confirm("¿Estás seguro de que deseas eliminar este contribuyente?");
+                    if (confirm) {
+                       await onDelete(viewTaxpayer.id!);
+                       setViewTaxpayer(null);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-6 py-4 bg-red-50 text-red-700 hover:bg-red-100 font-black text-xs uppercase tracking-widest rounded-2xl transition-all shrink-0"
+                >
+                  <Trash2 size={18} />
+                  Eliminar
+                </button>
+                <button
+                  onClick={async () => {
+                    const updated = { ...viewTaxpayer, status: 'ACTIVO' as any };
+                    await onUpdate(updated);
+                    setViewTaxpayer(updated);
+                  }}
+                  className={`flex items-center gap-2 px-6 py-4 font-black text-xs uppercase tracking-widest rounded-2xl transition-all shrink-0 ${viewTaxpayer.status === 'ACTIVO' ? 'bg-emerald-500 text-white shadow-lg' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                >
+                  <CheckCircle size={18} />
+                  Activo
+                </button>
+                <button
+                  onClick={async () => {
+                    const updated = { ...viewTaxpayer, status: 'SUSPENDIDO' as any };
+                    await onUpdate(updated);
+                    setViewTaxpayer(updated);
+                  }}
+                  className={`flex items-center gap-2 px-6 py-4 font-black text-xs uppercase tracking-widest rounded-2xl transition-all shrink-0 ${viewTaxpayer.status === 'SUSPENDIDO' ? 'bg-amber-500 text-white shadow-lg' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+                >
+                  <Ban size={18} />
+                  Suspendido
+                </button>
+              </div>
+
               <button
                 onClick={() => setViewTaxpayer(null)}
-                className="px-10 py-4 bg-slate-900 hover:bg-black text-white font-black text-xs uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl active:scale-95"
+                className="px-10 py-4 bg-slate-900 hover:bg-black text-white font-black text-xs uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl active:scale-95 shrink-0"
               >
                 Cerrar Ficha
               </button>
@@ -1070,8 +1157,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
         {/* Search Results Overlay */}
         {isSearching && (
           <>
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100]" onClick={() => setIsSearching(false)}></div>
-            <div className="fixed top-24 left-1/2 -translate-x-1/2 w-full max-w-4xl bg-white rounded-[2.5rem] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.5)] border border-white/20 overflow-hidden animate-in fade-in zoom-in-95 duration-300 z-[110] ring-1 ring-black/5">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[70]" onClick={() => setIsSearching(false)}></div>
+            <div className="fixed top-24 left-1/2 -translate-x-1/2 w-full max-w-4xl bg-white rounded-[2.5rem] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.5)] border border-white/20 overflow-hidden animate-in fade-in zoom-in-95 duration-300 z-[80] ring-1 ring-black/5">
               <div className="bg-slate-900 px-10 py-8 flex items-center justify-between relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>
                 <div className="relative z-10 flex items-center gap-6">
@@ -1138,6 +1225,12 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                                   </span>
                                 </div>
                               )}
+                              <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                tp.status === 'ACTIVO' ? 'bg-emerald-100 text-emerald-800' : 
+                                tp.status === 'SUSPENDIDO' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-800'
+                              }`}>
+                                {tp.status}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1185,7 +1278,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                     </p>
                     <div className="flex flex-col gap-3 mt-8">
                       <button 
-                        onClick={() => window.location.reload()}
+                        onClick={() => onRefresh ? onRefresh() : window.location.reload()}
                         className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 transition-all active:scale-95"
                       >
                         Sincronizar Base de Datos
@@ -1237,7 +1330,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
             </div>
             <h2 className="text-3xl font-bold text-white mb-2">{isEditing ? 'Editar Contribuyente' : 'Ficha de Contribuyente'}</h2>
             <p className="text-slate-400 text-lg">
-              {isEditing ? 'Modifique los datos y solicite aprobación.' : 'Ingrese los datos para registrar un nuevo contribuyente.'}
+              {isEditing ? 'Modifique los datos necesarios. Los cambios se guardarán al finalizar.' : 'Ingrese los datos para registrar un nuevo contribuyente.'}
             </p>
             {isEditing && newTp.taxpayerNumber && (
               <div className="mt-4 inline-flex items-center bg-white/10 backdrop-blur-md border border-white/20 rounded-lg px-4 py-2">
@@ -1337,6 +1430,20 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                   <input type="email" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base"
                     value={newTp.email} onChange={e => setNewTp({ ...newTp, email: e.target.value })} />
                 </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Fecha Inicio de Negocio (Aviso de Operaciones)</label>
+                  <input type="date" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base bg-white"
+                    value={newTp.businessStartDate || ''} onChange={e => setNewTp({ ...newTp, businessStartDate: e.target.value })} />
+                  <p className="text-xs text-slate-500 mt-1">Determina automáticamente los meses de atraso.</p>
+                </div>
+                {isEditing && (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Migración: Iniciar cobro desde</label>
+                    <input type="date" className="w-full border border-amber-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-amber-100 focus:border-amber-500 transition-all text-black text-base bg-amber-50"
+                      value={newTp.paymentStartDate || ''} onChange={e => setNewTp({ ...newTp, paymentStartDate: e.target.value })} />
+                    <p className="text-xs text-amber-600 mt-1">Si se establece, se usará esta fecha para calcular la deuda.</p>
+                  </div>
+                )}
                 </div>
               </div>
 
@@ -1549,127 +1656,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                   </div>
                 </div>
 
-                {/* Construction & Garbage Toggles (Compact) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 flex items-center justify-between">
-                    <label className="flex items-center cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500"
-                        checked={newTp.hasConstruction}
-                        onChange={(e) => setNewTp({ ...newTp, hasConstruction: e.target.checked })}
-                      />
-                      <span className="ml-3 font-bold text-amber-900">Permisos Construcción</span>
-                    </label>
-                    <Hammer className="text-amber-400 w-5 h-5" />
-                  </div>
-                  <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-center justify-between">
-                    <label className="flex items-center cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
-                        checked={newTp.hasGarbageService}
-                        onChange={(e) => setNewTp({ ...newTp, hasGarbageService: e.target.checked })}
-                      />
-                      <span className="ml-3 font-bold text-emerald-900">Recolección Basura</span>
-                    </label>
-                    <Trash2 className="text-emerald-400 w-5 h-5" />
-                  </div>
-                </div>
 
-                {/* Vehicles Section (Same as before but integrated) */}
-                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 relative">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-blue-200/50 rounded-lg text-blue-600">
-                        <Car size={24} />
-                      </div>
-                      <div>
-                        <h5 className="font-bold text-blue-900 text-lg">Parque Vehicular</h5>
-                        <p className="text-blue-700/60 text-sm">Gestionar vehículos y traspasos</p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowVehicleForm(!showVehicleForm)}
-                      className="mt-3 sm:mt-0 px-4 py-2 bg-white text-blue-600 border border-blue-200 rounded-lg font-bold shadow-sm hover:shadow-md transition-all active:scale-95 flex items-center"
-                    >
-                      {showVehicleForm ? <X size={18} className="mr-2" /> : <Plus size={18} className="mr-2" />}
-                      {showVehicleForm ? 'Cancelar' : 'Agregar Vehículo'}
-                    </button>
-                  </div>
-
-                  {/* List of added vehicles */}
-                  {newTp.vehicles && newTp.vehicles.length > 0 ? (
-                    <div className="space-y-3 mb-6">
-                      {newTp.vehicles.map((v, idx) => (
-                        <div key={idx} className="bg-white p-4 rounded-xl border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
-                          <div className="flex justify-between items-start">
-                            <div className="flex items-center gap-4">
-                              <div className="h-10 w-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-500">
-                                <Car size={20} />
-                              </div>
-                              <div>
-                                <h6 className="font-bold text-slate-800 text-lg">{v.brand} {v.model}</h6>
-                                <p className="text-slate-500 text-sm">Año: {v.year} • Color: {v.color}</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="block font-mono font-bold bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm mb-1">{v.plate}</span>
-                            </div>
-                          </div>
-                          <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
-                            <div className="flex gap-2">
-                              <span className="text-xs text-slate-400 bg-slate-50 px-2 py-1 rounded">VIN: {v.chassisSerial}</span>
-                            </div>
-                            <button type="button" onClick={() => removeVehicle(v.plate)} className="text-red-500 hover:text-red-700 flex items-center text-sm font-bold bg-red-50 hover:bg-red-100 px-3 py-1 rounded-lg transition-colors">
-                              <Trash2 size={16} className="mr-2" /> Eliminar
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    !showVehicleForm && (
-                      <div className="text-center py-8 border-2 border-dashed border-blue-200 rounded-xl bg-blue-50/50 text-blue-400 mb-4">
-                        <Car size={32} className="mx-auto mb-2 opacity-50" />
-                        <p>No hay vehículos registrados.</p>
-                      </div>
-                    )
-                  )}
-
-                  {/* Add Vehicle Sub-Form */}
-                  {showVehicleForm && (
-                    <div className="bg-white p-6 rounded-xl border-2 border-blue-400 shadow-xl animate-fade-in relative z-10">
-                      <h5 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100">Nuevo Vehículo</h5>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                        <input type="text" placeholder="Placa (Req)" className="p-3 border rounded-lg text-black bg-slate-50 focus:bg-white transition-colors" value={tempVehicle.plate} onChange={e => setTempVehicle({ ...tempVehicle, plate: e.target.value.toUpperCase() })} />
-                        <input type="text" placeholder="Marca (Req)" className="p-3 border rounded-lg text-black bg-slate-50 focus:bg-white transition-colors" value={tempVehicle.brand} onChange={e => setTempVehicle({ ...tempVehicle, brand: e.target.value })} />
-                        <input type="text" placeholder="Modelo" className="p-3 border rounded-lg text-black bg-slate-50 focus:bg-white transition-colors" value={tempVehicle.model} onChange={e => setTempVehicle({ ...tempVehicle, model: e.target.value })} />
-                        <input type="text" placeholder="Año" className="p-3 border rounded-lg text-black bg-slate-50 focus:bg-white transition-colors" value={tempVehicle.year} onChange={e => setTempVehicle({ ...tempVehicle, year: e.target.value })} />
-                        <input type="text" placeholder="Color" className="p-3 border rounded-lg text-black bg-slate-50 focus:bg-white transition-colors" value={tempVehicle.color} onChange={e => setTempVehicle({ ...tempVehicle, color: e.target.value })} />
-                        <input type="text" placeholder="Serial Motor" className="p-3 border rounded-lg text-black bg-slate-50 focus:bg-white transition-colors" value={tempVehicle.motorSerial} onChange={e => setTempVehicle({ ...tempVehicle, motorSerial: e.target.value })} />
-                        <input type="text" placeholder="Serial Chasis/VIN" className="p-3 border rounded-lg text-black bg-slate-50 focus:bg-white transition-colors md:col-span-2" value={tempVehicle.chassisSerial} onChange={e => setTempVehicle({ ...tempVehicle, chassisSerial: e.target.value })} />
-                      </div>
-
-                      <label className="flex items-center cursor-pointer mb-6 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                        <input
-                          type="checkbox"
-                          className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                          checked={tempVehicle.hasTransferDocuments}
-                          onChange={(e) => setTempVehicle({ ...tempVehicle, hasTransferDocuments: e.target.checked })}
-                        />
-                        <span className="ml-3 text-slate-700 font-medium">Documentación de Propiedad / Traspaso en Regla</span>
-                      </label>
-
-                      <div className="flex justify-end gap-3 mt-4">
-                        <button type="button" onClick={() => setShowVehicleForm(false)} className="px-4 py-2 text-slate-500 font-bold">Cancelar</button>
-                        <button type="button" onClick={handleAddVehicle} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-md transform active:scale-95 transition-all">Agregar Vehículo</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
 
@@ -1768,24 +1755,6 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
               </div>
             </div>
             
-            {/* SECTION 5: EDIT REASON (Only in Edit Mode) */}
-            {isEditing && (
-              <div className="bg-amber-50 p-6 rounded-2xl border border-amber-200 mt-6 animate-fade-in">
-                <h4 className="text-lg font-bold text-amber-800 mb-4 flex items-center">
-                  <ShieldAlert size={20} className="mr-2" /> Justificación de la Edición
-                </h4>
-                <p className="text-sm text-amber-700 mb-3 font-medium">
-                  Este cambio requiere aprobación del administrador. Explique el motivo de la modificación:
-                </p>
-                        <textarea
-                  required
-                  className="w-full border-2 border-amber-200 rounded-xl p-4 focus:ring-4 focus:ring-amber-100 focus:border-amber-500 transition-all text-black text-base min-h-[100px]"
-                  placeholder="Ej: Se corrige el nombre según cédula física adjunta..."
-                  value={editReason}
-                  onChange={e => setEditReason(e.target.value)}
-                />
-              </div>
-            )}
 
             <div className="flex justify-end pt-6 border-t border-slate-100">
               {isEditing && (
@@ -1812,8 +1781,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                   </>
                 ) : (
                   <>
-                    {isEditing ? <Shield className="mr-2" size={20} /> : <CheckSquare className="mr-2" size={20} />}
-                    {isEditing ? 'Solicitar Aprobación' : 'Registrar Contribuyente'}
+                    {isEditing ? <CheckCircle className="mr-2" size={20} /> : <CheckSquare className="mr-2" size={20} />}
+                    {isEditing ? 'Guardar Cambios' : 'Registrar Contribuyente'}
                   </>
                 )}
               </button>

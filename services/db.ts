@@ -1,6 +1,8 @@
 
 import { supabase } from './supabaseClient';
 import { Taxpayer, Transaction, User, TaxConfig, TaxpayerType, TaxpayerStatus, CommercialCategory, PaymentMethod, UserRole, TaxType, VehicleInfo, AgendaItem, Corregimiento, AdminRequest, ChatMessage } from '../types';
+import { localStore } from './localStore';
+import { syncService } from './syncService';
 
 // --- DATA MAPPING HELPERS (Snake_case DB <-> CamelCase App) ---
 
@@ -28,7 +30,9 @@ export const mapTaxpayerFromDB = (data: any): Taxpayer => ({
     magnitude: data.magnitude,
     selectedTaxCodes: data.selected_tax_codes || [],
     rotuloAmount: Number(data.rotulo_amount) || 0,
-    garbageAmount: Number(data.garbage_amount) || 0
+    garbageAmount: Number(data.garbage_amount) || 0,
+    businessStartDate: data.documents?.businessStartDate,
+    paymentStartDate: data.documents?.paymentStartDate
 });
 
 const mapTaxpayerToDB = (data: Taxpayer) => ({
@@ -49,7 +53,11 @@ const mapTaxpayerToDB = (data: Taxpayer) => ({
     balance: data.balance || 0,
     has_construction: data.hasConstruction,
     has_garbage_service: data.hasGarbageService,
-    documents: data.documents || {},
+    documents: {
+      ...(data.documents || {}),
+      ...(data.businessStartDate ? { businessStartDate: data.businessStartDate } : {}),
+      ...(data.paymentStartDate ? { paymentStartDate: data.paymentStartDate } : {})
+    },
     magnitude: data.magnitude,
     selected_tax_codes: data.selectedTaxCodes || [],
     rotulo_amount: data.rotuloAmount || 0,
@@ -156,10 +164,8 @@ const mapAdminRequestToDB = (data: AdminRequest) => ({
     // created_at is default now()
 });
 
-// --- API FUNCTIONS ---
-
-export const db = {
-    // TAXPAYERS
+// --- RAW DB ACCESS (For Sync Service Only) ---
+export const remoteDb = {
     getTaxpayers: async (): Promise<Taxpayer[]> => {
         let allData: any[] = [];
         let from = 0;
@@ -194,35 +200,22 @@ export const db = {
 
     createTaxpayer: async (taxpayer: Taxpayer) => {
         const dbData = mapTaxpayerToDB(taxpayer);
-        
-        // Si el ID no es un UUID válido (ej: es un ID temporal de modo offline), 
-        // lo eliminamos para que Postgres genere uno real.
         const isUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
-        
         if (!dbData.id || !isUUID(dbData.id)) {
             delete (dbData as any).id;
         }
 
         const { data, error } = await supabase.from('taxpayers').insert(dbData).select().single();
-        if (error) {
-            console.error("Error creating taxpayer:", error);
-            throw error;
-        }
+        if (error) throw error;
         return mapTaxpayerFromDB(data);
     },
 
     updateTaxpayer: async (taxpayer: Taxpayer) => {
         const dbData = mapTaxpayerToDB(taxpayer);
-        // Remove ID from the update payload to prevent PK update errors
         const idToUpdate = dbData.id;
         delete (dbData as any).id;
-
         const { data, error } = await supabase.from('taxpayers').update(dbData).eq('id', idToUpdate).select().single();
-
-        if (error) {
-            console.error("Error updating taxpayer in DB:", error);
-            throw error;
-        }
+        if (error) throw error;
         return mapTaxpayerFromDB(data);
     },
 
@@ -231,39 +224,6 @@ export const db = {
         if (error) throw error;
     },
 
-    getNextTaxpayerNumber: async (): Promise<string> => {
-        const { data, error } = await supabase
-            .from('taxpayers')
-            .select('taxpayer_number')
-            .like('taxpayer_number', '2026-%');
-        
-        if (error) return '2026-1';
-        
-        const numbers = data
-            .map(d => parseInt(d.taxpayer_number.split('-')[1]))
-            .filter(n => !isNaN(n));
-        
-        const max = numbers.length > 0 ? Math.max(...numbers) : 0;
-        return `2026-${max + 1}`;
-    },
-
-    // STORAGE
-    uploadTaxpayerDocument: async (file: File, path: string) => {
-        const { data, error } = await supabase.storage
-            .from('taxpayer-documents')
-            .upload(path, file, { upsert: true });
-
-        if (error) throw error;
-
-        // Get Public URL
-        const { data: publicData } = supabase.storage
-            .from('taxpayer-documents')
-            .getPublicUrl(path);
-
-        return publicData.publicUrl;
-    },
-
-    // TRANSACTIONS
     getTransactions: async (): Promise<Transaction[]> => {
         const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
         if (error) throw error;
@@ -272,32 +232,74 @@ export const db = {
 
     createTransaction: async (tx: Transaction) => {
         const dbData = mapTransactionToDB(tx);
-        // Do NOT remove ID. The column is likely TEXT and requires the client-generated ID.
-        console.log("Saving Transaction:", dbData);
         const { data, error } = await supabase.from('transactions').insert(dbData).select().single();
-        if (error) {
-            console.error("Supabase Create Transaction Error:", error);
-            throw error;
-        }
+        if (error) throw error;
         return mapTransactionFromDB(data);
     },
 
     updateTransaction: async (tx: Transaction) => {
         const dbData = mapTransactionToDB(tx);
-        const { data, error } = await supabase
-            .from('transactions')
-            .update(dbData)
-            .eq('id', tx.id)
-            .select()
-            .single();
-        if (error) {
-            console.error("Supabase Update Transaction Error:", error);
-            throw error;
-        }
+        const { data, error } = await supabase.from('transactions').update(dbData).eq('id', tx.id).select().single();
+        if (error) throw error;
         return mapTransactionFromDB(data);
     },
 
-    // USERS (Admin/Teller)
+    getAgenda: async (): Promise<AgendaItem[]> => {
+        const { data, error } = await supabase.from('agenda_items').select('*').order('start_date', { ascending: true });
+        if (error) return [];
+        return data.map(mapAgendaItemFromDB);
+    },
+
+    createAgendaItem: async (item: AgendaItem) => {
+        const dbData = mapAgendaItemToDB(item);
+        delete (dbData as any).id;
+        const { data, error } = await supabase.from('agenda_items').insert(dbData).select().single();
+        if (error) throw error;
+        return mapAgendaItemFromDB(data);
+    },
+
+    updateAgendaItem: async (item: AgendaItem) => {
+        const dbData = mapAgendaItemToDB(item);
+        const { data, error } = await supabase.from('agenda_items').update(dbData).eq('id', item.id).select().single();
+        if (error) throw error;
+        return mapAgendaItemFromDB(data);
+    },
+
+    getAdminRequests: async (): Promise<AdminRequest[]> => {
+        const { data, error } = await supabase.from('admin_requests').select('*').order('created_at', { ascending: false });
+        if (error) return [];
+        return data.map(mapAdminRequestFromDB);
+    },
+
+    createAdminRequest: async (req: AdminRequest) => {
+        const dbData = mapAdminRequestToDB(req);
+        const isUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+        if (!dbData.id || !isUUID(dbData.id)) {
+            delete (dbData as any).id;
+        }
+        const { data, error } = await supabase.from('admin_requests').insert(dbData).select().single();
+        if (error) throw error;
+        return mapAdminRequestFromDB(data);
+    },
+
+    updateAdminRequest: async (req: AdminRequest) => {
+        const dbData = mapAdminRequestToDB(req);
+        const { data, error } = await supabase.from('admin_requests').update(dbData).eq('id', req.id).select().single();
+        if (error) throw error;
+        return mapAdminRequestFromDB(data);
+    },
+
+    getConfig: async () => {
+        const { data, error } = await supabase.from('system_config').select('config').limit(1).single();
+        if (error) return null;
+        return data.config as TaxConfig;
+    },
+
+    updateConfig: async (config: TaxConfig) => {
+        const { error } = await supabase.from('system_config').upsert({ id: 1, config });
+        if (error) throw error;
+    },
+
     getAppUsers: async (): Promise<User[]> => {
         const { data, error } = await supabase.from('app_users').select('*');
         if (error) throw error;
@@ -314,99 +316,200 @@ export const db = {
         const { data, error } = await supabase.from('app_users').update(user).eq('username', user.username).select().single();
         if (error) throw error;
         return data as User;
+    }
+};
+
+// --- OFFLINE-FIRST DB LAYER ---
+export const db = {
+    // TAXPAYERS
+    getTaxpayers: async (): Promise<Taxpayer[]> => {
+        const local = await localStore.loadData();
+        return local.taxpayers || [];
     },
 
-    // CONFIG
-    getConfig: async (): Promise<TaxConfig | null> => {
-        const { data, error } = await supabase.from('system_config').select('config').limit(1).single();
-        if (error) return null; // Might be empty initially
-        return data.config as TaxConfig;
+    createTaxpayer: async (taxpayer: Taxpayer) => {
+        const local = await localStore.loadData();
+        const newTp = { ...taxpayer, id: taxpayer.id || crypto.randomUUID() };
+        local.taxpayers.push(newTp);
+        await localStore.saveData(local);
+        
+        await syncService.addAction('CREATE_TAXPAYER', newTp);
+        return newTp;
     },
 
-    updateConfig: async (config: TaxConfig) => {
-        // Upsert based on ID 1
-        const { data, error } = await supabase.from('system_config').upsert({ id: 1, config }).select().single();
-        if (error) throw error;
-        return data.config;
+    updateTaxpayer: async (taxpayer: Taxpayer) => {
+        const local = await localStore.loadData();
+        const index = local.taxpayers.findIndex(t => t.id === taxpayer.id);
+        if (index !== -1) {
+            local.taxpayers[index] = taxpayer;
+            await localStore.saveData(local);
+        }
+        await syncService.addAction('UPDATE_TAXPAYER', taxpayer);
+        return taxpayer;
     },
 
+    deleteTaxpayer: async (id: string) => {
+        const local = await localStore.loadData();
+        local.taxpayers = local.taxpayers.filter(t => t.id !== id);
+        await localStore.saveData(local);
+        await syncService.addAction('DELETE_TAXPAYER', id);
+    },
+
+    getNextTaxpayerNumber: async (): Promise<string> => {
+        const local = await localStore.loadData();
+        const numbers = (local.taxpayers || [])
+            .map(d => {
+                const parts = (d.taxpayerNumber || '').split('-');
+                return parts.length > 1 ? parseInt(parts[1]) : 0;
+            })
+            .filter(n => !isNaN(n));
+        
+        const max = numbers.length > 0 ? Math.max(...numbers) : 0;
+        return `2026-${max + 1}`;
+    },
+
+    // TRANSACTIONS
+    getTransactions: async (): Promise<Transaction[]> => {
+        const local = await localStore.loadData();
+        return local.transactions || [];
+    },
+
+    createTransaction: async (tx: Transaction) => {
+        const local = await localStore.loadData();
+        const newTx = { ...tx, id: tx.id || crypto.randomUUID() };
+        local.transactions.unshift(newTx);
+        await localStore.saveData(local);
+        await syncService.addAction('CREATE_TRANSACTION', newTx);
+        return newTx;
+    },
+
+    updateTransaction: async (tx: Transaction) => {
+        const local = await localStore.loadData();
+        const index = local.transactions.findIndex(t => t.id === tx.id);
+        if (index !== -1) {
+            local.transactions[index] = tx;
+            await localStore.saveData(local);
+        }
+        await syncService.addAction('UPDATE_TRANSACTION', tx);
+        return tx;
+    },
 
     // AGENDA
     getAgenda: async (): Promise<AgendaItem[]> => {
-        const { data, error } = await supabase.from('agenda_items').select('*').order('start_date', { ascending: true }).order('start_time', { ascending: true });
-        if (error) {
-            console.error("Error fetching agenda:", error);
-            return []; // Fail gracefully
-        }
-        return data.map(mapAgendaItemFromDB);
+        const local = await localStore.loadData();
+        return local.agenda || [];
     },
 
     createAgendaItem: async (item: AgendaItem) => {
-        const dbData = mapAgendaItemToDB(item);
-        delete (dbData as any).id; // Let DB generate ID
-        const { data, error } = await supabase.from('agenda_items').insert(dbData).select().single();
-        if (error) throw error;
-        return mapAgendaItemFromDB(data);
+        const local = await localStore.loadData();
+        const newItem = { ...item, id: item.id || crypto.randomUUID() };
+        local.agenda.push(newItem);
+        await localStore.saveData(local);
+        await syncService.addAction('CREATE_AGENDA', newItem);
+        return newItem;
     },
 
     updateAgendaItem: async (item: AgendaItem) => {
-        const dbData = mapAgendaItemToDB(item);
-        const { data, error } = await supabase.from('agenda_items').update(dbData).eq('id', item.id).select().single();
-        if (error) throw error;
-        return mapAgendaItemFromDB(data);
+        const local = await localStore.loadData();
+        const index = local.agenda.findIndex(a => a.id === item.id);
+        if (index !== -1) {
+            local.agenda[index] = item;
+            await localStore.saveData(local);
+        }
+        await syncService.addAction('UPDATE_AGENDA', item);
+        return item;
     },
 
     // ADMIN REQUESTS
     getAdminRequests: async (): Promise<AdminRequest[]> => {
-        const { data, error } = await supabase.from('admin_requests').select('*').order('created_at', { ascending: false });
-        if (error) return [];
-        return data.map(mapAdminRequestFromDB);
+        const local = await localStore.loadData();
+        return local.adminRequests || [];
     },
 
     createAdminRequest: async (req: AdminRequest) => {
-        const dbData = mapAdminRequestToDB(req);
-        
-        // Ensure ID is a valid UUID or let the DB generate it
-        const isUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
-        if (!dbData.id || !isUUID(dbData.id)) {
-            delete (dbData as any).id;
-        }
-
-        const { data, error } = await supabase.from('admin_requests').insert(dbData).select().single();
-        if (error) {
-            console.error("Supabase Create AdminRequest Error:", error);
-            throw error;
-        }
-        return mapAdminRequestFromDB(data);
+        const local = await localStore.loadData();
+        const newReq = { ...req, id: req.id || crypto.randomUUID() };
+        local.adminRequests.unshift(newReq);
+        await localStore.saveData(local);
+        await syncService.addAction('CREATE_ADMIN_REQUEST', newReq);
+        return newReq;
     },
 
     updateAdminRequest: async (req: AdminRequest) => {
-        const dbData = mapAdminRequestToDB(req);
-        const { data, error } = await supabase.from('admin_requests').update(dbData).eq('id', req.id).select().single();
-        if (error) throw error;
-        return mapAdminRequestFromDB(data);
+        const local = await localStore.loadData();
+        const index = local.adminRequests.findIndex(r => r.id === req.id);
+        if (index !== -1) {
+            local.adminRequests[index] = req;
+            await localStore.saveData(local);
+        }
+        await syncService.addAction('UPDATE_ADMIN_REQUEST', req);
+        return req;
     },
 
-    // CUSTOM QUERY: Get Reports for Mayor (Today, Week, Month counts)
-    getReportStats: async () => {
-        // This would ideally be a severeal queries or a function.
-        // For now, we fetch transactions and calculate client side or use count
-        // Optimally:
-        const now = new Date();
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    // CONFIG
+    getConfig: async (): Promise<TaxConfig | null> => {
+        const local = await localStore.loadData();
+        return local.config;
+    },
 
-        // Let's just return raw transaction data for the dashboard to filter for now
-        // to simplify the backend requirements (as we are mocking slightly)
+    updateConfig: async (config: TaxConfig) => {
+        const local = await localStore.loadData();
+        local.config = config;
+        await localStore.saveData(local);
+        // Special case for config: usually we want to push immediately or let sync handle it
+        await remoteDb.updateConfig(config);
+    },
+
+    // --- OTHER METHODS STAY SAME (Remote Only) ---
+    uploadTaxpayerDocument: async (file: File, path: string) => {
+        // Documents require internet to upload to storage
+        const { data, error } = await supabase.storage.from('taxpayer-documents').upload(path, file, { upsert: true });
+        if (error) throw error;
+        return supabase.storage.from('taxpayer-documents').getPublicUrl(path).data.publicUrl;
+    },
+
+    getAppUsers: async (): Promise<User[]> => {
+        const local = await localStore.loadData();
+        return local.users || [];
+    },
+
+    createAppUser: async (user: User) => {
+        const local = await localStore.loadData();
+        local.users.push(user);
+        await localStore.saveData(local);
+        
+        // Push to server if possible
+        try {
+            await remoteDb.createAppUser(user);
+        } catch (e) {
+            console.warn("Could not sync new user to server, will retry later.");
+        }
+        return user;
+    },
+
+    updateAppUser: async (user: User) => {
+        const local = await localStore.loadData();
+        const index = local.users.findIndex(u => u.username === user.username);
+        if (index !== -1) {
+            local.users[index] = user;
+            await localStore.saveData(local);
+        }
+        
+        try {
+            await remoteDb.updateAppUser(user);
+        } catch (e) {
+            console.warn("Could not sync user update to server.");
+        }
+        return user;
+    },
+
+    getReportStats: async () => {
         return db.getTransactions();
     },
 
-    // --- CHAT SYSTEM ---
     getMessages: async (): Promise<ChatMessage[]> => {
         const { data, error } = await supabase.from('chat_messages').select('*').order('created_at', { ascending: true }).limit(100);
-        if (error) {
-            console.error("Error fetching messages:", error);
-            return [];
-        }
+        if (error) return [];
         return data as ChatMessage[];
     },
 
@@ -417,80 +520,24 @@ export const db = {
     },
 
     markMessagesAsRead: async (currentUserKv: string, senderKv: string | null) => {
-        // Mark messages SENT BY senderKv TO currentUserKv as read.
-        // If senderKv is null (General), we skip DB update for now or implement logic if table supports it.
-        // Currently 'chat_messages' has 'is_read'. This works fine for 1-on-1.
         if (senderKv) {
-            const { error } = await supabase.from('chat_messages')
-                .update({ is_read: true })
-                .eq('recipient_username', currentUserKv)
-                .eq('sender_username', senderKv)
-                .eq('is_read', false);
-
-            if (error) console.error("Error marking as read:", error);
+            await supabase.from('chat_messages').update({ is_read: true }).eq('recipient_username', currentUserKv).eq('sender_username', senderKv).eq('is_read', false);
         }
     },
 
     markGeneralChatRead: async (username: string) => {
-        const now = new Date().toISOString();
-        const { error } = await supabase.from('app_users')
-            .update({ last_read_general_chat: now })
-            .eq('username', username);
-
-        if (error) console.error("Error marking general chat read:", error);
+        await supabase.from('app_users').update({ last_read_general_chat: new Date().toISOString() }).eq('username', username);
     },
 
-    // REALTIME SUBSCRIPTION
-    subscribeToChanges: (
-        onTaxpayerChange: (payload: any) => void,
-        onTransactionChange: (payload: any) => void,
-        onAgendaChange?: (payload: any) => void,
-        onAdminRequestChange?: (payload: any) => void,
-        onChatChange?: (payload: any) => void
-    ) => {
-        const taxpayersSubscription = supabase
-            .channel('public:taxpayers')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'taxpayers' }, (payload) => {
-                onTaxpayerChange(payload);
-            })
-            .subscribe();
-
-        const transactionsSubscription = supabase
-            .channel('public:transactions')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, (payload) => {
-                onTransactionChange(payload);
-            })
-            .subscribe();
-
+    subscribeToChanges: (onTaxpayerChange: any, onTransactionChange: any, onAgendaChange?: any, onAdminRequestChange?: any, onChatChange?: any) => {
+        const taxpayersSubscription = supabase.channel('public:taxpayers').on('postgres_changes', { event: '*', schema: 'public', table: 'taxpayers' }, onTaxpayerChange).subscribe();
+        const transactionsSubscription = supabase.channel('public:transactions').on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, onTransactionChange).subscribe();
         let agendaSubscription: any = null;
-        if (onAgendaChange) {
-            agendaSubscription = supabase
-                .channel('public:agenda_items')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'agenda_items' }, (payload) => {
-                    onAgendaChange(payload);
-                })
-                .subscribe();
-        }
-
+        if (onAgendaChange) agendaSubscription = supabase.channel('public:agenda_items').on('postgres_changes', { event: '*', schema: 'public', table: 'agenda_items' }, onAgendaChange).subscribe();
         let adminReqSubscription: any = null;
-        if (onAdminRequestChange) {
-            adminReqSubscription = supabase
-                .channel('public:admin_requests')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_requests' }, (payload) => {
-                    onAdminRequestChange(payload);
-                })
-                .subscribe();
-        }
-
+        if (onAdminRequestChange) adminReqSubscription = supabase.channel('public:admin_requests').on('postgres_changes', { event: '*', schema: 'public', table: 'admin_requests' }, onAdminRequestChange).subscribe();
         let chatSubscription: any = null;
-        if (onChatChange) {
-            chatSubscription = supabase
-                .channel('public:chat_messages')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, (payload) => {
-                    onChatChange(payload);
-                })
-                .subscribe();
-        }
+        if (onChatChange) chatSubscription = supabase.channel('public:chat_messages').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, onChatChange).subscribe();
 
         return () => {
             supabase.removeChannel(taxpayersSubscription);

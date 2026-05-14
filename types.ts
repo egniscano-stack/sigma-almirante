@@ -99,6 +99,10 @@ export interface Taxpayer {
   selectedRates?: Record<string, number>; // Maps tax code to specific selected rate
   rotuloAmount?: number;
   garbageAmount?: number;
+  
+  // Migration & Start Dates
+  businessStartDate?: string; // Fecha de inicio de operaciones
+  paymentStartDate?: string; // Fecha desde donde inician los pagos en el sistema
 }
 
 export interface Transaction {
