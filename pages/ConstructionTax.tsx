@@ -339,7 +339,7 @@ export const ConstructionTax: React.FC<ConstructionTaxProps> = ({ currentUserNam
 
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest">Monto del Impuesto (B/.)</label>
-                            <input type="number" step="0.01" value={formData.amount > 0 ? formData.amount : ''} onChange={e => setField('amount', Number(e.target.value))} className={`${inputCls('amount')} text-2xl font-black text-amber-600`} placeholder="0.00" />
+                            <input type="number" inputMode="decimal" step="0.01" value={formData.amount > 0 ? formData.amount : ''} onChange={e => setField('amount', Number(e.target.value))} className={`${inputCls('amount')} text-2xl font-black text-amber-600`} placeholder="0.00" />
                             {errors.amount && <p className="text-red-500 text-[10px] mt-1 font-bold">{errors.amount}</p>}
                         </div>
 

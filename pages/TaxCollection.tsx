@@ -1432,11 +1432,11 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">Monto Total de la Deuda</label>
                     <input
-                      type="number"
+                      type="number" inputMode="decimal"
                       className="w-full border rounded p-2"
                       placeholder="0.00"
-                      value={newRequestAmount}
-                      onChange={(e) => setNewRequestAmount(parseFloat(e.target.value))}
+                      value={newRequestAmount === 0 ? '' : newRequestAmount}
+                      onChange={(e) => setNewRequestAmount(parseFloat(e.target.value) || 0)}
                     />
                   </div>
                 )}

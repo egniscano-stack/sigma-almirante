@@ -13,7 +13,7 @@ import { InvoiceScanner } from './pages/InvoiceScanner';
 import { Settings } from './pages/Settings';
 import { Reports } from './pages/Reports';
 import { ConstructionTax } from './pages/ConstructionTax';
-import { INITIAL_CONFIG } from './services/mockData';
+import { INITIAL_CONFIG, MOCK_TAXPAYERS, MOCK_TRANSACTIONS } from './services/mockData';
 import { TaxpayerPortal } from './pages/TaxpayerPortal';
 import { Landing } from './pages/Landing';
 import { AlcaldeDashboard } from './pages/AlcaldeDashboard';
@@ -21,6 +21,8 @@ import { SecretariaDashboard } from './pages/SecretariaDashboard';
 import { TaxConfig, Taxpayer, Transaction, User, MunicipalityInfo, TaxpayerType, CommercialCategory, TaxpayerStatus, AdminRequest, RequestStatus } from './types';
 import { Menu, ArrowLeft, Wifi, WifiOff, RefreshCw, Bell, AlertCircle, CheckCircle, XCircle, LogOut, Download, Archive, Edit, X, Shield, Clock, Trash2 } from 'lucide-react';
 import { db, mapTaxpayerFromDB, mapTransactionFromDB } from './services/db';
+import taxStructure from './data/taxStructure.json';
+import { supabase } from './services/supabaseClient';
 import {
   createSession,
   destroySession,
@@ -279,10 +281,14 @@ function App() {
           await saveBackup('users', finalUsers);
         }
         
-        if (taxpayersData.length > 0) {
-          setTaxpayers(taxpayersData);
-          await saveBackup('taxpayers', taxpayersData);
-        }
+        // Clean up any "dirty" cached data with RESET or TEMP prefixes
+        const cleanTaxpayers = (taxpayersData || []).filter(tp => 
+          !tp.taxpayerNumber?.includes('RESET-') && 
+          !tp.taxpayerNumber?.includes('TEMP-')
+        );
+        
+        setTaxpayers(cleanTaxpayers);
+        await saveBackup('taxpayers', cleanTaxpayers);
         
         if (transactionsData.length > 0) {
           setTransactions(transactionsData);
@@ -996,6 +1002,48 @@ function App() {
     }
   };
 
+  const handleHardReset = async () => {
+    if (!window.confirm("🚨 ATENCIÓN: Esta acción eliminará permanentEMENTE todos los datos locales (caché, backups) y del servidor para iniciar desde cero con datos reales. ¿Está absolutamente seguro?")) return;
+    
+    setIsLoading(true);
+    try {
+      // 1. Clear Supabase
+      const { error: txErr } = await supabase.from('transactions').delete().neq('id', '0');
+      const { error: tpErr } = await supabase.from('taxpayers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      const { error: reqErr } = await supabase.from('admin_requests').delete().neq('id', '0');
+      const { error: agErr } = await supabase.from('agenda_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+      if (txErr || tpErr || reqErr || agErr) {
+        console.error("Supabase clear error:", { txErr, tpErr, reqErr, agErr });
+      }
+
+      // 2. Clear LocalStorage
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sigma_') || key.startsWith('capacitor_'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+
+      // 3. Reset state
+      setTaxpayers([]);
+      setTransactions([]);
+      setAdminRequests([]);
+      setPendingSyncTaxpayers([]);
+      setPendingSyncTransactions([]);
+      
+      alert("Reinicio Maestro completado exitosamente. La aplicación se reiniciará ahora.");
+      window.location.href = window.location.origin + window.location.pathname;
+    } catch (error) {
+      console.error("Critical error during hard reset:", error);
+      alert("Error crítico durante el reinicio.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
@@ -1019,6 +1067,7 @@ function App() {
             onDelete={handleDeleteTaxpayer}
             userRole={user?.role || 'CAJERO'}
             onCreateRequest={handleCreateRequest}
+            onRefresh={() => fetchData(true)}
           />
         );
       case 'caja':
@@ -1194,6 +1243,7 @@ function App() {
             taxpayers={taxpayers}
             transactions={transactions}
             onUpdateTaxpayer={handleUpdateTaxpayer}
+            onHardReset={handleHardReset}
           />
         ) : null;
       default:
@@ -1735,7 +1785,19 @@ const AdminRequestModal = ({ requests, updateRequests, onClose, allTransactions,
                       <li><span className="font-semibold">Dirección:</span> {req.payload.address}</li>
                       <li><span className="font-semibold">Teléfono:</span> {req.payload.phone}</li>
                       {req.payload.corregimiento && <li><span className="font-semibold">Corregimiento:</span> {req.payload.corregimiento}</li>}
-                      {req.payload.balance !== undefined && <li><span className="font-semibold">Balance:</span> {req.payload.balance}</li>}
+                      {req.payload.balance !== undefined && <li><span className="font-semibold">Balance Inicial:</span> B/. {req.payload.balance.toFixed(2)}</li>}
+                      {req.payload.magnitude && <li><span className="font-semibold text-indigo-600">Magnitud:</span> {req.payload.magnitude}</li>}
+                      {req.payload.selectedTaxCodes && req.payload.selectedTaxCodes.length > 0 && (
+                        <li>
+                          <span className="font-semibold text-emerald-600">Impuestos ({req.payload.selectedTaxCodes.length}):</span>
+                          <div className="pl-4 mt-1 space-y-0.5 opacity-80 italic">
+                            {req.payload.selectedTaxCodes.map((code: string) => {
+                              const tax = taxStructure.find(t => t.code === code);
+                              return <div key={code}>• {tax ? tax.activity : code}</div>;
+                            })}
+                          </div>
+                        </li>
+                      )}
                     </ul>
                   </div>
                 )}
@@ -1778,14 +1840,14 @@ const AdminRequestModal = ({ requests, updateRequests, onClose, allTransactions,
                             <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <label className="text-xs text-slate-500">Abono Inicial (B/.)</label>
-                                <input type="number" className="w-full border rounded p-1" placeholder="0.00"
-                                  id={`approve - initial - ${req.id} `}
+                                <input type="number" inputMode="decimal" className="w-full border rounded p-1" placeholder="0.00"
+                                  id={`approve-initial-${req.id}`}
                                 />
                               </div>
                               <div>
                                 <label className="text-xs text-slate-500">Letras / Cuotas</label>
-                                <input type="number" className="w-full border rounded p-1" placeholder="Ej. 12"
-                                  id={`approve - installments - ${req.id} `}
+                                <input type="number" inputMode="decimal" className="w-full border rounded p-1" placeholder="Ej. 12"
+                                  id={`approve-installments-${req.id}`}
                                 />
                               </div>
                             </div>

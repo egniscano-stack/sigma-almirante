@@ -48,24 +48,16 @@ export interface VehicleInfo {
 
 // Corregimientos defined by requirements
 export enum Corregimiento {
-  FINCA_4 = 'Finca 4',
-  GUABITO = 'Guabito',
-  FINCA_66 = 'Finca 66',
-  EMPALME = 'Empalme',
-  FINCA_51 = 'Finca 51',
-  FINCA_6 = 'Finca 6',
-  FINCA_LAS_30 = 'Finca Las 30',
-  FINCA_LAS_60 = 'Finca Las 60',
-  FINCA_12 = 'Finca 12',
-  LAS_TABLAS = 'Las Tablas',
-  LAS_DELICIAS = 'Las Delicias',
-  CHOCHIGRO = 'Chochigro',
-  EL_SILENCIO = 'El Silencio',
-  BARANCO = 'Baranco',
-  BARRIADA_4_ABRIL = 'Barriada 4 Abril',
-  LA_GLORIA = 'La Gloria',
-  ALMIRANTE = 'Almirante',
-  LA_MESA = 'La Mesa',
+  ALMIRANTE_CABECERA = 'Almirante (Cabecera)',
+  BARRIO_FRANCES = 'Barrio Francés',
+  BARRIADA_GUAYMI = 'Barriada Guaymí',
+  VALLE_RISCO = 'Valle de Riscó',
+  VALLE_AGUAS_ARRIBA = 'Valle de Aguas Arriba',
+  NANCE_RISCO = 'Nance de Riscó',
+  BAJO_CULUBRE = 'Bajo Culubre',
+  CEIBA = 'Ceiba',
+  CAUCHERO = 'Cauchero',
+  MIRAFLORES = 'Miraflores',
 }
 
 export interface Taxpayer {
@@ -87,7 +79,7 @@ export interface Taxpayer {
 
   // Services & Assets Flags
   hasCommercialActivity: boolean; // Available for both Natural & Juridica
-  commercialCategory?: CommercialCategory;
+  commercialCategory?: string;
   commercialName?: string; // Nombre del establecimiento
 
   // Economic Status
@@ -100,6 +92,13 @@ export interface Taxpayer {
   vehicles?: VehicleInfo[]; // List of registered vehicles
   createdAt?: string;
   documents?: Record<string, string>; // Key: Doc Type, Value: URL
+
+  // New Tax Structure Fields
+  magnitude?: 'PEQUEÑO' | 'MEDIANO' | 'GRANDE';
+  selectedTaxCodes?: string[];
+  selectedRates?: Record<string, number>; // Maps tax code to specific selected rate
+  rotuloAmount?: number;
+  garbageAmount?: number;
 }
 
 export interface Transaction {

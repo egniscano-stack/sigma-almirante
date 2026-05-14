@@ -222,16 +222,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, taxpayers, c
           color="bg-blue-500"
         />
         <StatCard
-          title="Contribuyentes"
-          value={debtStats.count.toLocaleString()}
-          subtext="En estado de morosidad"
+          title="Contribuyentes Registrados"
+          value={taxpayers.filter(t => t.taxpayerNumber && t.commercialCategory !== 'VIGENCIA EXPIRADA').length.toLocaleString()}
+          subtext={`${taxpayers.filter(t => t.commercialCategory === 'VIGENCIA EXPIRADA').length} en Vigencia Expirada (Sin Número)`}
           icon={Users}
           color="bg-amber-500"
         />
         <StatCard
           title="Deuda Estimada"
           value={`B/. ${(debtStats?.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-          subtext="Por recuperar"
+          subtext={`${debtStats.count.toLocaleString()} contribuyentes morosos`}
           icon={AlertCircle}
           color="bg-rose-500"
         />

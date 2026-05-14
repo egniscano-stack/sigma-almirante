@@ -450,9 +450,9 @@ export const InvoiceScanner: React.FC<InvoiceScannerProps> = ({ onScanComplete }
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase">Monto Total (B/.)</label>
                   <input
-                    type="number"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) })}
+                    type="number" inputMode="decimal"
+                    value={formData.amount === 0 ? '' : formData.amount}
+                    onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
                     className="w-full mt-1 p-2 border border-emerald-300 bg-emerald-50 rounded font-bold text-emerald-800"
                   />
                 </div>

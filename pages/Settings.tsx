@@ -19,11 +19,12 @@ interface SettingsProps {
   transactions: Transaction[];
   onUpdateTaxpayer: (tp: Taxpayer) => void;
   currentUserName: string;
+  onHardReset: () => void;
 }
 
 export const Settings: React.FC<SettingsProps> = ({
   config, onUpdateConfig, municipalityInfo, onUpdateMunicipalityInfo, users, onCreateUser, onUpdateUser, onSimulateScraping, onBackup, onImport,
-  onImportTaxpayer, taxpayers, transactions, onUpdateTaxpayer, currentUserName
+  onImportTaxpayer, taxpayers, transactions, onUpdateTaxpayer, currentUserName, onHardReset
 }) => {
   const [localConfig, setLocalConfig] = useState<TaxConfig>(config || { 
     plateCost: 0, constructionRatePerSqm: 0, garbageResidentialRate: 0, garbageCommercialRate: 0, 
@@ -241,8 +242,8 @@ export const Settings: React.FC<SettingsProps> = ({
               <div className="flex items-center">
                 <span className="mr-2 text-slate-500">B/.</span>
                 <input
-                  type="number"
-                  value={localConfig.plateCost}
+                  type="number" inputMode="decimal"
+                  value={localConfig.plateCost === 0 ? '' : localConfig.plateCost}
                   onChange={(e) => handleConfigChange('plateCost', e.target.value)}
                   className="w-24 text-right p-2 border rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-black"
                 />
@@ -257,8 +258,8 @@ export const Settings: React.FC<SettingsProps> = ({
               <div className="flex items-center">
                 <span className="mr-2 text-slate-500">B/.</span>
                 <input
-                  type="number"
-                  value={localConfig.constructionRatePerSqm}
+                  type="number" inputMode="decimal"
+                  value={localConfig.constructionRatePerSqm === 0 ? '' : localConfig.constructionRatePerSqm}
                   onChange={(e) => handleConfigChange('constructionRatePerSqm', e.target.value)}
                   className="w-24 text-right p-2 border rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-black"
                 />
@@ -273,8 +274,8 @@ export const Settings: React.FC<SettingsProps> = ({
               <div className="flex items-center">
                 <span className="mr-2 text-slate-500">B/.</span>
                 <input
-                  type="number"
-                  value={localConfig.garbageResidentialRate}
+                  type="number" inputMode="decimal"
+                  value={localConfig.garbageResidentialRate === 0 ? '' : localConfig.garbageResidentialRate}
                   onChange={(e) => handleConfigChange('garbageResidentialRate', e.target.value)}
                   className="w-24 text-right p-2 border rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-black"
                 />
@@ -289,8 +290,8 @@ export const Settings: React.FC<SettingsProps> = ({
               <div className="flex items-center">
                 <span className="mr-2 text-slate-500">B/.</span>
                 <input
-                  type="number"
-                  value={localConfig.commercialBaseRate}
+                  type="number" inputMode="decimal"
+                  value={localConfig.commercialBaseRate === 0 ? '' : localConfig.commercialBaseRate}
                   onChange={(e) => handleConfigChange('commercialBaseRate', e.target.value)}
                   className="w-24 text-right p-2 border rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-black"
                 />
@@ -305,8 +306,8 @@ export const Settings: React.FC<SettingsProps> = ({
               <div className="flex items-center">
                 <span className="mr-2 text-slate-500">B/.</span>
                 <input
-                  type="number"
-                  value={localConfig.liquorLicenseRate}
+                  type="number" inputMode="decimal"
+                  value={localConfig.liquorLicenseRate === 0 ? '' : localConfig.liquorLicenseRate}
                   onChange={(e) => handleConfigChange('liquorLicenseRate', e.target.value)}
                   className="w-24 text-right p-2 border rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-black"
                 />
@@ -321,8 +322,8 @@ export const Settings: React.FC<SettingsProps> = ({
               <div className="flex items-center">
                 <span className="mr-2 text-slate-500">B/.</span>
                 <input
-                  type="number"
-                  value={localConfig.advertisementRate}
+                  type="number" inputMode="decimal"
+                  value={localConfig.advertisementRate === 0 ? '' : localConfig.advertisementRate}
                   onChange={(e) => handleConfigChange('advertisementRate', e.target.value)}
                   className="w-24 text-right p-2 border rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-black"
                 />
@@ -381,6 +382,14 @@ export const Settings: React.FC<SettingsProps> = ({
                   >
                     <RefreshCw size={18} className="mr-2" />
                     Actualizar Morosidad (Sin Pagos)
+                  </button>
+
+                  <button
+                    onClick={onHardReset}
+                    className="w-full flex items-center justify-center bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg hover:bg-red-600 hover:text-white font-bold transition-all mt-4"
+                  >
+                    <Shield size={18} className="mr-2" />
+                    REINICIO MAESTRO (Borrar Todo)
                   </button>
 
                   <input

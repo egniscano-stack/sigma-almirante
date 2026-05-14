@@ -37,9 +37,8 @@ interface GovScraperProps {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const CORREGIMIENTOS = [
-    'Almirante', 'Almirante', 'Banca', 'Basimento', 'Bocas del Toro', 'Boca del Drago',
-    'Caldera', 'Chiriqui Grande', 'El Empalme', 'Guabito', 'Las Delicias', 'Miramar',
-    'Punta Pena', 'Rambala', 'San San', 'El Silencio', 'Teribe', 'Valle Escondido',
+    'Almirante (Cabecera)', 'Barrio Francés', 'Barriada Guaymí', 'Valle de Riscó', 
+    'Valle de Aguas Arriba', 'Nance de Riscó', 'Bajo Culubre', 'Ceiba', 'Cauchero', 'Miraflores'
 ];
 
 // ============================================================
@@ -62,18 +61,13 @@ function normalize(s: string) { return s.toLowerCase().replace(/[^a-z]/g, ''); }
 
 function guessCorregimiento(text: string): string {
     const map: [string, string][] = [
-        ['almirante', 'Almirante'], ['guabito', 'Guabito'], ['caldera', 'Caldera'],
-        ['chiriqui grande', 'Chiriqui Grande'], ['chirigui', 'Chiriqui Grande'],
-        ['empalme', 'El Empalme'], ['delicias', 'Las Delicias'], ['silencio', 'El Silencio'],
-        ['bocas del toro', 'Bocas del Toro'], ['basimento', 'Basimento'],
-        ['boca del drago', 'Boca del Drago'], ['drago', 'Boca del Drago'],
-        ['miramar', 'Miramar'], ['rambala', 'Rambala'], ['san san', 'San San'],
-        ['teribe', 'Teribe'], ['punta pena', 'Punta Pena'], ['valle escondido', 'Valle Escondido'],
-        ['banca', 'Banca'], ['almirante', 'Almirante'],
+        ['almirante', 'Almirante (Cabecera)'], ['frances', 'Barrio Francés'], ['guaymi', 'Barriada Guaymí'],
+        ['risco', 'Valle de Riscó'], ['aguas arriba', 'Valle de Aguas Arriba'], ['nance', 'Nance de Riscó'],
+        ['culubre', 'Bajo Culubre'], ['ceiba', 'Ceiba'], ['cauchero', 'Cauchero'], ['miraflores', 'Miraflores']
     ];
     const t = text.toLowerCase();
     for (const [key, val] of map) { if (t.includes(key)) return val; }
-    return 'Almirante';
+    return 'Almirante (Cabecera)';
 }
 
 // ============================================================

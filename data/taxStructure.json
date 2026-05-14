@@ -1,0 +1,1409 @@
+[
+  {
+    "code": "11.25.01",
+    "activity": "Est. de ventas al por mayor",
+    "rates": {
+      "PEQUENO": 46,
+      "MEDIANO": 66,
+      "GRANDE": 165
+    }
+  },
+  {
+    "code": "11.25.03",
+    "activity": "Est. de ventas de autos y accesorios",
+    "rates": {
+      "PEQUENO": 39,
+      "MEDIANO": 44,
+      "GRANDE": 83
+    }
+  },
+  {
+    "code": "11.25.04",
+    "activity": "Est. de ventas de maderas y materiales de construcción",
+    "rates": {
+      "PEQUENO": 77,
+      "MEDIANO": 99,
+      "GRANDE": 138
+    }
+  },
+  {
+    "code": "11.25.05",
+    "activity": "Est. de ventas al por menor",
+    "rates": {
+      "PEQUENO": 11,
+      "MEDIANO": 28,
+      "GRANDE": 83
+    }
+  },
+  {
+    "code": "11.25.06",
+    "activity": "Impuestos sobre bebidas alcohólicas al por menor",
+    "rates": {
+      "PEQUENO": 40,
+      "MEDIANO": "A",
+      "GRANDE": 200
+    }
+  },
+  {
+    "code": "11.25.07",
+    "activity": "Est. de ventas de artículos de segunda",
+    "rates": {
+      "PEQUENO": 11,
+      "MEDIANO": 28,
+      "GRANDE": 39
+    }
+  },
+  {
+    "code": "11.25.08",
+    "activity": "Mercados privados",
+    "rates": {
+      "PEQUENO": 11,
+      "MEDIANO": 28,
+      "GRANDE": 44
+    }
+  },
+  {
+    "code": "11.25.09",
+    "activity": "Casetas sanitarias",
+    "rates": {
+      "PEQUENO": 11,
+      "MEDIANO": 28,
+      "GRANDE": 44
+    }
+  },
+  {
+    "code": "11.25.10",
+    "activity": "Estaciones de ventas de combustible",
+    "rates": {
+      "PEQUENO": "Por cada surtidor pagará de B/.35.00 Ventas con tanques, galones y cubos B/.29.00",
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.25.11",
+    "activity": "ALQUILER DE BIENES INMUEBLES",
+    "rates": {
+      "PEQUENO": "según ingreso obtenido a razón de; hasta 100.00-5%; 101.00 a 200.00 -7 %; 201.00 -500.00 - 10%; más de 500.00 - 12.5 %",
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.25.12",
+    "activity": "Talleres comerciales y reparación de autos",
+    "rates": {
+      "PEQUENO": 28,
+      "MEDIANO": 50,
+      "GRANDE": 95
+    }
+  },
+  {
+    "code": "11.25.15",
+    "activity": "Floristerías",
+    "rates": {
+      "PEQUENO": 8,
+      "MEDIANO": 19,
+      "GRANDE": 39
+    }
+  },
+  {
+    "code": "11.25.16",
+    "activity": "Farmacias",
+    "rates": {
+      "PEQUENO": 17,
+      "MEDIANO": 39,
+      "GRANDE": 57
+    }
+  },
+  {
+    "code": "11.25.17",
+    "activity": "Kioscos en general",
+    "rates": {
+      "PEQUENO": 11,
+      "MEDIANO": 28,
+      "GRANDE": 51
+    }
+  },
+  {
+    "code": "11.25.18",
+    "activity": "Joyería y Relojerías",
+    "rates": {
+      "PEQUENO": 22,
+      "MEDIANO": 51,
+      "GRANDE": 95
+    }
+  },
+  {
+    "code": "11.25.19",
+    "activity": "Librería y artículos de oficina",
+    "rates": {
+      "PEQUENO": 17,
+      "MEDIANO": 32,
+      "GRANDE": 51
+    }
+  },
+  {
+    "code": "11.25.20",
+    "activity": "Depósitos comerciales",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 88,
+      "GRANDE": 220
+    }
+  },
+  {
+    "code": "11.25.22",
+    "activity": "Mueblerías",
+    "rates": {
+      "PEQUENO": 55,
+      "MEDIANO": 99,
+      "GRANDE": 165
+    }
+  },
+  {
+    "code": "11.25.23",
+    "activity": "Discotecas",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 83
+    }
+  },
+  {
+    "code": "11.25.24",
+    "activity": "Ferreterías",
+    "rates": {
+      "PEQUENO": 28,
+      "MEDIANO": 66,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.25.25",
+    "activity": "Bancos y Casas de cambio",
+    "rates": {
+      "PEQUENO": 165,
+      "MEDIANO": 330,
+      "GRANDE": 440
+    }
+  },
+  {
+    "code": "11.25.26",
+    "activity": "Casas de empeño y préstamos",
+    "rates": {
+      "PEQUENO": 39,
+      "MEDIANO": 83,
+      "GRANDE": 165
+    }
+  },
+  {
+    "code": "11.25.27",
+    "activity": "Clubes de mercancías",
+    "rates": {
+      "PEQUENO": 1,
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.25.28",
+    "activity": "Agentes Dist.  Com. y Rep. de fábricas.",
+    "rates": {
+      "PEQUENO": 11,
+      "MEDIANO": 28,
+      "GRANDE": 55
+    }
+  },
+  {
+    "code": "11.25.29",
+    "activity": "Cías. de seguros y Capitalizadoras",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 138,
+      "GRANDE": 220
+    }
+  },
+  {
+    "code": "11.25.30",
+    "activity": "Rótulos, anuncios y avisos (mensual)",
+    "rates": {
+      "PEQUENO": 8,
+      "MEDIANO": 22,
+      "GRANDE": 33
+    }
+  },
+  {
+    "code": "11.25.35",
+    "activity": "Aparatos de medición (Anual)",
+    "rates": {
+      "PEQUENO": "Hasta 25lb. 6.00; de 26 a 100lb. 16.00; de más de 101lb 55.00; las medidas de longitud pagarán 4.00 y las de medición de energía, líquidos, gas y otros 2.00",
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.25.40",
+    "activity": "Restaurantes, cafés y otros",
+    "rates": {
+      "PEQUENO": 17,
+      "MEDIANO": 39,
+      "GRANDE": 83
+    }
+  },
+  {
+    "code": "11.25.41",
+    "activity": "Heladerías y Refresquerías",
+    "rates": {
+      "PEQUENO": 11,
+      "MEDIANO": 28,
+      "GRANDE": 50
+    }
+  },
+  {
+    "code": "11.25.42",
+    "activity": "Casas de hospedaje y Pensiones, por la actividad económica",
+    "rates": {
+      "PEQUENO": 17,
+      "MEDIANO": 39,
+      "GRANDE": 61
+    }
+  },
+  {
+    "code": "11.25.43",
+    "activity": "Hoteles, Moteles, Apartotel, por actividad económica",
+    "rates": {
+      "PEQUENO": 39,
+      "MEDIANO": 83,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.25.44",
+    "activity": "Casa de alojamiento ocasional",
+    "rates": {
+      "PEQUENO": 39,
+      "MEDIANO": 83,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.25.45",
+    "activity": "Prostíbulos y Cabaret, según cantidad de trabajadoras en el local",
+    "rates": {
+      "PEQUENO": 66,
+      "MEDIANO": 110,
+      "GRANDE": 220
+    }
+  },
+  {
+    "code": "11.25.46",
+    "activity": "Salones de baile, balnearios, sitios de recreación",
+    "rates": {
+      "PEQUENO": 17,
+      "MEDIANO": 33,
+      "GRANDE": 50
+    }
+  },
+  {
+    "code": "11.25.47",
+    "activity": "Cajas de música y videos musicales",
+    "rates": {
+      "PEQUENO": 13,
+      "MEDIANO": 20,
+      "GRANDE": 45
+    }
+  },
+  {
+    "code": "11.25.48",
+    "activity": "Aparatos de juegos electrónicos",
+    "rates": {
+      "PEQUENO": 10,
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.25.02",
+    "activity": "Aparatos mecánicos de diversión",
+    "rates": {
+      "PEQUENO": 30,
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.25.49",
+    "activity": "Billares, por mesas",
+    "rates": {
+      "PEQUENO": "De B/.10.00 a B/.20.00 por mesa",
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.25.50",
+    "activity": "Espectáculos públicos con carácter lucrativo (lucha libre, boxeo, cines, alquiler de videos, hierra, lazo libre, corrida de toro, cantadera, circos, competencias acuáticas y otros)",
+    "rates": {
+      "PEQUENO": 11,
+      "MEDIANO": 33,
+      "GRANDE": 55
+    }
+  },
+  {
+    "code": "11.25.52",
+    "activity": "Barberías, Peluquerías y Salones de Belleza",
+    "rates": {
+      "PEQUENO": 13,
+      "MEDIANO": 22,
+      "GRANDE": 33
+    }
+  },
+  {
+    "code": "11.25.53",
+    "activity": "Lavanderías, Tintorerías y Lava máticos",
+    "rates": {
+      "PEQUENO": 13,
+      "MEDIANO": 22,
+      "GRANDE": 33
+    }
+  },
+  {
+    "code": "11.25.54",
+    "activity": "Estudios Fotográficos y de Televisión",
+    "rates": {
+      "PEQUENO": 17,
+      "MEDIANO": 55,
+      "GRANDE": 550
+    }
+  },
+  {
+    "code": "11.25.60",
+    "activity": "Hospitales y Clínicas Privadas",
+    "rates": {
+      "PEQUENO": 28,
+      "MEDIANO": 83,
+      "GRANDE": 165
+    }
+  },
+  {
+    "code": "11.25.61",
+    "activity": "Laboratorios",
+    "rates": {
+      "PEQUENO": 17,
+      "MEDIANO": 33,
+      "GRANDE": 44
+    }
+  },
+  {
+    "code": "11.25.62",
+    "activity": "Cementerios Privados",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 44,
+      "GRANDE": 55
+    }
+  },
+  {
+    "code": "11.25.63",
+    "activity": "Inhumación y exhumación",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 44,
+      "GRANDE": 55
+    }
+  },
+  {
+    "code": "11.25.64",
+    "activity": "Funerarios, velatorios privados.",
+    "rates": {
+      "PEQUENO": 17,
+      "MEDIANO": 33,
+      "GRANDE": 44
+    }
+  },
+  {
+    "code": "11.25.65",
+    "activity": "Servicios de Fumigación Casas Comerciales",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 44,
+      "GRANDE": 55
+    }
+  },
+  {
+    "code": "11.25.66",
+    "activity": "Servicios de Fumigación aéreas por avión",
+    "rates": {
+      "PEQUENO": 115,
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.25.70",
+    "activity": "Sedería y Cosmetería",
+    "rates": {
+      "PEQUENO": 17,
+      "MEDIANO": 28,
+      "GRANDE": 44
+    }
+  },
+  {
+    "code": "11.25.71",
+    "activity": "Aparatos de venta automática de productos",
+    "rates": {
+      "PEQUENO": "Bl/. 7. por maquina",
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.25.72",
+    "activity": "Establecimiento de productos agropecuarios",
+    "rates": {
+      "PEQUENO": 17,
+      "MEDIANO": 28,
+      "GRANDE": 39
+    }
+  },
+  {
+    "code": "11.25.73",
+    "activity": "Establecimiento de venta de calzados y productos de cuero",
+    "rates": {
+      "PEQUENO": 22,
+      "MEDIANO": 39,
+      "GRANDE": 50
+    }
+  },
+  {
+    "code": "11.25.74",
+    "activity": "Juegos permitidos autorizados por la Junta de Control de Juego.  Por semana o fracción de semanas.",
+    "rates": {
+      "PEQUENO": 20,
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.25.75",
+    "activity": "Salones de Sauna",
+    "rates": {
+      "PEQUENO": 22,
+      "MEDIANO": 39,
+      "GRANDE": 55
+    }
+  },
+  {
+    "code": "11.25.76",
+    "activity": "Empresas de Bienes y Raíces",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.25.79",
+    "activity": "Empresas de Comunicaciones, Venta de servicios, artículos de comunicación y tarjetas",
+    "rates": {
+      "PEQUENO": 11,
+      "MEDIANO": 28,
+      "GRANDE": 44
+    }
+  },
+  {
+    "code": "11.25.85",
+    "activity": "Auto baño",
+    "rates": {
+      "PEQUENO": 19,
+      "MEDIANO": 28,
+      "GRANDE": 39
+    }
+  },
+  {
+    "code": "11.25.88",
+    "activity": "Servicio de Internet y fotocopiadora por máquina",
+    "rates": {
+      "PEQUENO": 5,
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.25.99",
+    "activity": "Otros No Especificadas",
+    "rates": {
+      "PEQUENO": 55,
+      "MEDIANO": 83,
+      "GRANDE": 138
+    }
+  },
+  {
+    "code": "11.26.01",
+    "activity": "Fáb. de productos alimenticios diversos",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.02",
+    "activity": "Fáb. de aceites y grasas vegetales",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.03",
+    "activity": "Fab. de embutidos",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.04",
+    "activity": "Fab. de galletas",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.05",
+    "activity": "Fab. de harinas",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.06",
+    "activity": "Fab. de helados y productos lácteos",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.07",
+    "activity": "Fab. de hielo",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.08",
+    "activity": "Fab. de pastas alimenticias",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.09",
+    "activity": "Fab. de env. y cons. de frutas y legumbres",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.10",
+    "activity": "Fáb. de pastillas y chocolates",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.11",
+    "activity": "Panaderías, Dulcerías y Reposterías",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.12",
+    "activity": "Fábrica de gaseosas y embotellamiento de agua",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.17",
+    "activity": "Refinadora de sal",
+    "rates": {
+      "PEQUENO": 55,
+      "MEDIANO": 110,
+      "GRANDE": 220
+    }
+  },
+  {
+    "code": "11.26.20",
+    "activity": "Fáb. de textiles",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 127
+    }
+  },
+  {
+    "code": "11.26.21",
+    "activity": "Fáb. de prendas de vestir",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 44,
+      "GRANDE": 76
+    }
+  },
+  {
+    "code": "11.26.22",
+    "activity": "Fáb. de calzados y productos de cuero",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 127
+    }
+  },
+  {
+    "code": "11.26.23",
+    "activity": "Sastrerías y Modisterías",
+    "rates": {
+      "PEQUENO": 11,
+      "MEDIANO": 22,
+      "GRANDE": 39
+    }
+  },
+  {
+    "code": "11.26.24",
+    "activity": "Fáb. de colchones y almohadas",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.30",
+    "activity": "Aserríos Aserraderos",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 49.5,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.31",
+    "activity": "Fáb. de muebles y productos de madera",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.26.35",
+    "activity": "Fáb. de papel y productos de papel",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.26.40",
+    "activity": "Producción de gas",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.26.41",
+    "activity": "Fáb. de productos químicos",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.26.42",
+    "activity": "Fáb. de jabones y preparados de limpieza",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.26.43",
+    "activity": "Producción de oxígeno",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.26.44",
+    "activity": "Fáb. de productos plásticos",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.26.47",
+    "activity": "Fáb. de acetileno",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.26.48",
+    "activity": "Fáb. de pinturas, barnices y lacas",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.26.50",
+    "activity": "Fáb. de cemento, cal y yeso.",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.26.51",
+    "activity": "Canteras",
+    "rates": {
+      "PEQUENO": 220,
+      "MEDIANO": 550,
+      "GRANDE": 880
+    }
+  },
+  {
+    "code": "11.26.52",
+    "activity": "Fáb. de cerámica",
+    "rates": {
+      "PEQUENO": 28,
+      "MEDIANO": 39,
+      "GRANDE": 55
+    }
+  },
+  {
+    "code": "11.26.54",
+    "activity": "Fáb. de bloques, tejas y ladrillos",
+    "rates": {
+      "PEQUENO": 17,
+      "MEDIANO": 28,
+      "GRANDE": 83
+    }
+  },
+  {
+    "code": "11.26.55",
+    "activity": "Fáb. de productos metálicos",
+    "rates": {
+      "PEQUENO": 39,
+      "MEDIANO": 61,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.60",
+    "activity": "Fáb. de cepillos y escobas",
+    "rates": {
+      "PEQUENO": 39,
+      "MEDIANO": 61,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.61",
+    "activity": "Fáb. de baúles, maletas y bolsas",
+    "rates": {
+      "PEQUENO": 39,
+      "MEDIANO": 50,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.62",
+    "activity": "Talleres de artesanías y pequeñas indust.",
+    "rates": {
+      "PEQUENO": 11,
+      "MEDIANO": 28,
+      "GRANDE": 50
+    }
+  },
+  {
+    "code": "11.26.63",
+    "activity": "Talleres de imprenta, editoriales y otros.",
+    "rates": {
+      "PEQUENO": 33,
+      "MEDIANO": 83,
+      "GRANDE": 165
+    }
+  },
+  {
+    "code": "11.26.64",
+    "activity": "Ingenios",
+    "rates": {
+      "PEQUENO": 1650,
+      "MEDIANO": 2750,
+      "GRANDE": 3850
+    }
+  },
+  {
+    "code": "11.26.65",
+    "activity": "Descascaradoras de granos",
+    "rates": {
+      "PEQUENO": 55,
+      "MEDIANO": 94,
+      "GRANDE": 190
+    }
+  },
+  {
+    "code": "11.26.66",
+    "activity": "Plantas de torrefacción de café",
+    "rates": {
+      "PEQUENO": 55,
+      "MEDIANO": 94,
+      "GRANDE": 190
+    }
+  },
+  {
+    "code": "11.26.67",
+    "activity": "Trapiche comercial",
+    "rates": {
+      "PEQUENO": 22,
+      "MEDIANO": 39,
+      "GRANDE": 55
+    }
+  },
+  {
+    "code": "11.26.70",
+    "activity": "Fábrica de productos de concreto",
+    "rates": {
+      "PEQUENO": 83,
+      "MEDIANO": 165,
+      "GRANDE": 275
+    }
+  },
+  {
+    "code": "11.26.71",
+    "activity": "Astilleros",
+    "rates": {
+      "PEQUENO": 550,
+      "MEDIANO": 825,
+      "GRANDE": 1650
+    }
+  },
+  {
+    "code": "11.26.72",
+    "activity": "Constructoras",
+    "rates": {
+      "PEQUENO": 72,
+      "MEDIANO": 94,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "11.26.73",
+    "activity": "Procesadoras de mariscos y aves",
+    "rates": {
+      "PEQUENO": 50,
+      "MEDIANO": 83,
+      "GRANDE": 110
+    }
+  },
+  {
+    "code": "11.26.74",
+    "activity": "Fáb. de alimentos para animales",
+    "rates": {
+      "PEQUENO": 39,
+      "MEDIANO": 83,
+      "GRANDE": 138
+    }
+  },
+  {
+    "code": "11.26.76",
+    "activity": "Fábrica de vinos y cervezas",
+    "rates": {
+      "PEQUENO": 50,
+      "MEDIANO": 83,
+      "GRANDE": 138
+    }
+  },
+  {
+    "code": "11.26.77",
+    "activity": "Otras fábricas no especificadas Explotación Agroindustrial (Bananeras, plataneras y piñeras)",
+    "rates": {
+      "PEQUENO": "De 600.00 a 30,000.00",
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.26.99",
+    "activity": "Cualquier otra actividad industrial",
+    "rates": {
+      "PEQUENO": 55,
+      "MEDIANO": 165,
+      "GRANDE": 330
+    }
+  },
+  {
+    "code": "122603",
+    "activity": "Trasiego de Petróleo (anual)",
+    "rates": {
+      "PEQUENO": 65000,
+      "MEDIANO": 0,
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.01",
+    "activity": "Est. De ventas de madera",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.02",
+    "activity": "Est. De ventas al por menor",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.03",
+    "activity": "Est. De ventas de art. De segunda",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.04",
+    "activity": "Casetas sanitarias",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.05",
+    "activity": "Estación de V. de combustible",
+    "rates": {
+      "PEQUENO": [
+        25,
+        30,
+        40
+      ],
+      "MEDIANO": [
+        50,
+        75,
+        100
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.06",
+    "activity": "Kiosco en General",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.07",
+    "activity": "Discotecas",
+    "rates": {
+      "PEQUENO": [
+        15,
+        30,
+        40
+      ],
+      "MEDIANO": [
+        50,
+        75,
+        100
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.08",
+    "activity": "Ferreterías",
+    "rates": {
+      "PEQUENO": [
+        15,
+        30,
+        40
+      ],
+      "MEDIANO": [
+        50,
+        75,
+        100
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.09",
+    "activity": "Agentes Distr. Com. Y Rep. De Fab.",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.10",
+    "activity": "Rótulos, anuncios y avisos",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.11",
+    "activity": "Aparatos de Medición",
+    "rates": {
+      "PEQUENO": [
+        1,
+        2,
+        3
+      ],
+      "MEDIANO": [
+        3,
+        4,
+        5
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.12",
+    "activity": "Restaurantes, café y otros",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.13",
+    "activity": "Heladerías y Refresquerías",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.14",
+    "activity": "Casa de hospedajes y pensiones",
+    "rates": {
+      "PEQUENO": [
+        2,
+        3,
+        5
+      ],
+      "MEDIANO": [
+        6,
+        7,
+        10
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.15",
+    "activity": "Billares",
+    "rates": {
+      "PEQUENO": [
+        1,
+        3,
+        5
+      ],
+      "MEDIANO": [
+        6,
+        7,
+        8
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.16",
+    "activity": "Otros N.E.O.C",
+    "rates": {
+      "PEQUENO": [
+        1,
+        5,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        25,
+        30
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "12.25.17",
+    "activity": "Trasiego de petróleo y derivados",
+    "rates": {
+      "PEQUENO": 0,
+      "MEDIANO": 0,
+      "GRANDE": [
+        100,
+        125,
+        500
+      ]
+    }
+  },
+  {
+    "code": "11.26.01-S",
+    "activity": "Panaderías y dulcerías (Especial)",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.26.02-S",
+    "activity": "Sastrería y Modistería (Especial)",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.26.03-S",
+    "activity": "Aserríos aserraderos (Especial)",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.26.04-S",
+    "activity": "Canteras (Especial)",
+    "rates": {
+      "PEQUENO": [
+        20,
+        40,
+        50
+      ],
+      "MEDIANO": [
+        50,
+        150,
+        250
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.26.05-S",
+    "activity": "Fab. De Bloques Tejas y Ladrillos (Especial)",
+    "rates": {
+      "PEQUENO": [
+        5,
+        10,
+        15
+      ],
+      "MEDIANO": [
+        20,
+        30,
+        50
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.26.06-S",
+    "activity": "Otras Fábricas de N.EO.C (Especial)",
+    "rates": {
+      "PEQUENO": [
+        3,
+        5,
+        10
+      ],
+      "MEDIANO": [
+        15,
+        20,
+        25
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.26.07-S",
+    "activity": "Extracción de Minas (Especial)",
+    "rates": {
+      "PEQUENO": [
+        30,
+        50,
+        70
+      ],
+      "MEDIANO": [
+        90,
+        100,
+        125
+      ],
+      "GRANDE": 0
+    }
+  },
+  {
+    "code": "11.26.08-S",
+    "activity": "Materiales Metálicos y rec. naturales (Especial)",
+    "rates": {
+      "PEQUENO": 0,
+      "MEDIANO": 0,
+      "GRANDE": [
+        125,
+        250,
+        500
+      ]
+    }
+  }
+]

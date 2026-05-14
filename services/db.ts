@@ -24,7 +24,11 @@ export const mapTaxpayerFromDB = (data: any): Taxpayer => ({
     hasGarbageService: data.has_garbage_service,
     vehicles: [], // Vehicles loaded separately or joined
     createdAt: data.created_at,
-    documents: data.documents || {}
+    documents: data.documents || {},
+    magnitude: data.magnitude,
+    selectedTaxCodes: data.selected_tax_codes || [],
+    rotuloAmount: Number(data.rotulo_amount) || 0,
+    garbageAmount: Number(data.garbage_amount) || 0
 });
 
 const mapTaxpayerToDB = (data: Taxpayer) => ({
@@ -45,7 +49,11 @@ const mapTaxpayerToDB = (data: Taxpayer) => ({
     balance: data.balance || 0,
     has_construction: data.hasConstruction,
     has_garbage_service: data.hasGarbageService,
-    documents: data.documents || {}
+    documents: data.documents || {},
+    magnitude: data.magnitude,
+    selected_tax_codes: data.selectedTaxCodes || [],
+    rotulo_amount: data.rotuloAmount || 0,
+    garbage_amount: data.garbageAmount || 0
 });
 
 export const mapTransactionFromDB = (data: any): Transaction => ({
@@ -153,12 +161,35 @@ const mapAdminRequestToDB = (data: AdminRequest) => ({
 export const db = {
     // TAXPAYERS
     getTaxpayers: async (): Promise<Taxpayer[]> => {
-        const { data, error } = await supabase.from('taxpayers').select('*');
-        if (error) {
-            console.error("Error fetching taxpayers:", error);
-            throw error;
+        let allData: any[] = [];
+        let from = 0;
+        let to = 999;
+        let finished = false;
+
+        while (!finished) {
+            const { data, error, count } = await supabase
+                .from('taxpayers')
+                .select('*', { count: 'exact' })
+                .range(from, to);
+
+            if (error) {
+                console.error("Error fetching taxpayers:", error);
+                throw error;
+            }
+
+            if (data && data.length > 0) {
+                allData = [...allData, ...data];
+                if (count && allData.length >= count) {
+                    finished = true;
+                } else {
+                    from += 1000;
+                    to += 1000;
+                }
+            } else {
+                finished = true;
+            }
         }
-        return data.map(mapTaxpayerFromDB);
+        return allData.map(mapTaxpayerFromDB);
     },
 
     createTaxpayer: async (taxpayer: Taxpayer) => {
@@ -198,6 +229,22 @@ export const db = {
     deleteTaxpayer: async (id: string) => {
         const { error } = await supabase.from('taxpayers').delete().eq('id', id);
         if (error) throw error;
+    },
+
+    getNextTaxpayerNumber: async (): Promise<string> => {
+        const { data, error } = await supabase
+            .from('taxpayers')
+            .select('taxpayer_number')
+            .like('taxpayer_number', '2026-%');
+        
+        if (error) return '2026-1';
+        
+        const numbers = data
+            .map(d => parseInt(d.taxpayer_number.split('-')[1]))
+            .filter(n => !isNaN(n));
+        
+        const max = numbers.length > 0 ? Math.max(...numbers) : 0;
+        return `2026-${max + 1}`;
     },
 
     // STORAGE

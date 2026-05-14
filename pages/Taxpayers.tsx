@@ -1,10 +1,19 @@
 import React, { useState } from 'react';
 import { Taxpayer, TaxpayerType, CommercialCategory, Transaction, VehicleInfo, TaxpayerStatus, UserRole, Corregimiento, AdminRequest, RequestStatus } from '../types';
 import { db } from '../services/db';
-import { Search, UserPlus, Briefcase, User, MapPin, Store, History, X, FileText, Car, Hammer, Trash2, CheckSquare, Plus, AlertCircle, MoreVertical, ShieldAlert, Ban, CheckCircle, Edit, Upload, Image as ImageIcon, Shield } from 'lucide-react';
+import { Search, UserPlus, Briefcase, User, MapPin, Store, History, X, FileText, Car, Hammer, Trash2, CheckSquare, Plus, AlertCircle, MoreVertical, ShieldAlert, Ban, CheckCircle, Edit, Upload, Image as ImageIcon, Shield, Calculator, Settings, ChevronDown, CreditCard, ChevronRight } from 'lucide-react';
 import { AntivirusScanner } from '../components/AntivirusScanner';
 import { FileScanResult } from '../services/antivirus';
 import { getSession } from '../services/security';
+
+import taxStructure from '../data/taxStructure.json';
+
+const MUNICIPAL_ACTIVITIES = [
+  'ABARROTERIA', 'ALMACEN', 'BARBERIA', 'BARES', 'BASURA2026', 'BUHONERIA', 
+  'FARMACIA', 'FERRETERIA', 'GASOLINERA', 'LAVA AUTO', 'LEGUMBRERIA', 
+  'OTROS', 'PARQUEO', 'RESTAURANTE', 'ROPA AMERICANA', 'SUPERMERCADOS', 
+  'TALLER', 'TAXI MAR', 'VIGENCIA EXPIRADA'
+];
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-US', {
@@ -25,17 +34,22 @@ interface TaxpayersProps {
 
 export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, onAdd, onUpdate, onDelete, userRole, onCreateRequest }) => {
   const [showModal, setShowModal] = useState(false);
+  const [viewTaxpayer, setViewTaxpayer] = useState<Taxpayer | null>(null);
+  const [historyTaxpayer, setHistoryTaxpayer] = useState<Taxpayer | null>(null);
+  const [showDebtBreakdown, setShowDebtBreakdown] = useState(false);
+  const [taxSearchTerm, setTaxSearchTerm] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<Taxpayer[]>([]);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [selectedActivity, setSelectedActivity] = useState<string>('ALL');
+  const [showActivityDropdown, setShowActivityDropdown] = useState(false);
+  const [activitySearch, setActivitySearch] = useState('');
 
   // Edit Mode State
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // History Modal State
-  const [historyTaxpayer, setHistoryTaxpayer] = useState<Taxpayer | null>(null);
-  const [viewTaxpayer, setViewTaxpayer] = useState<Taxpayer | null>(null); // State for viewing full details
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [editReason, setEditReason] = useState('');
 
@@ -53,8 +67,14 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
     commercialCategory: CommercialCategory.NONE,
     commercialName: '',
     hasConstruction: false,
-    hasGarbageService: true, // Default true usually
-    vehicles: []
+    hasGarbageService: true,
+    vehicles: [],
+    magnitude: 'PEQUEÑO',
+    selectedTaxCodes: [],
+    selectedRates: {},
+    rotuloAmount: 0,
+    garbageAmount: 0,
+    balance: 0
   };
 
   const [newTp, setNewTp] = useState<Partial<Taxpayer>>(initialFormState);
@@ -93,6 +113,49 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
     setIsSearching(false);
     window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll to form
   };
+
+  // Recalculate balance when magnitude or selected codes change
+  React.useEffect(() => {
+    let total = 0;
+    const newSelectedRates = { ...(newTp.selectedRates || {}) };
+    let changed = false;
+
+    (newTp.selectedTaxCodes || []).forEach(code => {
+      const struct = (taxStructure as any[]).find(s => s.code === code);
+      if (struct) {
+        const magnitudeRates = newTp.magnitude === 'GRANDE' ? struct.rates.GRANDE :
+                             newTp.magnitude === 'MEDIANO' ? struct.rates.MEDIANO : struct.rates.PEQUENO;
+        
+        if (Array.isArray(magnitudeRates)) {
+          if (newSelectedRates[code] === undefined || !magnitudeRates.includes(newSelectedRates[code])) {
+            newSelectedRates[code] = magnitudeRates[0];
+            changed = true;
+          }
+          if (typeof newSelectedRates[code] === 'number') {
+            total += newSelectedRates[code];
+          }
+        } else if (typeof magnitudeRates === 'number') {
+          if (newSelectedRates[code] !== magnitudeRates) {
+            newSelectedRates[code] = magnitudeRates;
+            changed = true;
+          }
+          total += magnitudeRates;
+        }
+      }
+    });
+
+    // Add manual adjustments
+    total += (newTp.rotuloAmount || 0);
+    total += (newTp.garbageAmount || 0);
+
+    if (changed || total !== newTp.balance) {
+      setNewTp(prev => ({
+        ...prev,
+        selectedRates: newSelectedRates,
+        balance: total
+      }));
+    }
+  }, [newTp.magnitude, newTp.selectedTaxCodes, newTp.rotuloAmount, newTp.garbageAmount]);
 
   const handleCancelEdit = () => {
     setNewTp(initialFormState);
@@ -219,6 +282,43 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
     }
   };
 
+  // Activity Counts for Filter
+  const activityCounts = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    taxpayers.forEach(tp => {
+      // 1. Count specific commercial categories (TALLER, SUPERMERCADO, etc.)
+      if (tp.commercialCategory) {
+        counts[tp.commercialCategory] = (counts[tp.commercialCategory] || 0) + 1;
+      }
+      // 2. Count tax codes from taxStructure.json
+      (tp.selectedTaxCodes || []).forEach(code => {
+        counts[code] = (counts[code] || 0) + 1;
+      });
+      // 3. Count by Municipal Import Source (New)
+      if (tp.documents?.import_source) {
+        const source = tp.documents.import_source.replace('.xlsx', '').toUpperCase().trim();
+        counts[source] = (counts[source] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [taxpayers]);
+
+  // The 19 official activity categories from Almirante
+  const mainCategories = [
+    'ABARROTERIA', 'ALMACEN', 'BARBERIA', 'BARES', 'BASURA2026', 'BUHONERIA', 
+    'FARMACIA', 'FERRETERIA', 'GASOLINERA', 'LAVA AUTO', 'LEGUMBRERIA', 
+    'OTROS', 'PARQUEO', 'RESTAURANTE', 'ROPA AMERICANA', 'SUPERMERCADOS', 
+    'TALLER', 'TAXI MAR', 'VIGENCIA EXPIRADA'
+  ];
+
+  // Filtered Activities for Modal
+  const filteredActivities = React.useMemo(() => {
+    return (taxStructure as any[]).filter(item => 
+      item.activity.toLowerCase().includes(activitySearch.toLowerCase()) ||
+      item.code.includes(activitySearch)
+    );
+  }, [activitySearch]);
+
   // ... (rest of component functions)
 
 
@@ -227,19 +327,36 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
 
   // Search Effect
   React.useEffect(() => {
-    if (searchTerm.length > 2) {
+    if (searchTerm.length > 2 || selectedActivity !== 'ALL') {
       setIsSearching(true);
-      const results = taxpayers.filter(t =>
-        t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.docId.includes(searchTerm) ||
-        (t.taxpayerNumber && t.taxpayerNumber.includes(searchTerm))
-      );
-      setSearchResults(results.slice(0, 5)); // Limit to 5 results
+      const results = taxpayers.filter(t => {
+        const matchesTerm = searchTerm.length <= 2 || 
+          (t.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (t.docId || '').includes(searchTerm) ||
+          (t.taxpayerNumber || '').includes(searchTerm) ||
+          (t.documents?.import_source || '').toLowerCase().includes(searchTerm.toLowerCase());
+        
+        const normalizeText = (text: string) => 
+          (text || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+        const matchesActivity = selectedActivity === 'ALL' || 
+          (t.selectedTaxCodes || []).includes(selectedActivity) ||
+          t.commercialCategory === selectedActivity ||
+          (t.documents?.import_source && (
+            normalizeText(t.documents.import_source).includes(normalizeText(selectedActivity)) ||
+            normalizeText(selectedActivity).includes(normalizeText(t.documents.import_source).replace('.XLSX', ''))
+          )) ||
+          t.documents?.municipal_code === selectedActivity;
+          
+        return matchesTerm && matchesActivity;
+      }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      
+      setSearchResults(results.slice(0, 500)); 
     } else {
       setIsSearching(false);
       setSearchResults([]);
     }
-  }, [searchTerm, taxpayers]);
+  }, [searchTerm, taxpayers, selectedActivity]);
 
   const handleAddVehicle = () => {
     if (!tempVehicle.plate || !tempVehicle.brand) {
@@ -539,7 +656,14 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                </div>
             </div>
 
-            <div className="p-8 bg-white border-t border-slate-100 flex justify-end">
+            <div className="p-8 bg-white border-t border-slate-100 flex justify-between items-center">
+              <button
+                onClick={() => setShowDebtBreakdown(!showDebtBreakdown)}
+                className="flex items-center gap-2 px-6 py-4 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-black text-xs uppercase tracking-widest rounded-2xl transition-all"
+              >
+                <Calculator size={18} />
+                {showDebtBreakdown ? 'Ocultar Deuda' : 'Desglose de Deuda'}
+              </button>
               <button
                 onClick={() => setViewTaxpayer(null)}
                 className="px-10 py-4 bg-slate-900 hover:bg-black text-white font-black text-xs uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl active:scale-95"
@@ -547,19 +671,327 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                 Cerrar Ficha
               </button>
             </div>
+
+            {/* --- DEBT BREAKDOWN SLIDE-OVER / SECTION --- */}
+            {showDebtBreakdown && viewTaxpayer && (
+              <div className="border-t border-slate-200 bg-slate-50 p-10 animate-fade-in-up">
+                <div className="max-w-4xl mx-auto">
+                  <div className="flex justify-between items-center mb-10">
+                    <div>
+                      <h3 className="text-2xl font-black text-slate-900 tracking-tight">Estructura Tributaria Mensual</h3>
+                      <p className="text-slate-500 text-sm font-bold mt-1">Configure las actividades y magnitud para el cobro automatizado</p>
+                    </div>
+                    <div className="flex items-center gap-4 bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
+                      {(['PEQUEÑO', 'MEDIANO', 'GRANDE'] as const).map((m) => (
+                        <button
+                          key={m}
+                          onClick={async () => {
+                            const updated = { ...viewTaxpayer, magnitude: m };
+                            
+                            // Recalculate balance
+                             const newSelectedRates = { ...(updated.selectedRates || {}) };
+                             
+                             (updated.selectedTaxCodes || []).forEach(code => {
+                               const struct = (taxStructure as any[]).find(s => s.code === code);
+                               if (struct) {
+                                 const magnitudeRates = m === 'GRANDE' ? struct.rates.GRANDE :
+                                                      m === 'MEDIANO' ? struct.rates.MEDIANO : struct.rates.PEQUENO;
+                                 
+                                 if (Array.isArray(magnitudeRates)) {
+                                   if (newSelectedRates[code] === undefined || !magnitudeRates.includes(newSelectedRates[code])) {
+                                     newSelectedRates[code] = magnitudeRates[0];
+                                   }
+                                   if (typeof newSelectedRates[code] === 'number') {
+                                     total += newSelectedRates[code];
+                                   }
+                                 } else if (typeof magnitudeRates === 'number') {
+                                   newSelectedRates[code] = magnitudeRates;
+                                   total += magnitudeRates;
+                                 }
+                               }
+                             });
+                             updated.selectedRates = newSelectedRates;
+                             updated.balance = total + (updated.rotuloAmount || 0) + (updated.garbageAmount || 0);
+                            
+                            await onUpdate(updated);
+                            setViewTaxpayer(updated);
+                          }}
+                          className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${viewTaxpayer.magnitude === m
+                            ? 'bg-red-600 text-white shadow-lg'
+                            : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                            }`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                    <div className="lg:col-span-2">
+                      <div className="relative mb-6">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <input
+                          type="text"
+                          placeholder="Buscar actividad por nombre o código..."
+                          className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-[1.5rem] shadow-sm focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black"
+                          value={taxSearchTerm}
+                          onChange={(e) => setTaxSearchTerm(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                        <table className="w-full text-left">
+                          <thead className="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Código</th>
+                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Actividad</th>
+                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Cuota ({viewTaxpayer.magnitude})</th>
+                              <th className="px-6 py-4 text-right"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                              {taxStructure
+                                .filter(item =>
+                                  (item.code || '').toLowerCase().includes(taxSearchTerm.toLowerCase()) ||
+                                  (item.activity || '').toLowerCase().includes(taxSearchTerm.toLowerCase())
+                                )
+                                .map((item) => {
+                                  const isSelected = viewTaxpayer.selectedTaxCodes?.includes(item.code);
+
+                                  return (
+                                    <tr key={item.code} className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-indigo-50/30' : ''}`}>
+                                      <td className="px-6 py-4 font-mono font-black text-indigo-600 text-sm">{item.code}</td>
+                                      <td className="px-6 py-4">
+                                        <span className="block font-bold text-slate-700 text-sm">{item.activity}</span>
+                                        {isSelected && <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">&bull; Seleccionado</span>}
+                                      </td>
+                                    <td className="px-6 py-4 text-right font-black text-slate-900">
+                                      {(() => {
+                                        const magnitudeRates = viewTaxpayer.magnitude === 'GRANDE' ? item.rates.GRANDE :
+                                                             viewTaxpayer.magnitude === 'MEDIANO' ? item.rates.MEDIANO : item.rates.PEQUENO;
+                                        
+                                        if (Array.isArray(magnitudeRates)) {
+                                          const currentRate = viewTaxpayer.selectedRates?.[item.code] || magnitudeRates[0];
+                                          return (
+                                            <div className="flex flex-col items-end gap-1">
+                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Multi-regimen</span>
+                                              {isSelected ? (
+                                                <select 
+                                                  className="text-xs p-1 border rounded bg-white text-black font-bold"
+                                                  value={currentRate}
+                                                  onChange={async (e) => {
+                                                    const val = parseFloat(e.target.value);
+                                                    const updated = {
+                                                      ...viewTaxpayer,
+                                                      selectedRates: {
+                                                        ...(viewTaxpayer.selectedRates || {}),
+                                                        [item.code]: val
+                                                      }
+                                                    };
+                                                    
+                                                    // Recalculate balance
+                                                    let newTotal = 0;
+                                                    (updated.selectedTaxCodes || []).forEach(c => {
+                                                      const s = (taxStructure as any[]).find(st => st.code === c);
+                                                      if (s) {
+                                                        const mRates = updated.magnitude === 'GRANDE' ? s.rates.GRANDE :
+                                                                       updated.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
+                                                        if (Array.isArray(mRates)) {
+                                                          const rate = updated.selectedRates?.[c] || mRates[0];
+                                                          if (typeof rate === 'number') newTotal += rate;
+                                                        } else if (typeof mRates === 'number') {
+                                                          newTotal += mRates;
+                                                        }
+                                                      }
+                                                    });
+                                                    updated.balance = newTotal + (updated.rotuloAmount || 0) + (updated.garbageAmount || 0);
+                                                    
+                                                    await onUpdate(updated);
+                                                    setViewTaxpayer(updated);
+                                                  }}
+                                                >
+                                                  {magnitudeRates.map((r: number, i: number) => (
+                                                    <option key={i} value={r}>Opción {i+1}: B/. {formatCurrency(r)}</option>
+                                                  ))}
+                                                </select>
+                                              ) : (
+                                                <span className="text-sm">B/. {formatCurrency(magnitudeRates[0])}+</span>
+                                              )}
+                                            </div>
+                                          );
+                                        } else if (typeof magnitudeRates === 'number') {
+                                          return `B/. ${formatCurrency(magnitudeRates)}`;
+                                        } else {
+                                          return magnitudeRates;
+                                        }
+                                      })()}
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                      <button
+                                        onClick={async () => {
+                                          const current = viewTaxpayer.selectedTaxCodes || [];
+                                          const updatedCodes = isSelected
+                                            ? current.filter(c => c !== item.code)
+                                            : [...current, item.code];
+                                          
+                                          const updated = { ...viewTaxpayer, selectedTaxCodes: updatedCodes };
+                                          
+                                          let total = 0;
+                                          const newSelectedRates = { ...(updated.selectedRates || {}) };
+
+                                          updatedCodes.forEach(code => {
+                                            const struct = (taxStructure as any[]).find(s => s.code === code);
+                                            if (struct) {
+                                              const magnitudeRates = updated.magnitude === 'GRANDE' ? struct.rates.GRANDE :
+                                                                   updated.magnitude === 'MEDIANO' ? struct.rates.MEDIANO : struct.rates.PEQUENO;
+                                              
+                                              if (Array.isArray(magnitudeRates)) {
+                                                if (newSelectedRates[code] === undefined || !magnitudeRates.includes(newSelectedRates[code])) {
+                                                  newSelectedRates[code] = magnitudeRates[0];
+                                                }
+                                                total += newSelectedRates[code];
+                                              } else if (typeof magnitudeRates === 'number') {
+                                                newSelectedRates[code] = magnitudeRates;
+                                                total += magnitudeRates;
+                                              }
+                                            }
+                                          });
+                                          updated.selectedRates = newSelectedRates;
+                                          updated.balance = total + (updated.rotuloAmount || 0) + (updated.garbageAmount || 0);
+                                          
+                                          await onUpdate(updated);
+                                          setViewTaxpayer(updated);
+                                        }}
+                                        className={`p-2 rounded-xl transition-all ${isSelected ? 'bg-red-500 text-white shadow-lg rotate-0' : 'bg-slate-100 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600'}`}
+                                      >
+                                        <CheckSquare size={18} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="space-y-6">
+                      <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 rounded-full blur-[40px] -mr-16 -mt-16"></div>
+                        <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-6">Resumen Mensual Estimado</h4>
+                        
+                        <div className="space-y-4 mb-8">
+                          <div className="flex justify-between items-center text-sm border-b border-white/5 pb-3">
+                            <span className="text-slate-400">Actividades Seleccionadas</span>
+                            <span className="font-black">{viewTaxpayer.selectedTaxCodes?.length || 0}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm border-b border-white/5 pb-3">
+                            <span className="text-slate-400">Impuesto Rótulo</span>
+                            <input 
+                              type="number" 
+                              inputMode="decimal"
+                              className="w-20 bg-transparent border-b border-indigo-500/30 text-right font-black text-indigo-400 focus:border-indigo-400 outline-none" 
+                              value={viewTaxpayer.rotuloAmount === 0 ? '' : viewTaxpayer.rotuloAmount}
+                              onChange={async (e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                const updated = { ...viewTaxpayer, rotuloAmount: val };
+                                
+                                // Recalculate balance
+                                let newTotal = 0;
+                                (updated.selectedTaxCodes || []).forEach(c => {
+                                  const s = (taxStructure as any[]).find(st => st.code === c);
+                                  if (s) {
+                                    const mRates = updated.magnitude === 'GRANDE' ? s.rates.GRANDE :
+                                                   updated.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
+                                    if (Array.isArray(mRates)) {
+                                      const rate = updated.selectedRates?.[c] || mRates[0];
+                                      if (typeof rate === 'number') newTotal += rate;
+                                    } else if (typeof mRates === 'number') {
+                                      newTotal += mRates;
+                                    }
+                                  }
+                                });
+                                newTotal += val + (updated.garbageAmount || 0);
+                                updated.balance = newTotal;
+                                
+                                await onUpdate(updated);
+                                setViewTaxpayer(updated);
+                              }}
+                            />
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-slate-400">Servicio Basura</span>
+                            <input 
+                              type="number" 
+                              inputMode="decimal"
+                              className="w-20 bg-transparent border-b border-emerald-500/30 text-right font-black text-emerald-400 focus:border-emerald-400 outline-none" 
+                              value={viewTaxpayer.garbageAmount === 0 ? '' : viewTaxpayer.garbageAmount}
+                              onChange={async (e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                const updated = { ...viewTaxpayer, garbageAmount: val };
+                                
+                                // Recalculate balance
+                                let newTotal = 0;
+                                (updated.selectedTaxCodes || []).forEach(c => {
+                                  const s = (taxStructure as any[]).find(st => st.code === c);
+                                  if (s) {
+                                    const mRates = updated.magnitude === 'GRANDE' ? s.rates.GRANDE :
+                                                   updated.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
+                                    if (Array.isArray(mRates)) {
+                                      const rate = updated.selectedRates?.[c] || mRates[0];
+                                      if (typeof rate === 'number') newTotal += rate;
+                                    } else if (typeof mRates === 'number') {
+                                      newTotal += mRates;
+                                    }
+                                  }
+                                });
+                                newTotal += val + (updated.rotuloAmount || 0);
+                                updated.balance = newTotal;
+                                
+                                await onUpdate(updated);
+                                setViewTaxpayer(updated);
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-6 border-t border-white/10">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total a Recaudar</p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-4xl font-black tabular-nums">B/. {formatCurrency(viewTaxpayer.balance || 0)}</span>
+                            <span className="text-[10px] font-black text-indigo-400 uppercase">/ Mes</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-amber-50 border border-amber-200 p-6 rounded-3xl">
+                         <div className="flex gap-3">
+                            <AlertCircle className="text-amber-600 shrink-0" size={20} />
+                            <div>
+                               <p className="text-xs font-bold text-amber-900 leading-tight">Nota de Facturación</p>
+                               <p className="text-[10px] text-amber-800/70 mt-1">Los cambios en la estructura tributaria se verán reflejados en el próximo ciclo de facturación mensual.</p>
+                            </div>
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* --- TOP SEARCH BAR (Sticky) --- */}
       <div id="taxpayer-top" className="sticky top-0 z-40 bg-white/90 backdrop-blur-md shadow-sm border-b border-slate-200 -mx-4 sm:-mx-8 px-4 sm:px-8 py-4 mb-6">
-        <div className="max-w-4xl mx-auto relative">
-          <div className="relative">
+        <div className="max-w-4xl mx-auto flex flex-col md:flex-row items-center gap-4 relative">
+          <div className="relative flex-1 w-full">
             <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
             <input
               type="text"
-              placeholder="Buscar contribuyente existente (RUC, Cédula, Nombre)..."
-              className="w-full pl-12 pr-4 py-3 border border-slate-300 rounded-full shadow-sm focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 text-lg transition-all"
+              placeholder="Buscar por Nombre, RUC o Cédula..."
+              className="w-full pl-12 pr-10 py-3 border border-slate-300 rounded-full shadow-sm focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 text-lg transition-all"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -573,98 +1005,217 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
             )}
           </div>
 
-          {/* Search Dropdown */}
-          {isSearching && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden animate-fade-in z-50">
-              {searchResults.length > 0 ? (
-                <>
-                  <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase">
-                    Resultados Encontrados
+          <div className="relative">
+            <button
+              onClick={() => setShowActivityDropdown(!showActivityDropdown)}
+              className={`flex items-center gap-2 px-6 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-lg transition-all active:scale-95 whitespace-nowrap border ${
+                selectedActivity !== 'ALL' 
+                  ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-200' 
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <Briefcase size={18} />
+              {selectedActivity === 'ALL' ? 'Filtrar Actividad' : selectedActivity}
+              <ChevronDown size={16} className={`transition-transform ${showActivityDropdown ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showActivityDropdown && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowActivityDropdown(false)}></div>
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50 animate-fade-in max-h-[70vh] overflow-y-auto">
+                  <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Seleccionar Actividad
                   </div>
-                  <ul>
-                    {searchResults.map(tp => (
-                      <li key={tp.id}>
-                        <button
-                          onClick={() => {
-                            setHistoryTaxpayer(tp);
-                            setSearchTerm('');
-                            setIsSearching(false);
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                            document.documentElement.scrollTop = 0;
-                            document.body.scrollTop = 0;
-                          }}
-                          className="w-full text-left px-4 py-3 hover:bg-indigo-50 transition-colors flex items-center justify-between group"
-                        >
-                          <div>
-                            <div className="font-bold text-slate-800 group-hover:text-indigo-700">{tp.name}</div>
-                            <div className="text-xs text-slate-500 flex items-center gap-2">
-                              <span className="font-mono bg-slate-100 px-1 rounded">{tp.docId}</span>
-                              <span>• {tp.taxpayerNumber}</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleEditInit(tp);
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                                document.documentElement.scrollTop = 0;
-                                document.body.scrollTop = 0;
-                              }}
-                              className="text-slate-400 hover:text-indigo-600 flex items-center group/edit"
-                              title="Editar Contribuyente"
-                            >
-                              <Edit size={16} className="mr-1" />
-                              <span className="text-xs font-bold underline decoration-transparent group-hover/edit:decoration-indigo-600 transition-all">Editar</span>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setViewTaxpayer(tp);
-                                setSearchTerm('');
-                                setIsSearching(false);
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                                document.documentElement.scrollTop = 0;
-                                document.body.scrollTop = 0;
-                              }}
-                              className="text-slate-400 hover:text-blue-600 flex items-center group/view mr-2"
-                              title="Ver Ficha Completa"
-                            >
-                              <FileText size={16} className="mr-1" />
-                              <span className="text-xs font-bold underline decoration-transparent group-hover/view:decoration-blue-600 transition-all">Ficha</span>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setHistoryTaxpayer(tp);
-                                setSearchTerm('');
-                                setIsSearching(false);
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                                document.documentElement.scrollTop = 0;
-                                document.body.scrollTop = 0;
-                              }}
-                              className="text-slate-400 hover:text-indigo-500 flex items-center"
-                            >
-                              <span className="text-xs mr-2 font-medium">Historial</span>
-                              <History size={16} />
-                            </button>
-                          </div>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : (
-                <div className="p-8 text-center bg-white">
-                  <AlertCircle size={32} className="mx-auto text-slate-200 mb-2" />
-                  <p className="text-slate-600 font-bold">No se encontraron contribuyentes</p>
-                  <p className="text-xs text-slate-400 mt-1">Intente con otro nombre, RUC o cédula</p>
+                  <button
+                    onClick={() => {
+                      setSelectedActivity('ALL');
+                      setShowActivityDropdown(false);
+                    }}
+                    className={`w-full text-left px-4 py-3 text-xs font-bold transition-colors border-b border-slate-50 ${selectedActivity === 'ALL' ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}
+                  >
+                    TODAS LAS ACTIVIDADES
+                  </button>
+                  {MUNICIPAL_ACTIVITIES.map(act => (
+                    <button
+                      key={act}
+                      onClick={() => {
+                        setSelectedActivity(act);
+                        setShowActivityDropdown(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 text-xs font-bold transition-colors border-b border-slate-50 ${selectedActivity === act ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}
+                    >
+                      {act}
+                    </button>
+                  ))}
                 </div>
-              )}
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Persistent Record Counter (Floating) */}
+      <div className="fixed bottom-8 right-8 z-[200] flex flex-col gap-2 pointer-events-none">
+        <div className="bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-4 animate-in slide-in-from-right duration-500 pointer-events-auto">
+          <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-2xl font-black">
+            {taxpayers.length}
+          </div>
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Total Cargado</div>
+            <div className="text-sm font-black uppercase tracking-widest text-indigo-400">Registros en Sistema</div>
+          </div>
+        </div>
+      </div>
+
+        {/* Search Results Overlay */}
+        {isSearching && (
+          <>
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100]" onClick={() => setIsSearching(false)}></div>
+            <div className="fixed top-24 left-1/2 -translate-x-1/2 w-full max-w-4xl bg-white rounded-[2.5rem] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.5)] border border-white/20 overflow-hidden animate-in fade-in zoom-in-95 duration-300 z-[110] ring-1 ring-black/5">
+              <div className="bg-slate-900 px-10 py-8 flex items-center justify-between relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>
+                <div className="relative z-10 flex items-center gap-6">
+                  <div className="w-16 h-16 bg-indigo-600 rounded-3xl flex items-center justify-center text-white shadow-2xl shadow-indigo-500/40 rotate-3">
+                    <Search size={32} />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-black text-2xl tracking-tight uppercase">Resultados del Catastro</h3>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="bg-indigo-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
+                        {searchResults.length} Registros
+                      </span>
+                      {selectedActivity !== 'ALL' && (
+                        <span className="bg-amber-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
+                          {selectedActivity}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsSearching(false)}
+                  className="relative z-10 w-12 h-12 bg-white/10 hover:bg-white/20 text-white rounded-2xl flex items-center justify-center transition-all active:scale-90"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="max-h-[60vh] overflow-y-auto bg-slate-50/50">
+                {searchResults.length > 0 ? (
+                  <div className="grid grid-cols-1 divide-y divide-slate-200/60">
+                    {searchResults.map(tp => (
+                      <div
+                        key={tp.id}
+                        onClick={() => {
+                          setHistoryTaxpayer(tp);
+                          setSearchTerm('');
+                          setIsSearching(false);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="group relative flex items-center justify-between p-8 hover:bg-white transition-all cursor-pointer border-l-8 border-transparent hover:border-indigo-600"
+                      >
+                        <div className="flex items-center gap-6">
+                          <div className={`w-16 h-16 rounded-3xl flex items-center justify-center text-2xl font-black shadow-xl transition-transform group-hover:scale-110 ${
+                            tp.status === 'ACTIVO' ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-slate-200 text-slate-500'
+                          }`}>
+                            {tp.name.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="font-black text-slate-900 text-xl group-hover:text-indigo-700 transition-colors uppercase tracking-tight leading-tight">{tp.name}</div>
+                            <div className="flex items-center gap-4 mt-2">
+                              <div className="flex items-center gap-2 text-slate-500 font-bold text-xs">
+                                <CreditCard size={14} className="text-slate-400" />
+                                <span className="bg-slate-100 px-2 py-0.5 rounded text-[10px]">{tp.docId}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-slate-500 font-bold text-xs">
+                                <FileText size={14} className="text-slate-400" />
+                                <span className="bg-slate-100 px-2 py-0.5 rounded text-[10px]">{tp.taxpayerNumber}</span>
+                              </div>
+                              {tp.documents?.import_source && (
+                                <div className="flex items-center gap-2">
+                                  <span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-indigo-100">
+                                    {tp.documents.import_source.replace('.xlsx', '')}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditInit(tp);
+                              setIsSearching(false);
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center hover:bg-amber-500 hover:text-white transition-all shadow-lg shadow-amber-500/10"
+                            title="Editar"
+                          >
+                            <Edit size={20} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setViewTaxpayer(tp);
+                              setIsSearching(false);
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-lg shadow-indigo-500/10"
+                            title="Ver Ficha"
+                          >
+                            <ChevronRight size={24} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-24 text-center">
+                    <div className="w-32 h-32 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <Search size={48} className="text-slate-300" />
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-900 uppercase">Sin resultados</h3>
+                    <p className="text-slate-500 font-bold mt-2 max-w-xs mx-auto">
+                      No encontramos registros con esos criterios en el Catastro 2026.
+                    </p>
+                    <p className="text-slate-400 text-[10px] mt-4 font-black uppercase tracking-widest">
+                      Total Registros Cargados: {taxpayers.length}
+                    </p>
+                    <div className="flex flex-col gap-3 mt-8">
+                      <button 
+                        onClick={() => window.location.reload()}
+                        className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 transition-all active:scale-95"
+                      >
+                        Sincronizar Base de Datos
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setSearchTerm('');
+                          setSelectedActivity('ALL');
+                        }}
+                        className="px-10 py-4 bg-white border-2 border-slate-200 text-slate-600 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-slate-50 transition-all active:scale-95"
+                      >
+                        Limpiar Filtros
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="bg-white px-10 py-6 border-t border-slate-100 flex justify-between items-center">
+                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                  Conexión Directa con Tesorería
+                </div>
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  SIGMA v0.0.8 - Almirante
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
       {/* --- MAIN CONTENT: NEW RECORD FORM --- */}
       <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
@@ -786,112 +1337,248 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                   <input type="email" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base"
                     value={newTp.email} onChange={e => setNewTp({ ...newTp, email: e.target.value })} />
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Saldo / Deuda Inicial (B/.)</label>
-                  <input type="number" step="0.01" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-red-100 focus:border-red-500 transition-all text-black text-base"
-                    placeholder="0.00"
-                    value={newTp.balance || ''}
-                    onChange={e => setNewTp({
-                      ...newTp,
-                      balance: parseFloat(e.target.value),
-                      // Auto-set status to MOROSO if balance > 0
-                      // status: parseFloat(e.target.value) > 0 ? TaxpayerStatus.MOROSO : newTp.status 
-                    })}
-                  />
-                  <p className="text-xs text-slate-400 mt-1">Si ingresa un monto, el contribuyente será registrado como MOROSO automáticamente si corresponde.</p>
                 </div>
               </div>
-            </div>
 
-            {/* SECTION 3: SERVICES */}
-            <div className="bg-white rounded-2xl">
-              <h4 className="text-lg font-bold text-slate-800 mb-6 flex items-center border-b border-slate-100 pb-3">
-                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center mr-3 text-slate-600 font-bold text-sm">2</div>
-                Servicios y Activos
+            {/* SECTION 2: ESTRUCTURA TRIBUTARIA & ACTIVOS */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+              <h4 className="text-lg font-black text-slate-800 mb-6 flex items-center border-b border-slate-100 pb-3 uppercase tracking-widest">
+                <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center mr-3 text-white font-bold text-sm">2</div>
+                Servicios y Estructura Tributaria
               </h4>
 
-              <div className="space-y-8">
-                {/* 3.1 COMMERCIAL ACTIVITY & OTHERS */}
-                {/* Reusing logic but slightly restyled */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-100 md:col-span-2">
-                    <div className="flex items-center justify-between mb-4">
-                      <label className="flex items-center cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          className="w-6 h-6 text-indigo-600 rounded focus:ring-indigo-500"
-                          checked={newTp.hasCommercialActivity}
-                          onChange={(e) => setNewTp({ ...newTp, hasCommercialActivity: e.target.checked })}
-                        />
-                        <div className="ml-3">
-                          <span className="block font-bold text-indigo-900 text-lg">Actividad Comercial</span>
-                          <span className="text-indigo-600/70 text-sm">Negocios, tiendas, industrias</span>
-                        </div>
-                      </label>
-                      <Store className="text-indigo-400 w-8 h-8" />
+              <div className="space-y-6">
+                <div className="bg-red-50 p-6 rounded-2xl border border-red-200">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                    <div>
+                      <label className="block text-[10px] font-black text-red-900 uppercase tracking-[0.2em] mb-2">Magnitud del Contribuyente</label>
+                      <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-red-100 shadow-inner">
+                        {(['PEQUEÑO', 'MEDIANO', 'GRANDE'] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setNewTp({ ...newTp, magnitude: m })}
+                            className={`flex-1 px-4 py-2 rounded-lg text-[10px] font-black transition-all ${newTp.magnitude === m
+                              ? 'bg-red-600 text-white shadow-md'
+                              : 'text-slate-400 hover:bg-slate-50'
+                              }`}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
-                    {newTp.hasCommercialActivity && (
-                      <div className="pl-0 md:pl-9 grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in mt-4 border-t border-indigo-200/50 pt-4">
-                        <div>
-                          <label className="block text-xs font-bold text-indigo-800/60 uppercase mb-1">Nombre Comercial</label>
-                          <input type="text" className="w-full p-3 border border-indigo-200 rounded-lg text-black bg-white focus:ring-2 focus:ring-indigo-500"
-                            value={newTp.commercialName} onChange={e => setNewTp({ ...newTp, commercialName: e.target.value })} placeholder="Ej. Mini Super El Chino" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-indigo-800/60 uppercase mb-1">Categoría</label>
-                          <select
-                            className="w-full p-3 border border-indigo-200 rounded-lg bg-white text-black"
-                            value={newTp.commercialCategory}
-                            onChange={e => setNewTp({ ...newTp, commercialCategory: e.target.value as CommercialCategory })}
-                          >
-                            <option value={CommercialCategory.NONE}>Seleccionar...</option>
-                            <option value={CommercialCategory.CLASE_A}>Clase A (Bancos, Supermercados)</option>
-                            <option value={CommercialCategory.CLASE_B}>Clase B (Tiendas, Farmacias)</option>
-                            <option value={CommercialCategory.CLASE_C}>Clase C (Kioscos, Buhonería)</option>
-                          </select>
-                        </div>
+                    <div className="flex-1 max-w-md">
+                      <label className="block text-[10px] font-black text-red-900 uppercase tracking-[0.2em] mb-2">Buscador de Actividades</label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                          type="text"
+                          placeholder="Buscar código o actividad..."
+                          className="w-full pl-10 pr-4 py-2.5 bg-white border border-red-100 rounded-xl text-sm focus:ring-2 focus:ring-red-500 transition-all text-black"
+                          value={taxSearchTerm}
+                          onChange={(e) => setTaxSearchTerm(e.target.value)}
+                        />
                       </div>
-                    )}
+                    </div>
                   </div>
 
-                  {/* Construction */}
-                  <div className="bg-amber-50 p-5 rounded-xl border border-amber-100 flex items-center justify-between hover:bg-amber-100/50 transition-colors">
-                    <label className="flex items-center cursor-pointer select-none w-full">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Activity Selector */}
+                    <div className="lg:col-span-2">
+                      <div className="bg-white rounded-2xl border border-red-100 shadow-sm overflow-hidden">
+                        <div className="max-h-[400px] overflow-y-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="sticky top-0 bg-red-100 text-red-900 font-black uppercase tracking-widest text-[9px]">
+                              <tr>
+                                <th className="p-3 pl-5">Código</th>
+                                <th className="p-3">Actividad Económica</th>
+                                <th className="p-3 pr-5 text-right">Añadir</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-red-50">
+                              {taxStructure
+                                .filter(item =>
+                                  (item.code || '').toLowerCase().includes(taxSearchTerm.toLowerCase()) ||
+                                  (item.activity || '').toLowerCase().includes(taxSearchTerm.toLowerCase())
+                                )
+                                .map((item) => {
+                                  const isSelected = newTp.selectedTaxCodes?.includes(item.code);
+                                  return (
+                                    <tr key={item.code} className={`transition-colors ${isSelected ? 'bg-red-50/50' : 'hover:bg-slate-50'}`}>
+                                      <td className="p-3 pl-5 font-mono font-bold text-red-600">{item.code}</td>
+                                      <td className="p-3 font-medium text-slate-700">
+                                        <div className="font-bold">{item.activity}</div>
+                                        {isSelected && (
+                                          <div className="mt-2 animate-fade-in">
+                                            {(() => {
+                                              const magnitudeRates = newTp.magnitude === 'GRANDE' ? item.rates.GRANDE :
+                                                                   newTp.magnitude === 'MEDIANO' ? item.rates.MEDIANO : item.rates.PEQUENO;
+                                              
+                                              if (Array.isArray(magnitudeRates)) {
+                                                return (
+                                                  <select 
+                                                    className="w-full text-[10px] p-2 border border-red-200 rounded-lg bg-white text-black font-bold shadow-sm"
+                                                    value={newTp.selectedRates?.[item.code] || magnitudeRates[0]}
+                                                    onChange={(e) => {
+                                                      const val = parseFloat(e.target.value);
+                                                      setNewTp(prev => ({
+                                                        ...prev,
+                                                        selectedRates: {
+                                                          ...(prev.selectedRates || {}),
+                                                          [item.code]: val
+                                                        }
+                                                      }));
+                                                    }}
+                                                  >
+                                                    {magnitudeRates.map((r: number, i: number) => (
+                                                      <option key={i} value={r}>Tarifa {i + 1}: B/. {formatCurrency(r)}</option>
+                                                    ))}
+                                                  </select>
+                                                );
+                                              } else if (typeof magnitudeRates === 'number') {
+                                                return <div className="text-[10px] font-black text-red-500 bg-red-100 px-2 py-0.5 rounded-full inline-block">B/. {formatCurrency(magnitudeRates)}</div>;
+                                              } else {
+                                                return <div className="text-[10px] font-bold text-slate-400 italic">{magnitudeRates}</div>;
+                                              }
+                                            })()}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="p-3 pr-5 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const current = newTp.selectedTaxCodes || [];
+                                            const updated = isSelected
+                                              ? current.filter(c => c !== item.code)
+                                              : [...current, item.code];
+                                            setNewTp({ ...newTp, selectedTaxCodes: updated });
+                                          }}
+                                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isSelected ? 'bg-red-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-600'}`}
+                                        >
+                                          <CheckSquare size={16} />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Summary & Manual Adjustments */}
+                    <div className="space-y-6">
+                      <div className="bg-white rounded-2xl border border-red-100 shadow-sm p-5">
+                        <h5 className="text-[10px] font-black text-red-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+                          <Settings size={14} /> Ajustes Mensuales
+                        </h5>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Impuesto Rótulo</label>
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-300 font-bold">B/.</span>
+                              <input 
+                                type="number" inputMode="decimal"
+                                className="w-full p-2 border border-slate-100 rounded-lg text-right font-black text-slate-800 focus:border-red-500 outline-none transition-all"
+                                value={newTp.rotuloAmount === 0 ? '' : newTp.rotuloAmount}
+                                onChange={(e) => setNewTp({ ...newTp, rotuloAmount: parseFloat(e.target.value) || 0 })}
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Servicio Basura</label>
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-300 font-bold">B/.</span>
+                              <input 
+                                type="number" inputMode="decimal"
+                                className="w-full p-2 border border-slate-100 rounded-lg text-right font-black text-slate-800 focus:border-red-500 outline-none transition-all"
+                                value={newTp.garbageAmount === 0 ? '' : newTp.garbageAmount}
+                                onChange={(e) => setNewTp({ ...newTp, garbageAmount: parseFloat(e.target.value) || 0 })}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl border-t-4 border-red-600">
+                        <div className="flex items-center gap-3 mb-6">
+                          <div className="p-2 bg-white/10 rounded-lg text-red-500">
+                            <Calculator size={20} />
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-[0.3em]">Resumen Mensual</span>
+                        </div>
+                        
+                        <div className="space-y-3 mb-6 max-h-[150px] overflow-y-auto pr-2 custom-scrollbar text-white">
+                          {(newTp.selectedTaxCodes || []).map(code => {
+                            const act = taxStructure.find(s => s.code === code);
+                            const rates = newTp.magnitude === 'GRANDE' ? act?.rates.GRANDE :
+                                         newTp.magnitude === 'MEDIANO' ? act?.rates.MEDIANO : act?.rates.PEQUENO;
+                            const amount = Array.isArray(rates) ? (newTp.selectedRates?.[code] || rates[0]) : (typeof rates === 'number' ? rates : 0);
+                            
+                            return (
+                              <div key={code} className="flex justify-between text-[11px] border-b border-white/5 pb-2">
+                                <span className="text-white/60 truncate mr-2">{act?.activity}</span>
+                                <span className="font-bold text-red-400 shrink-0">B/. {formatCurrency(amount)}</span>
+                              </div>
+                            );
+                          })}
+                          {newTp.rotuloAmount > 0 && (
+                             <div className="flex justify-between text-[11px] border-b border-white/5 pb-2">
+                               <span className="text-white/60 truncate">Impuesto Rótulo</span>
+                               <span className="font-bold text-red-400 shrink-0">B/. {formatCurrency(newTp.rotuloAmount)}</span>
+                             </div>
+                          )}
+                          {newTp.garbageAmount > 0 && (
+                             <div className="flex justify-between text-[11px] border-b border-white/5 pb-2">
+                               <span className="text-white/60 truncate">Servicio Basura</span>
+                               <span className="font-bold text-red-400 shrink-0">B/. {formatCurrency(newTp.garbageAmount)}</span>
+                             </div>
+                          )}
+                        </div>
+
+                        <div className="pt-4 border-t border-white/10">
+                          <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Cálculo Total Mensual</span>
+                          <span className="text-3xl font-black text-white">B/. {formatCurrency(newTp.balance || 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Construction & Garbage Toggles (Compact) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 flex items-center justify-between">
+                    <label className="flex items-center cursor-pointer select-none">
                       <input
                         type="checkbox"
                         className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500"
                         checked={newTp.hasConstruction}
                         onChange={(e) => setNewTp({ ...newTp, hasConstruction: e.target.checked })}
                       />
-                      <div className="ml-3">
-                        <span className="block font-bold text-amber-900">Permisos Construcción</span>
-                        <span className="text-sm text-amber-700/60">Obras civiles activas</span>
-                      </div>
+                      <span className="ml-3 font-bold text-amber-900">Permisos Construcción</span>
                     </label>
-                    <Hammer className="text-amber-400 w-6 h-6" />
+                    <Hammer className="text-amber-400 w-5 h-5" />
                   </div>
-
-                  {/* Garbage */}
-                  <div className="bg-emerald-50 p-5 rounded-xl border border-emerald-100 flex items-center justify-between hover:bg-emerald-100/50 transition-colors">
-                    <label className="flex items-center cursor-pointer select-none w-full">
+                  <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-center justify-between">
+                    <label className="flex items-center cursor-pointer select-none">
                       <input
                         type="checkbox"
                         className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
                         checked={newTp.hasGarbageService}
                         onChange={(e) => setNewTp({ ...newTp, hasGarbageService: e.target.checked })}
                       />
-                      <div className="ml-3">
-                        <span className="block font-bold text-emerald-900">Recolección Basura</span>
-                        <span className="text-sm text-emerald-700/60">Servicio activo</span>
-                      </div>
+                      <span className="ml-3 font-bold text-emerald-900">Recolección Basura</span>
                     </label>
-                    <Trash2 className="text-emerald-400 w-6 h-6" />
+                    <Trash2 className="text-emerald-400 w-5 h-5" />
                   </div>
                 </div>
 
-                {/* 3.2 VEHICLES */}
-                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mt-6 relative">
+                {/* Vehicles Section (Same as before but integrated) */}
+                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 relative">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6">
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-blue-200/50 rounded-lg text-blue-600">
@@ -934,7 +1621,6 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                           </div>
                           <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
                             <div className="flex gap-2">
-                              {/* These buttons are placeholders in 'Creation Mode' mostly, but functional logic remains */}
                               <span className="text-xs text-slate-400 bg-slate-50 px-2 py-1 rounded">VIN: {v.chassisSerial}</span>
                             </div>
                             <button type="button" onClick={() => removeVehicle(v.plate)} className="text-red-500 hover:text-red-700 flex items-center text-sm font-bold bg-red-50 hover:bg-red-100 px-3 py-1 rounded-lg transition-colors">
@@ -1091,7 +1777,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                 <p className="text-sm text-amber-700 mb-3 font-medium">
                   Este cambio requiere aprobación del administrador. Explique el motivo de la modificación:
                 </p>
-                <textarea
+                        <textarea
                   required
                   className="w-full border-2 border-amber-200 rounded-xl p-4 focus:ring-4 focus:ring-amber-100 focus:border-amber-500 transition-all text-black text-base min-h-[100px]"
                   placeholder="Ej: Se corrige el nombre según cédula física adjunta..."
@@ -1126,8 +1812,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                   </>
                 ) : (
                   <>
-                    <CheckCircle className="mr-2" size={20} />
-                    {isEditing ? 'Guardar Cambios' : 'Registrar Contribuyente'}
+                    {isEditing ? <Shield className="mr-2" size={20} /> : <CheckSquare className="mr-2" size={20} />}
+                    {isEditing ? 'Solicitar Aprobación' : 'Registrar Contribuyente'}
                   </>
                 )}
               </button>
@@ -1135,6 +1821,227 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
           </form>
         </div>
       </div>
+
+      {/* --- RECENT REGISTRY TABLE (NEW) --- */}
+      {!isSearching && (
+        <div className="max-w-6xl mx-auto mt-12 mb-20 bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
+          <div className="bg-slate-50 px-8 py-6 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-indigo-600 text-white rounded-2xl">
+                <History size={24} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Registro Municipal (A-Z)</h3>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Listado completo de contribuyentes cargados</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+               <span className="bg-slate-200 text-slate-600 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest">
+                 {taxpayers.length} Registros Totales
+               </span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-slate-900 text-white text-[10px] font-black uppercase tracking-[0.2em]">
+                  <th className="px-8 py-5">Nombre / Razón Social</th>
+                  <th className="px-6 py-5">Identificación</th>
+                  <th className="px-6 py-5">Dirección</th>
+                  <th className="px-6 py-5">Categoría</th>
+                  <th className="px-8 py-5 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {taxpayers.length > 0 ? (
+                  taxpayers.slice(0, 100).sort((a,b) => (a.name||'').localeCompare(b.name||'')).map(tp => (
+                    <tr key={tp.id} className="hover:bg-slate-50 transition-colors group">
+                      <td className="px-8 py-5">
+                        <div className="font-black text-slate-800 uppercase tracking-tight group-hover:text-indigo-600 transition-colors">{tp.name}</div>
+                        <div className="text-[10px] font-bold text-slate-400 mt-0.5">{tp.taxpayerNumber}</div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <span className="bg-slate-100 px-3 py-1 rounded-lg text-xs font-bold text-slate-600 font-mono">{tp.docId || 'S/D'}</span>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-2 text-slate-500 text-xs font-bold">
+                          <MapPin size={12} className="text-slate-300" />
+                          <span className="truncate max-w-[200px]">{tp.address}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                          tp.documents?.import_source ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-slate-50 text-slate-500 border-slate-200'
+                        }`}>
+                          {tp.documents?.import_source ? tp.documents.import_source.replace('.xlsx', '') : 'MANUAL'}
+                        </span>
+                      </td>
+                      <td className="px-8 py-5 text-right">
+                        <div className="flex justify-end gap-2">
+                           <button onClick={() => setViewTaxpayer(tp)} className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors" title="Ver Detalles">
+                              <Search size={18} />
+                           </button>
+                           <button onClick={() => handleEditInit(tp)} className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg transition-colors" title="Editar">
+                              <Edit size={18} />
+                           </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-20 text-center">
+                      <div className="flex flex-col items-center gap-4 text-slate-300">
+                        <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center border-4 border-slate-100">
+                          <User size={40} className="opacity-20" />
+                        </div>
+                        <p className="font-black uppercase tracking-widest text-sm">No hay contribuyentes cargados</p>
+                        <p className="text-xs font-bold">Inicia una carga desde Excel o utiliza el formulario superior</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            {taxpayers.length > 100 && (
+              <div className="p-6 bg-slate-50 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest border-t border-slate-100">
+                Mostrando los primeros 100 de {taxpayers.length} registros. Usa el buscador superior para ver otros.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* --- ACTIVITY FILTER MODAL --- */}
+      {showFilterModal && (
+        <div className="fixed inset-0 bg-slate-900/95 flex items-center justify-center z-[110] p-4 backdrop-blur-md animate-fade-in">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden border border-white/20">
+            <div className="p-8 bg-slate-900 text-white flex justify-between items-center flex-shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-lg">
+                  <Briefcase size={24} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black tracking-tight">Filtro por Actividad Comercial</h3>
+                  <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Seleccione una categoría para ver contribuyentes</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowFilterModal(false)}
+                className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 border-b border-slate-100 bg-slate-50 flex-shrink-0">
+              <div className="relative">
+                <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
+                <input
+                  type="text"
+                  placeholder="Buscar actividad o código..."
+                  className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 font-bold transition-all"
+                  value={activitySearch}
+                  onChange={(e) => setActivitySearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-2 bg-slate-50/30">
+              <button
+                onClick={() => {
+                  setSelectedActivity('ALL');
+                  setShowFilterModal(false);
+                }}
+                className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all border ${
+                  selectedActivity === 'ALL' 
+                    ? 'bg-indigo-600 text-white border-indigo-500 shadow-lg' 
+                    : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'
+                }`}
+              >
+                <span className="font-black text-xs uppercase tracking-widest">Todas las Actividades</span>
+                <span className="text-xs font-bold px-3 py-1 bg-white/20 rounded-full">{taxpayers.length}</span>
+              </button>
+
+              {/* Main Categories (User Requested) */}
+              {activitySearch === '' && (
+                <>
+                  <div className="px-2 pt-4 pb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Principales Actividades (Almirante)
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {mainCategories.map(cat => {
+                      const count = activityCounts[cat] || 0;
+                      return (
+                        <button
+                          key={cat}
+                          onClick={() => {
+                            setSelectedActivity(cat);
+                            setShowFilterModal(false);
+                          }}
+                          className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all border text-left ${
+                            selectedActivity === cat 
+                              ? 'bg-indigo-600 text-white border-indigo-500 shadow-lg' 
+                              : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'
+                          }`}
+                        >
+                          <div className="flex flex-col">
+                            <span className="font-black text-sm leading-tight uppercase">{cat}</span>
+                          </div>
+                          <span className={`text-xs font-black px-4 py-2 rounded-xl border ${
+                            selectedActivity === cat
+                              ? 'bg-white/20 border-white/30 text-white'
+                              : count > 0 ? 'bg-indigo-50 border-indigo-100 text-indigo-700' : 'bg-slate-50 border-slate-100 text-slate-300'
+                          }`}>
+                            {count} <span className="text-[8px] ml-1 opacity-60 uppercase">Contrib.</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="px-2 pt-6 pb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest border-t border-slate-100 mt-4">
+                    Estructura Tributaria Detallada
+                  </div>
+                </>
+              )}
+
+              {filteredActivities.map((item: any) => {
+                const count = activityCounts[item.code] || 0;
+                // Only show codes that have at least one taxpayer, or if searching
+                if (count === 0 && activitySearch === '') return null;
+
+                return (
+                  <button
+                    key={item.code}
+                    onClick={() => {
+                      setSelectedActivity(item.code);
+                      setShowFilterModal(false);
+                    }}
+                    className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all border text-left ${
+                      selectedActivity === item.code 
+                        ? 'bg-indigo-600 text-white border-indigo-500 shadow-lg' 
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'
+                    }`}
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1">{item.code}</span>
+                      <span className="font-bold text-sm leading-tight">{item.activity}</span>
+                    </div>
+                    <span className={`text-xs font-black px-4 py-2 rounded-xl border ${
+                      selectedActivity === item.code
+                        ? 'bg-white/20 border-white/30 text-white'
+                        : count > 0 ? 'bg-indigo-50 border-indigo-100 text-indigo-700' : 'bg-slate-50 border-slate-100 text-slate-300'
+                    }`}>
+                      {count} <span className="text-[8px] ml-1 opacity-60 uppercase">Contrib.</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
