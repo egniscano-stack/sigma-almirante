@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { Sidebar } from './components/Sidebar';
 import { Login } from './components/Login';
@@ -19,7 +20,7 @@ import { Landing } from './pages/Landing';
 import { AlcaldeDashboard } from './pages/AlcaldeDashboard';
 import { SecretariaDashboard } from './pages/SecretariaDashboard';
 import { TaxConfig, Taxpayer, Transaction, User, MunicipalityInfo, TaxpayerType, CommercialCategory, TaxpayerStatus, AdminRequest, RequestStatus } from './types';
-import { Menu, ArrowLeft, ArrowRight, Wifi, WifiOff, RefreshCw, Bell, AlertCircle, CheckCircle, XCircle, LogOut, Download, Archive, Edit, X, Shield, Clock, Trash2 } from 'lucide-react';
+import { Menu, ArrowLeft, ArrowRight, Wifi, WifiOff, RefreshCw, Bell, AlertCircle as AlertIcon, CheckCircle, XCircle, LogOut, Download, Archive, Edit, X, Shield, Clock, Trash2, ShieldAlert, FileText } from 'lucide-react';
 import { db, mapTaxpayerFromDB, mapTransactionFromDB } from './services/db';
 import taxStructure from './data/taxStructure.json';
 import { supabase } from './services/supabaseClient';
@@ -122,20 +123,29 @@ function App() {
       try {
         if (isManual) setIsLoading(true);
         
-        const localData = await syncService.getLocalData();
-        
-        if (localData.taxpayers.length > 0) setTaxpayers(localData.taxpayers);
-        if (localData.transactions.length > 0) setTransactions(localData.transactions);
-        if (localData.adminRequests.length > 0) setAdminRequests(localData.adminRequests);
-        if (localData.users.length > 0) setRegisteredUsers(localData.users);
-        if (localData.config) setConfig(localData.config);
+        // If manual, force a sync from Supabase first
+        if (!skipLocal) {
+            const localData = await syncService.getLocalData();
+            // Always update state with what we have
+            setTaxpayers(localData.taxpayers || []);
+            setTransactions(localData.transactions || []);
+            setAdminRequests(localData.adminRequests || []);
+            setRegisteredUsers(localData.users || []);
+            if (localData.config) setConfig(localData.config);
+        }
 
-        // Background sync if online
-        if (navigator.onLine) {
+        // Background sync if online (and not already done manually)
+        if (!isManual && navigator.onLine) {
             syncService.sync().catch(console.error);
         }
 
         setIsLoading(false);
+        if (isManual) {
+          setNotificationToast({
+            title: 'Datos Actualizados',
+            message: 'Se han sincronizado los últimos cambios del servidor.'
+          });
+        }
       } catch (error) {
         console.error("Error loading data:", error);
         setIsLoading(false);
@@ -180,11 +190,33 @@ function App() {
 
     // Supabase Realtime Subscriptions
     const unsubscribe = db.subscribeToChanges(
-      () => fetchData(), // On taxpayer change
-      () => fetchData(), // On transaction change
-      () => fetchData(), // On agenda change
       (payload: any) => {
-          fetchData();
+          // Realtime Taxpayer Update
+          if (payload.new) {
+              const updated = mapTaxpayerFromDB(payload.new);
+              setTaxpayers(prev => {
+                  const exists = prev.some(t => t.id === updated.id);
+                  if (exists) return prev.map(t => t.id === updated.id ? updated : t);
+                  return [...prev, updated];
+              });
+          }
+          fetchData(false, true); // Sync local store in background, but skip local read to avoid flicker
+      },
+      (payload: any) => {
+          // Realtime Transaction Update
+          if (payload.new) {
+              const updated = mapTransactionFromDB(payload.new);
+              setTransactions(prev => {
+                  const exists = prev.some(t => t.id === updated.id);
+                  if (exists) return prev.map(t => t.id === updated.id ? updated : t);
+                  return [updated, ...prev];
+              });
+          }
+          fetchData(false, true);
+      },
+      () => fetchData(false, true), // On agenda change
+      (payload: any) => {
+          fetchData(false, true);
           // Logic for notifications
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
               const req = payload.new as AdminRequest;
@@ -348,20 +380,38 @@ function App() {
     setShowSessionWarning(false);
   };
 
+  const [showConfirmModal, setShowConfirmModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText?: string;
+    onConfirm: () => void;
+    type: 'SUCCESS' | 'WARNING' | 'DANGER' | 'INFO';
+  }>({
+    show: false,
+    title: '',
+    message: '',
+    confirmText: 'Aceptar',
+    onConfirm: () => {},
+    type: 'INFO'
+  });
+
   const handleAddTaxpayer = async (newTp: Taxpayer) => {
     try {
       const created = await db.createTaxpayer(newTp);
-      setTaxpayers([...taxpayers, created]);
+      setTaxpayers(prev => [...prev, created]);
     } catch (e: any) {
       console.error("Error creating taxpayer", e);
-      alert(`Error al guardar: ${e.message || JSON.stringify(e)}`);
+      throw e; // Re-throw so Taxpayers.tsx knows it failed
     }
   };
 
   const handleUpdateTaxpayer = async (updatedTp: Taxpayer) => {
     try {
       const updated = await db.updateTaxpayer(updatedTp);
-      setTaxpayers(taxpayers.map(tp => tp.id === updated.id ? updated : tp));
+      setTaxpayers(prev => prev.map(tp => tp.id === updated.id ? { ...updated } : tp));
+      window.dispatchEvent(new CustomEvent('sigma_data_updated'));
     } catch (e: any) {
       console.error("Error updating taxpayer", e);
       alert(`Error al actualizar: ${e.message || JSON.stringify(e)}`);
@@ -369,14 +419,12 @@ function App() {
   };
 
   const handleDeleteTaxpayer = async (id: string) => {
-    if (window.confirm('¿Está seguro de que desea eliminar este contribuyente? Esta acción no se puede deshacer.')) {
-      try {
-        await db.deleteTaxpayer(id);
-        setTaxpayers(taxpayers.filter(tp => tp.id !== id));
-      } catch (e: any) {
+    try {
+      await db.deleteTaxpayer(id);
+      setTaxpayers(taxpayers.filter(tp => tp.id !== id));
+    } catch (e: any) {
         console.error("Error deleting", e);
         alert(`Error al eliminar: ${e.message || JSON.stringify(e)}`);
-      }
     }
   };
 
@@ -398,8 +446,6 @@ function App() {
       alert("Error al actualizar usuario");
     }
   };
-
-  // ... (Keep other handlers like handleGoToPay, handlePayment same as before, simplified for brevity in replace tool but ensuring all needed logic is retained)
 
   const handleGoToPay = (taxpayer: Taxpayer) => {
     setSelectedDebtTaxpayer(taxpayer);
@@ -429,16 +475,24 @@ function App() {
       const targetTaxpayer = paymentData.taxpayerId ? taxpayers.find(tp => tp.id === paymentData.taxpayerId) : null;
       if (targetTaxpayer) {
         let newBalance = targetTaxpayer.balance || 0;
-        if (paymentData.description.includes("Deuda Acumulada") || paymentData.description.includes("Pago Total")) {
+        let newPrevDebt = targetTaxpayer.previousYearsDebt || 0;
+
+        if (paymentData.description.includes("Deuda Acumulada") || paymentData.description.includes("Anteriores")) {
+          newPrevDebt = Math.max(0, newPrevDebt - paymentData.amount);
+        }
+
+        if (paymentData.description.includes("Pago Total")) {
           newBalance = 0;
+          newPrevDebt = 0;
         } else if (paymentData.description.includes("Saldo Pendiente")) {
           newBalance = Math.max(0, newBalance - paymentData.amount);
         }
         
-        if (newBalance !== targetTaxpayer.balance) {
-          const updatedTp = { ...targetTaxpayer, balance: newBalance };
+        if (newBalance !== targetTaxpayer.balance || newPrevDebt !== targetTaxpayer.previousYearsDebt) {
+          const updatedTp = { ...targetTaxpayer, balance: newBalance, previousYearsDebt: newPrevDebt };
           await db.updateTaxpayer(updatedTp);
           setTaxpayers(prev => prev.map(tp => tp.id === updatedTp.id ? updatedTp : tp));
+          window.dispatchEvent(new CustomEvent('sigma_data_updated'));
         }
       }
       return savedTx;
@@ -603,8 +657,6 @@ function App() {
       setTaxpayers([]);
       setTransactions([]);
       setAdminRequests([]);
-      setPendingSyncTaxpayers([]);
-      setPendingSyncTransactions([]);
       
       alert("Reinicio Maestro completado exitosamente. La aplicación se reiniciará ahora.");
       window.location.href = window.location.origin + window.location.pathname;
@@ -640,6 +692,8 @@ function App() {
             userRole={user?.role || 'CAJERO'}
             onCreateRequest={handleCreateRequest}
             onRefresh={() => fetchData(true)}
+            confirmModal={showConfirmModal}
+            setConfirmModal={setShowConfirmModal}
           />
         );
       case 'caja':
@@ -782,6 +836,7 @@ function App() {
             transactions={transactions}
             onGoToPay={handleGoToPay}
             userRole={user?.role}
+            config={config}
           />
         );
       case 'scanner':
@@ -1098,6 +1153,53 @@ function App() {
         </div>
       )}
 
+      {showConfirmModal.show && createPortal(
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 animate-fade-in">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden border border-white/20 animate-in zoom-in-95 duration-300">
+            <div className={`p-8 text-center ${
+              showConfirmModal.type === 'SUCCESS' ? 'bg-emerald-500' :
+              showConfirmModal.type === 'DANGER' ? 'bg-rose-500' :
+              showConfirmModal.type === 'WARNING' ? 'bg-amber-500' : 'bg-indigo-600'
+            } text-white`}>
+              <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white/30">
+                {showConfirmModal.type === 'SUCCESS' ? <CheckCircle size={40} /> :
+                 showConfirmModal.type === 'DANGER' ? <ShieldAlert size={40} /> :
+                 showConfirmModal.type === 'WARNING' ? <AlertIcon size={40} /> : <FileText size={40} />}
+              </div>
+              <h3 className="text-2xl font-black uppercase tracking-tighter">{showConfirmModal.title}</h3>
+            </div>
+            <div className="p-10 text-center">
+              <p className="text-slate-600 font-bold text-lg leading-relaxed mb-8">
+                {showConfirmModal.message}
+              </p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => {
+                    showConfirmModal.onConfirm();
+                    setShowConfirmModal(prev => ({ ...prev, show: false }));
+                  }}
+                  className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all active:scale-95 ${
+                    showConfirmModal.type === 'SUCCESS' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
+                    showConfirmModal.type === 'DANGER' ? 'bg-rose-500 text-white shadow-rose-500/20' :
+                    'bg-slate-900 text-white shadow-slate-900/20'
+                  }`}
+                >
+                  {showConfirmModal.confirmText}
+                </button>
+                {showConfirmModal.cancelText && (
+                  <button
+                    onClick={() => setShowConfirmModal(prev => ({ ...prev, show: false }))}
+                    className="w-full py-4 rounded-2xl font-black text-xs text-slate-400 uppercase tracking-widest hover:bg-slate-50 transition-all"
+                  >
+                    {showConfirmModal.cancelText}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

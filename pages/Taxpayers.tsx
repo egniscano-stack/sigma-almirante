@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Taxpayer, TaxpayerType, CommercialCategory, Transaction, VehicleInfo, TaxpayerStatus, UserRole, Corregimiento, AdminRequest, RequestStatus } from '../types';
 import { db } from '../services/db';
 import { Search, UserPlus, Briefcase, User, MapPin, Store, History, X, FileText, Car, Hammer, Trash2, CheckSquare, Plus, AlertCircle, MoreVertical, ShieldAlert, Ban, CheckCircle, Edit, Upload, Image as ImageIcon, Shield, Calculator, Settings, ChevronDown, CreditCard, ChevronRight } from 'lucide-react';
@@ -31,9 +32,22 @@ interface TaxpayersProps {
   userRole: UserRole;
   onCreateRequest: (req: AdminRequest) => void;
   onRefresh?: () => void;
+  confirmModal: any;
+  setConfirmModal: (modal: any) => void;
 }
 
-export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, onAdd, onUpdate, onDelete, userRole, onCreateRequest, onRefresh }) => {
+export const Taxpayers: React.FC<TaxpayersProps> = ({ 
+  taxpayers, 
+  transactions, 
+  onAdd, 
+  onUpdate, 
+  onDelete, 
+  userRole, 
+  onCreateRequest, 
+  onRefresh,
+  confirmModal,
+  setConfirmModal
+}) => {
   const [showModal, setShowModal] = useState(false);
   const [viewTaxpayer, setViewTaxpayer] = useState<Taxpayer | null>(null);
   const [historyTaxpayer, setHistoryTaxpayer] = useState<Taxpayer | null>(null);
@@ -111,9 +125,9 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
 
   // Helper to calculate months of arrears based on start date
   const calculateMonthsArrears = (startDateStr?: string) => {
-    if (!startDateStr) return 1; // Default to 1 month
+    if (!startDateStr) return 0; // Return 0 if no start date is set (Zero by default policy)
     const start = new Date(startDateStr);
-    if (isNaN(start.getTime())) return 1;
+    if (isNaN(start.getTime())) return 0;
     const now = new Date();
     
     const yearsDiff = now.getFullYear() - start.getFullYear();
@@ -121,7 +135,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
     
     let totalMonths = yearsDiff * 12 + monthsDiff;
     totalMonths += 1; // Inclusive counting (e.g. same month = 1)
-    return Math.max(1, totalMonths);
+    return Math.max(0, totalMonths);
   };
 
   // Auto-generate taxpayer number for new records
@@ -197,44 +211,15 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Submitting taxpayer form...', newTp);
 
-    // If there are files to upload, run antivirus scan FIRST
-    if (Object.keys(files).length > 0) {
-      // Store form data for after scan
-      setPendingSubmitData({ ...newTp });
-      setShowAntivirusScan(true);
-      return; // Wait for scan to complete
-    }
-
-    // No files - proceed directly
-    await submitTaxpayerData({ ...newTp }, {});
+    // Proceed directly to submission (Antivirus scan removed by user request)
+    await submitTaxpayerData({ ...newTp }, files);
   };
 
-  // Called after antivirus scan completes
-  const handleScanComplete = async (allClean: boolean, results: Record<string, FileScanResult>) => {
-    setShowAntivirusScan(false);
-    setScanResults(results);
-
-    if (!allClean) {
-      // BLOCK upload - alert user
-      const infectedFiles = Object.entries(results)
-        .filter(([, r]) => r.status !== 'CLEAN')
-        .map(([key]) => key)
-        .join(', ');
-      alert(`🚨 ALERTA DE SEGURIDAD\n\nSe detectaron archivos sospechosos o infectados:\n${infectedFiles}\n\nLos archivos han sido BLOQUEADOS. No se realizará la carga al servidor.\n\nPor favor revise los archivos y consulte con el administrador del sistema.`);
-      setFiles({});
-      setPendingSubmitData(null);
-      return;
-    }
-
-    // All clean - proceed with upload
-    if (pendingSubmitData) {
-      await submitTaxpayerData(pendingSubmitData, files);
-      setPendingSubmitData(null);
-    }
-  };
 
   const submitTaxpayerData = async (taxpayerFormData: Partial<Taxpayer>, filesToUpload: Record<string, File>) => {
+    console.log('Starting taxpayer data submission...', taxpayerFormData);
     setIsUploading(true);
     try {
       // Upload Files First
@@ -249,11 +234,13 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
         try {
           const url = await db.uploadTaxpayerDocument(file, path);
           uploadedDocs[key] = url;
-        } catch (err) {
+        } catch (err: any) {
           console.error(`Failed to upload ${key}:`, err);
-          alert(`Error subiendo ${key}. Intente de nuevo.`);
-          setIsUploading(false);
-          return;
+          const proceed = confirm(`Error subiendo ${key}: ${err.message || 'Error desconocido'}.\n\n¿Desea completar el registro SIN esta imagen?`);
+          if (!proceed) {
+            setIsUploading(false);
+            return;
+          }
         }
       }
 
@@ -276,25 +263,51 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
       } else {
         const finalStatus = (taxpayerData.balance && taxpayerData.balance > 0) ? TaxpayerStatus.MOROSO : taxpayerData.status;
 
-        onAdd({
+        // Generate sequential number based on existing active taxpayers (Format: 2026-MA-XXX)
+        const prefix = `2026-MA-`;
+        const activeNumbers = taxpayers
+          .filter(t => t.taxpayerNumber?.startsWith(prefix))
+          .map(t => {
+            const parts = t.taxpayerNumber!.split('-');
+            return parseInt(parts[parts.length - 1]) || 0;
+          });
+        
+        const nextNum = Math.max(0, ...activeNumbers) + 1;
+        const newTaxpayerNumber = `${prefix}${String(nextNum).padStart(3, '0')}`;
+
+        const tempId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Date.now().toString();
+        console.log('Calling onAdd with data:', taxpayerData, 'Temp ID:', tempId);
+        
+        await onAdd({
           ...taxpayerData,
-          id: Date.now().toString(),
+          id: tempId,
           status: finalStatus,
-          taxpayerNumber: `${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+          taxpayerNumber: newTaxpayerNumber,
           createdAt: new Date().toISOString().split('T')[0]
         } as Taxpayer);
 
+        console.log('onAdd completed successfully');
+
         setNewTp(initialFormState);
         setFiles({});
-        alert(finalStatus === TaxpayerStatus.MOROSO
-          ? 'Contribuyente registrado como MOROSO debido al saldo inicial.'
-          : 'Contribuyente registrado exitosamente.'
-        );
+        
+        // Show success modal with a small delay to ensure form reset doesn't flicker it
+        setTimeout(() => {
+          setConfirmModal({
+            show: true,
+            title: 'Registro Exitoso',
+            message: `El contribuyente ${taxpayerData.name} ha sido registrado con el número ${newTaxpayerNumber}.`,
+            confirmText: 'Entendido',
+            onConfirm: () => setConfirmModal((prev: any) => ({ ...prev, show: false })),
+            type: 'SUCCESS'
+          });
+        }, 100);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (error: any) {
-      console.error('Error saving taxpayer:', error);
-      alert(`Ocurrió un error al guardar: ${error.message || JSON.stringify(error)}`);
+      console.error('CRITICAL ERROR in submitTaxpayerData:', error);
+      const errorMsg = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
+      alert(`⚠️ ERROR AL REGISTRAR:\n\n${errorMsg}\n\nPor favor, verifique que los campos sean correctos y que el contribuyente no exista ya.`);
     } finally {
       setIsUploading(false);
     }
@@ -345,10 +358,10 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
 
   // Search Effect
   React.useEffect(() => {
-    if ((searchTerm.length > 2 || selectedActivity !== 'ALL') && !isEditing && !viewTaxpayer && !historyTaxpayer) {
+    if ((searchTerm.length > 0 || selectedActivity !== 'ALL') && !isEditing && !viewTaxpayer && !historyTaxpayer) {
       setIsSearching(true);
       const results = taxpayers.filter(t => {
-        const matchesTerm = searchTerm.length <= 2 || 
+        const matchesTerm = searchTerm.length === 0 || 
           (t.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
           (t.docId || '').includes(searchTerm) ||
           (t.taxpayerNumber || '').includes(searchTerm) ||
@@ -407,11 +420,11 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
   const taxpayerHistory = historyTaxpayer
     ? transactions.filter(t => t.taxpayerId === historyTaxpayer.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     : [];
-
-  const totalPaidHistory = taxpayerHistory.reduce((acc, t) => acc + t.amount, 0);
+  
+  const totalPaidHistory = taxpayerHistory.reduce((sum, t) => sum + (t.status === 'PAGADO' ? t.amount : 0), 0);
 
   return (
-    <div id="taxpayers-root" className="space-y-6 pb-20 relative min-h-screen bg-slate-50 -m-4 sm:-m-8 p-4 sm:p-8">
+      <div id="taxpayers-root" className="space-y-6 pb-20 relative min-h-screen bg-slate-50 -m-4 sm:-m-8 p-4 sm:p-8">
       {/* --- MODALS AT TOP FOR BETTER VISIBILITY --- */}
       {/* --- HISTORY MODAL --- */}
       {historyTaxpayer && (
@@ -597,69 +610,117 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                         )}
                       </span>
                     </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                       {(viewTaxpayer.selectedTaxCodes || []).map(code => {
-                         const struct = (taxStructure as any[]).find(s => s.code === code);
-                         const rate = viewTaxpayer.selectedRates?.[code];
-                         let finalRate = rate;
-                         if (typeof finalRate !== 'number' && struct) {
-                            const magnitudeRates = viewTaxpayer.magnitude === 'GRANDE' ? struct.rates.GRANDE : viewTaxpayer.magnitude === 'MEDIANO' ? struct.rates.MEDIANO : struct.rates.PEQUENO;
-                            finalRate = typeof magnitudeRates === 'number' ? magnitudeRates : magnitudeRates[0];
-                         }
-                         return (
-                           <div key={code} className="p-6 rounded-2xl bg-white/5 border border-indigo-500/30 relative overflow-hidden group hover:bg-white/10 transition-all">
-                             <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                               <Store size={48} />
-                             </div>
-                             <div className="flex justify-between items-start mb-4 relative z-10">
-                               <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300 bg-indigo-500/20 px-2 py-1 rounded">{code}</p>
-                             </div>
-                             <p className="font-bold text-sm leading-snug text-slate-200 mb-4 relative z-10">{struct?.name || 'Actividad Comercial'}</p>
-                             <div className="flex justify-between items-center relative z-10 border-t border-white/10 pt-3">
-                               <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Costo Mensual</span>
-                               <span className="text-base font-black text-indigo-400">B/. {formatCurrency(finalRate || 0)}</span>
-                             </div>
-                           </div>
-                         );
-                       })}
-                       
-                       {(viewTaxpayer.rotuloAmount || 0) > 0 && (
-                         <div className="p-6 rounded-2xl bg-white/5 border border-red-500/30 relative overflow-hidden group hover:bg-white/10 transition-all">
-                           <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                             <ImageIcon size={48} />
-                           </div>
-                           <div className="flex justify-between items-start mb-4 relative z-10">
-                             <p className="text-[10px] font-black uppercase tracking-widest text-red-300 bg-red-500/20 px-2 py-1 rounded">RÓTULO</p>
-                           </div>
-                           <p className="font-bold text-sm leading-snug text-slate-200 mb-4 relative z-10">Impuesto de Letreros y Rótulos</p>
-                           <div className="flex justify-between items-center relative z-10 border-t border-white/10 pt-3">
-                             <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Costo Mensual</span>
-                             <span className="text-base font-black text-red-400">B/. {formatCurrency(viewTaxpayer.rotuloAmount!)}</span>
-                           </div>
-                         </div>
-                       )}
+                    <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-white/10 bg-white/5">
+                            <th className="px-6 py-4 text-[10px] font-black text-indigo-400 uppercase tracking-widest">Código</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-indigo-400 uppercase tracking-widest">Actividad Económica</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-indigo-400 uppercase tracking-widest text-right">Monto Mensual</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {(viewTaxpayer.selectedTaxCodes || []).map(code => {
+                            const struct = (taxStructure as any[]).find(s => s.code === code);
+                            const rate = viewTaxpayer.selectedRates?.[code];
+                            let finalRate = rate;
+                            if (typeof finalRate !== 'number' && struct) {
+                               const magnitudeRates = viewTaxpayer.magnitude === 'GRANDE' ? struct.rates.GRANDE : viewTaxpayer.magnitude === 'MEDIANO' ? struct.rates.MEDIANO : struct.rates.PEQUENO;
+                               finalRate = typeof magnitudeRates === 'number' ? magnitudeRates : magnitudeRates[0];
+                            }
+                            return (
+                              <tr key={code} className="hover:bg-white/5 transition-colors group">
+                                <td className="px-6 py-4">
+                                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300 bg-indigo-500/20 px-2 py-1 rounded">
+                                    {code}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <p className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors">
+                                    {struct?.activity || 'Actividad Comercial'}
+                                  </p>
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                  <span className="text-base font-black text-indigo-400 tabular-nums">
+                                    B/. {formatCurrency(finalRate || 0)}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
 
-                       {(viewTaxpayer.garbageAmount || 0) > 0 && (
-                         <div className="p-6 rounded-2xl bg-white/5 border border-emerald-500/30 relative overflow-hidden group hover:bg-white/10 transition-all">
-                           <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                             <Trash2 size={48} />
-                           </div>
-                           <div className="flex justify-between items-start mb-4 relative z-10">
-                             <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/20 px-2 py-1 rounded">ASEO</p>
-                           </div>
-                           <p className="font-bold text-sm leading-snug text-slate-200 mb-4 relative z-10">Servicio de Recolección de Basura</p>
-                           <div className="flex justify-between items-center relative z-10 border-t border-white/10 pt-3">
-                             <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Costo Mensual</span>
-                             <span className="text-base font-black text-emerald-400">B/. {formatCurrency(viewTaxpayer.garbageAmount!)}</span>
-                           </div>
-                         </div>
-                       )}
+                          {(viewTaxpayer.rotuloAmount || 0) > 0 && (
+                            <tr className="hover:bg-white/5 transition-colors group">
+                              <td className="px-6 py-4">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-red-300 bg-red-500/20 px-2 py-1 rounded">
+                                  RÓTULO
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <p className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors">
+                                  Impuesto de Letreros y Rótulos
+                                </p>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <span className="text-base font-black text-red-400 tabular-nums">
+                                  B/. {formatCurrency(viewTaxpayer.rotuloAmount!)}
+                                </span>
+                              </td>
+                            </tr>
+                          )}
 
-                       {!(viewTaxpayer.selectedTaxCodes?.length) && !(viewTaxpayer.rotuloAmount) && !(viewTaxpayer.garbageAmount) && (
-                         <div className="col-span-full p-8 text-center border border-dashed border-white/20 rounded-2xl bg-white/5">
-                           <p className="text-sm font-bold text-slate-400">No hay actividades ni servicios asignados a este contribuyente.</p>
-                         </div>
-                       )}
+                          {(viewTaxpayer.garbageAmount || 0) > 0 && (
+                            <tr className="hover:bg-white/5 transition-colors group">
+                              <td className="px-6 py-4">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/20 px-2 py-1 rounded">
+                                  ASEO
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <p className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors">
+                                  Servicio de Recolección de Basura
+                                </p>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <span className="text-base font-black text-emerald-400 tabular-nums">
+                                  B/. {formatCurrency(viewTaxpayer.garbageAmount!)}
+                                </span>
+                              </td>
+                            </tr>
+                          )}
+
+                          {!(viewTaxpayer.selectedTaxCodes?.length) && !(viewTaxpayer.rotuloAmount) && !(viewTaxpayer.garbageAmount) ? (
+                            <tr>
+                              <td colSpan={3} className="px-6 py-12 text-center">
+                                <div className="flex flex-col items-center gap-3 text-slate-500">
+                                  <FileText size={48} className="opacity-20" />
+                                  <p className="font-bold text-sm">No hay servicios vinculados</p>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : (
+                            <tr className="bg-white/10 border-t border-white/20">
+                              <td colSpan={2} className="px-6 py-5 text-right text-[10px] font-black text-indigo-300 uppercase tracking-widest">
+                                Total Mensual Estimado
+                              </td>
+                              <td className="px-6 py-5 text-right">
+                                <span className="text-xl font-black text-white tabular-nums drop-shadow-[0_0_15px_rgba(99,102,241,0.5)]">
+                                  B/. {formatCurrency(
+                                    ((viewTaxpayer.selectedTaxCodes || []).reduce((acc, code) => {
+                                      const struct = (taxStructure as any[]).find(s => s.code === code);
+                                      if (!struct) return acc;
+                                      const rate = viewTaxpayer.selectedRates?.[code];
+                                      if (typeof rate === 'number') return acc + rate;
+                                      const magnitudeRates = viewTaxpayer.magnitude === 'GRANDE' ? struct.rates.GRANDE : viewTaxpayer.magnitude === 'MEDIANO' ? struct.rates.MEDIANO : struct.rates.PEQUENO;
+                                      return acc + (typeof magnitudeRates === 'number' ? magnitudeRates : (magnitudeRates[0] || 0));
+                                    }, 0)) + (viewTaxpayer.rotuloAmount || 0) + (viewTaxpayer.garbageAmount || 0)
+                                  )}
+                                </span>
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                  </div>
 
@@ -673,31 +734,49 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Expediente Digital & Documentación</h3>
                      </div>
                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                       {Object.entries(viewTaxpayer.documents).map(([key, url]) => (
-                         <a
-                           key={key}
-                           href={url}
-                           target="_blank"
-                           rel="noopener noreferrer"
-                           className="group block p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-center"
-                         >
-                           <div className="w-12 h-12 mx-auto bg-white rounded-xl shadow-sm flex items-center justify-center text-slate-400 group-hover:text-indigo-600 mb-3 transition-colors">
-                             {key.includes('photo') || key.includes('sketch') || key.includes('store') ? <ImageIcon size={24} /> : <FileText size={24} />}
-                           </div>
-                           <p className="text-[10px] font-black text-slate-600 group-hover:text-indigo-800 uppercase tracking-tighter leading-tight">
-                             {{
-                               taxpayer_photo: 'Foto Perfil',
-                               id_card: 'Cédula / ID',
-                               public_registry: 'Reg. Público',
-                               operation_notice: 'Aviso Op.',
-                               store_photo: 'Fachada Neg.',
-                               residence_sketch: 'Croquis Ubic.',
-                               vehicle_docs: 'Docs. Vehículo'
-                             }[key] || key.replace(/_/g, ' ')}
-                           </p>
-                           <div className="mt-2 text-[8px] font-black text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest">Ver Archivo &rarr;</div>
-                         </a>
-                       ))}
+                       {Object.entries(viewTaxpayer.documents).map(([key, url]) => {
+                         const isImage = key.includes('photo') || key.includes('sketch') || key.includes('store') || url.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                         return (
+                           <a
+                             key={key}
+                             href={url}
+                             target="_blank"
+                             rel="noopener noreferrer"
+                             className="group block relative p-2 bg-slate-50 rounded-3xl border border-slate-100 hover:border-indigo-300 hover:bg-white hover:shadow-xl transition-all"
+                           >
+                             <div className="aspect-square w-full bg-white rounded-2xl shadow-sm flex items-center justify-center text-slate-400 group-hover:text-indigo-600 mb-3 transition-colors overflow-hidden relative">
+                               {isImage ? (
+                                 <img 
+                                   src={url} 
+                                   alt={key} 
+                                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                   onError={(e) => {
+                                     (e.target as any).src = 'https://via.placeholder.com/150?text=Error';
+                                   }}
+                                 />
+                               ) : (
+                                 <FileText size={32} />
+                                )}
+                                <div className="absolute inset-0 bg-indigo-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                   <Search className="text-white" size={24} />
+                                </div>
+                             </div>
+                             <div className="px-2 pb-2">
+                               <p className="text-[10px] font-black text-slate-900 group-hover:text-indigo-700 uppercase tracking-tighter leading-tight text-center">
+                                 {{
+                                   taxpayer_photo: 'Foto Perfil',
+                                   id_card: 'Cédula / ID',
+                                   public_registry: 'Reg. Público',
+                                   operation_notice: 'Aviso Op.',
+                                   store_photo: 'Fachada Neg.',
+                                   residence_sketch: 'Croquis Ubic.',
+                                   vehicle_docs: 'Docs. Vehículo'
+                                 }[key] || key.replace(/_/g, ' ')}
+                               </p>
+                             </div>
+                           </a>
+                         );
+                       })}
                      </div>
                    </div>
                  )}
@@ -715,12 +794,20 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                 </button>
                 <div className="h-10 w-px bg-slate-200 hidden md:block"></div>
                 <button
-                  onClick={async () => {
-                    const confirm = window.confirm("¿Estás seguro de que deseas eliminar este contribuyente?");
-                    if (confirm) {
-                       await onDelete(viewTaxpayer.id!);
-                       setViewTaxpayer(null);
-                    }
+                  onClick={() => {
+                    setConfirmModal({
+                      show: true,
+                      title: '¿Eliminar Contribuyente?',
+                      message: `¿Estás seguro de que deseas eliminar permanentemente a ${viewTaxpayer.name}? Esta acción no se puede deshacer.`,
+                      confirmText: 'Sí, Eliminar',
+                      cancelText: 'Cancelar',
+                      type: 'DANGER',
+                      onConfirm: () => {
+                        onDelete(viewTaxpayer.id!);
+                        setViewTaxpayer(null);
+                        setConfirmModal(prev => ({ ...prev, show: false }));
+                      }
+                    });
                   }}
                   className="flex items-center gap-2 px-6 py-4 bg-red-50 text-red-700 hover:bg-red-100 font-black text-xs uppercase tracking-widest rounded-2xl transition-all shrink-0"
                 >
@@ -778,6 +865,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                             // Recalculate balance
                              const newSelectedRates = { ...(updated.selectedRates || {}) };
                              
+                             let total = 0;
                              (updated.selectedTaxCodes || []).forEach(code => {
                                const struct = (taxStructure as any[]).find(s => s.code === code);
                                if (struct) {
@@ -979,7 +1067,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                               type="number" 
                               inputMode="decimal"
                               className="w-20 bg-transparent border-b border-indigo-500/30 text-right font-black text-indigo-400 focus:border-indigo-400 outline-none" 
-                              value={viewTaxpayer.rotuloAmount === 0 ? '' : viewTaxpayer.rotuloAmount}
+                              value={viewTaxpayer.rotuloAmount ?? ''}
                               onChange={async (e) => {
                                 const val = parseFloat(e.target.value) || 0;
                                 const updated = { ...viewTaxpayer, rotuloAmount: val };
@@ -1013,7 +1101,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                               type="number" 
                               inputMode="decimal"
                               className="w-20 bg-transparent border-b border-emerald-500/30 text-right font-black text-emerald-400 focus:border-emerald-400 outline-none" 
-                              value={viewTaxpayer.garbageAmount === 0 ? '' : viewTaxpayer.garbageAmount}
+                              value={viewTaxpayer.garbageAmount ?? ''}
                               onChange={async (e) => {
                                 const val = parseFloat(e.target.value) || 0;
                                 const updated = { ...viewTaxpayer, garbageAmount: val };
@@ -1157,7 +1245,11 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
         {/* Search Results Overlay */}
         {isSearching && (
           <>
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[70]" onClick={() => setIsSearching(false)}></div>
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[70]" onClick={() => {
+              setIsSearching(false);
+              setSearchTerm('');
+              setSelectedActivity('ALL');
+            }}></div>
             <div className="fixed top-24 left-1/2 -translate-x-1/2 w-full max-w-4xl bg-white rounded-[2.5rem] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.5)] border border-white/20 overflow-hidden animate-in fade-in zoom-in-95 duration-300 z-[80] ring-1 ring-black/5">
               <div className="bg-slate-900 px-10 py-8 flex items-center justify-between relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>
@@ -1180,7 +1272,11 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                   </div>
                 </div>
                 <button 
-                  onClick={() => setIsSearching(false)}
+                  onClick={() => {
+                    setIsSearching(false);
+                    setSearchTerm('');
+                    setSelectedActivity('ALL');
+                  }}
                   className="relative z-10 w-12 h-12 bg-white/10 hover:bg-white/20 text-white rounded-2xl flex items-center justify-center transition-all active:scale-90"
                 >
                   <X size={24} />
@@ -1196,6 +1292,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                         onClick={() => {
                           setHistoryTaxpayer(tp);
                           setSearchTerm('');
+                          setSelectedActivity('ALL');
                           setIsSearching(false);
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }}
@@ -1240,6 +1337,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                             onClick={(e) => {
                               e.stopPropagation();
                               handleEditInit(tp);
+                              setSearchTerm('');
+                              setSelectedActivity('ALL');
                               setIsSearching(false);
                               window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}
@@ -1252,6 +1351,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                             onClick={(e) => {
                               e.stopPropagation();
                               setViewTaxpayer(tp);
+                              setSearchTerm('');
+                              setSelectedActivity('ALL');
                               setIsSearching(false);
                               window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}
@@ -1259,6 +1360,27 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                             title="Ver Ficha"
                           >
                             <ChevronRight size={24} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmModal({
+                                show: true,
+                                title: '¿Eliminar Registro?',
+                                message: `¿Confirma que desea eliminar a ${tp.name}?`,
+                                confirmText: 'Eliminar',
+                                cancelText: 'Cancelar',
+                                type: 'DANGER',
+                                onConfirm: () => {
+                                  onDelete(tp.id!);
+                                  setConfirmModal(prev => ({ ...prev, show: false }));
+                                }
+                              });
+                            }}
+                            className="w-12 h-12 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-lg shadow-red-500/10"
+                            title="Eliminar"
+                          >
+                            <Trash2 size={20} />
                           </button>
                         </div>
                       </div>
@@ -1384,13 +1506,13 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                 <div className="md:col-span-2">
                   <label className="block text-sm font-bold text-slate-700 mb-1">Nombre Completo / Razón Social</label>
                   <input required type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base"
-                    value={newTp.name} onChange={e => setNewTp({ ...newTp, name: e.target.value })} placeholder="Ej. Juan Pérez o Inversiones del Caribe S.A." />
+                    value={newTp.name ?? ''} onChange={e => setNewTp({ ...newTp, name: e.target.value })} placeholder="Ej. Juan Pérez o Inversiones del Caribe S.A." />
                 </div>
 
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Identificación (Cédula / RUC)</label>
                   <input required type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base"
-                    value={newTp.docId} onChange={e => setNewTp({ ...newTp, docId: e.target.value })} placeholder={newTp.type === TaxpayerType.NATURAL ? '8-888-888' : '15569-88-99'} />
+                    value={newTp.docId ?? ''} onChange={e => setNewTp({ ...newTp, docId: e.target.value })} placeholder={newTp.type === TaxpayerType.NATURAL ? '8-888-888' : '15569-88-99'} />
                 </div>
 
                 {newTp.type === TaxpayerType.JURIDICA && (
@@ -1404,7 +1526,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Dirección Física</label>
                   <input required type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base"
-                    value={newTp.address} onChange={e => setNewTp({ ...newTp, address: e.target.value })} placeholder="Provincia, Distrito, Casa..." />
+                    value={newTp.address ?? ''} onChange={e => setNewTp({ ...newTp, address: e.target.value })} placeholder="Provincia, Distrito, Casa..." />
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Corregimiento</label>
@@ -1423,12 +1545,12 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Teléfono</label>
                   <input type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base"
-                    value={newTp.phone} onChange={e => setNewTp({ ...newTp, phone: e.target.value })} />
+                    value={newTp.phone ?? ''} onChange={e => setNewTp({ ...newTp, phone: e.target.value })} />
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Correo Electrónico</label>
                   <input type="email" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base"
-                    value={newTp.email} onChange={e => setNewTp({ ...newTp, email: e.target.value })} />
+                    value={newTp.email ?? ''} onChange={e => setNewTp({ ...newTp, email: e.target.value })} />
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Fecha Inicio de Negocio (Aviso de Operaciones)</label>
@@ -1591,7 +1713,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                               <input 
                                 type="number" inputMode="decimal"
                                 className="w-full p-2 border border-slate-100 rounded-lg text-right font-black text-slate-800 focus:border-red-500 outline-none transition-all"
-                                value={newTp.rotuloAmount === 0 ? '' : newTp.rotuloAmount}
+                                value={newTp.rotuloAmount ?? ''}
                                 onChange={(e) => setNewTp({ ...newTp, rotuloAmount: parseFloat(e.target.value) || 0 })}
                               />
                             </div>
@@ -1603,7 +1725,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                               <input 
                                 type="number" inputMode="decimal"
                                 className="w-full p-2 border border-slate-100 rounded-lg text-right font-black text-slate-800 focus:border-red-500 outline-none transition-all"
-                                value={newTp.garbageAmount === 0 ? '' : newTp.garbageAmount}
+                                value={newTp.garbageAmount ?? ''}
                                 onChange={(e) => setNewTp({ ...newTp, garbageAmount: parseFloat(e.target.value) || 0 })}
                               />
                             </div>
@@ -1628,8 +1750,11 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                             
                             return (
                               <div key={code} className="flex justify-between text-[11px] border-b border-white/5 pb-2">
-                                <span className="text-white/60 truncate mr-2">{act?.activity}</span>
-                                <span className="font-bold text-red-400 shrink-0">B/. {formatCurrency(amount)}</span>
+                                <div className="flex flex-col">
+                                  <span className="text-red-400 font-black text-[9px] uppercase tracking-tighter">{code}</span>
+                                  <span className="text-white/60 truncate mr-2">{act?.activity}</span>
+                                </div>
+                                <span className="font-bold text-red-400 shrink-0 self-center">B/. {formatCurrency(amount)}</span>
                               </div>
                             );
                           })}
@@ -1854,6 +1979,26 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
                            <button onClick={() => handleEditInit(tp)} className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg transition-colors" title="Editar">
                               <Edit size={18} />
                            </button>
+                           <button 
+                             onClick={() => {
+                               setConfirmModal({
+                                 show: true,
+                                 title: '¿Eliminar Contribuyente?',
+                                 message: `¿Desea eliminar a ${tp.name} de la lista?`,
+                                 confirmText: 'Eliminar',
+                                 cancelText: 'Cancelar',
+                                 type: 'DANGER',
+                                 onConfirm: () => {
+                                   onDelete(tp.id!);
+                                   setConfirmModal(prev => ({ ...prev, show: false }));
+                                 }
+                               });
+                             }} 
+                             className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" 
+                             title="Eliminar"
+                           >
+                              <Trash2 size={18} />
+                           </button>
                         </div>
                       </td>
                     </tr>
@@ -2011,6 +2156,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({ taxpayers, transactions, o
           </div>
         </div>
       )}
+
     </div>
   );
 };

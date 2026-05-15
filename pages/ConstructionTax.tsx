@@ -313,20 +313,20 @@ export const ConstructionTax: React.FC<ConstructionTaxProps> = ({ currentUserNam
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="md:col-span-2">
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest">Nombre Completo / Razón Social</label>
-                            <input type="text" value={formData.fullName} onChange={e => setField('fullName', e.target.value.toUpperCase())} className={inputCls('fullName')} placeholder="Ej: JUAN PEREZ o CONSTRUCTORA S.A." />
+                            <input type="text" value={formData.fullName ?? ''} onChange={e => setField('fullName', e.target.value.toUpperCase())} className={inputCls('fullName')} placeholder="Ej: JUAN PEREZ o CONSTRUCTORA S.A." />
                             {errors.fullName && <p className="text-red-500 text-[10px] mt-1 font-bold">{errors.fullName}</p>}
                         </div>
 
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest">Identificación (Cédula / RUC)</label>
-                            <input type="text" value={formData.docId} onChange={e => setField('docId', e.target.value.toUpperCase())} className={inputCls('docId')} placeholder="0-000-0000" />
+                            <input type="text" value={formData.docId ?? ''} onChange={e => setField('docId', e.target.value.toUpperCase())} className={inputCls('docId')} placeholder="0-000-0000" />
                             {errors.docId && <p className="text-red-500 text-[10px] mt-1 font-bold">{errors.docId}</p>}
                         </div>
 
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest">Tipo de Proyecto</label>
                             <select 
-                                value={formData.projectType} 
+                                value={formData.projectType ?? ''} 
                                 onChange={e => setField('projectType', e.target.value)} 
                                 className={inputCls('projectType')}
                             >
@@ -347,14 +347,14 @@ export const ConstructionTax: React.FC<ConstructionTaxProps> = ({ currentUserNam
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest">Ubicación de la Obra</label>
                             <div className="relative">
                                 <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                <input type="text" value={formData.address} onChange={e => setField('address', e.target.value)} className={`${inputCls('address')} pl-12`} placeholder="Ej: Calle Principal, Almirante..." />
+                                <input type="text" value={formData.address ?? ''} onChange={e => setField('address', e.target.value)} className={`${inputCls('address')} pl-12`} placeholder="Ej: Calle Principal, Almirante..." />
                             </div>
                             {errors.address && <p className="text-red-500 text-[10px] mt-1 font-bold">{errors.address}</p>}
                         </div>
 
                         <div className="md:col-span-2">
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest">Descripción del Proyecto</label>
-                            <textarea rows={3} value={formData.description} onChange={e => setField('description', e.target.value)} className={inputCls('description')} placeholder="Breve descripción de los trabajos a realizar..." />
+                            <textarea rows={3} value={formData.description ?? ''} onChange={e => setField('description', e.target.value)} className={inputCls('description')} placeholder="Breve descripción de los trabajos a realizar..." />
                         </div>
                     </div>
 

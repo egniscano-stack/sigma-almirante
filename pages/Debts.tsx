@@ -1,12 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { Taxpayer, Transaction, TaxType } from '../types';
-import { AlertCircle, Calendar, CheckCircle, Car, Store, Trash2, ArrowRight, Search, History, Filter, FileText } from 'lucide-react';
+import { Search, Filter, Download, FileText, CheckCircle, AlertCircle, Clock, Trash2, ChevronDown, ChevronRight, Edit, History, ArrowRight, Calendar, Car, Store, RefreshCw } from 'lucide-react';
+import taxStructure from '../data/taxStructure.json';
 
 interface DebtsProps {
   taxpayers: Taxpayer[];
   transactions: Transaction[];
   onGoToPay: (taxpayer: Taxpayer) => void;
   userRole?: string;
+  config: any; // Add config to detect rates
+  onRefresh?: () => void;
+  isLoading?: boolean;
 }
 
 interface PendingSummary {
@@ -16,7 +20,7 @@ interface PendingSummary {
   earliestDueDate: string;
 }
 
-export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay, userRole }) => {
+export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay, userRole, config, onRefresh, isLoading }) => {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'PENDING' | 'HISTORY'>('PENDING'); // PENDING or HISTORY
@@ -38,26 +42,72 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
       let overdue = false;
       let earliest = '9999-12-31';
 
-      // 0. Balance
-      if ((tp.balance || 0) > 0) {
+      // 0. Accumulated Debt (Previous Years)
+      if ((tp.previousYearsDebt || 0) > 0) {
         count++;
         overdue = true;
         earliest = `${currentYear}-01-01`;
       }
 
       // Check all months
-      for (let m = 1; m <= currentMonth; m++) {
+      let startMonth = 13; // Default to 13 (No debt) unless a start date is assigned in Edition
+      const refDateStr = tp.paymentStartDate || tp.businessStartDate;
+      if (refDateStr) {
+        const pDate = new Date(refDateStr + 'T00:00:00');
+        if (pDate.getFullYear() === currentYear) {
+          startMonth = pDate.getMonth() + 1;
+        } else if (pDate.getFullYear() > currentYear) {
+          startMonth = 13; // Skip all months for this year
+        }
+      }
+
+      for (let m = startMonth; m <= currentMonth; m++) {
         const monthName = new Date(currentYear, m - 1).toLocaleString('es-ES', { month: 'long' });
 
         // Commercial
-        if (tp.hasCommercialActivity && activeStatuses.includes(tp.status)) {
-          const hasPaid = transactions.some(t => {
+        let commercialRate = 0;
+        let hasCommercialAssignment = false;
+
+        if (tp.selectedTaxCodes && tp.selectedTaxCodes.length > 0) {
+          hasCommercialAssignment = true;
+          tp.selectedTaxCodes.forEach(code => {
+            const s = (taxStructure as any[]).find(st => st.code === code);
+            if (s) {
+              const mRates = tp.magnitude === 'GRANDE' ? s.rates.GRANDE :
+                             tp.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
+              if (Array.isArray(mRates)) {
+                commercialRate += tp.selectedRates?.[code] || mRates[0] || 0;
+              } else if (typeof mRates === 'number') {
+                commercialRate += mRates;
+              }
+            }
+          });
+        }
+
+        if ((tp.rotuloAmount || 0) > 0) {
+          commercialRate += tp.rotuloAmount || 0;
+          hasCommercialAssignment = true;
+        }
+
+        const validClasses = ['CLASE_A', 'CLASE_B', 'CLASE_C'];
+        if (!hasCommercialAssignment && tp.commercialCategory && validClasses.includes(tp.commercialCategory)) {
+          const rates = config?.commercialRates || {};
+          const catRate = rates[tp.commercialCategory as any];
+          if (catRate !== undefined) {
+            commercialRate = catRate;
+            hasCommercialAssignment = true;
+          }
+        }
+
+        if (tp.hasCommercialActivity && activeStatuses.includes(tp.status) && hasCommercialAssignment && commercialRate > 0) {
+          const hasPaid = (transactions || []).some(t => {
             if (t.taxpayerId !== tp.id || t.status !== 'PAGADO') return false;
             
             // 1. Consolidated
             if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
               return t.metadata.originalItems.some((i: any) => i.label.includes(`Comercial - ${monthName}`));
             }
+
             if (t.taxType !== TaxType.COMERCIO) return false;
             
             // 2. Metadata / Description
@@ -74,14 +124,18 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
         }
 
         // Garbage
-        if (tp.hasGarbageService && activeStatuses.includes(tp.status)) {
-          const hasPaid = transactions.some(t => {
+        const garbageRate = tp.garbageAmount || 0;
+        const hasGarbageAssignment = (garbageRate > 0);
+
+        if (tp.hasGarbageService && activeStatuses.includes(tp.status) && hasGarbageAssignment && garbageRate > 0) {
+          const hasPaid = (transactions || []).some(t => {
             if (t.taxpayerId !== tp.id || t.status !== 'PAGADO') return false;
             
             // 1. Consolidated
             if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
               return t.metadata.originalItems.some((i: any) => i.label.includes(`Tasa de Aseo - ${monthName}`));
             }
+
             if (t.taxType !== TaxType.BASURA) return false;
 
             // 2. Metadata / Description
@@ -99,7 +153,7 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
       }
 
       // Vehicles
-      if (tp.vehicles && tp.vehicles.length > 0 && activeStatuses.includes(tp.status)) {
+      if (tp.vehicles && tp.vehicles.length > 0 && activeStatuses.includes(tp.status) && (config?.plateCost || 0) > 0) {
         tp.vehicles.forEach(v => {
           const hasPaid = transactions.some(t => {
             if (t.taxpayerId !== tp.id || t.status !== 'PAGADO') return false;
@@ -132,7 +186,7 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
       isOverdue: item.overdue,
       earliestDueDate: item.earliest
     }));
-  }, [taxpayers, transactions]);
+  }, [taxpayers, transactions, config]);
 
   // --- FILTERING LOGIC ---
   const filteredSummaries = pendingSummaries.filter(item =>

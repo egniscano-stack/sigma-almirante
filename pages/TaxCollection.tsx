@@ -4,6 +4,7 @@ import { Car, Building2, Trash2, Store, CreditCard, Search, Banknote, Printer, C
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { QRCodeSVG } from 'qrcode.react';
+import taxStructure from '../data/taxStructure.json';
 
 interface TaxCollectionProps {
   taxpayers: Taxpayer[];
@@ -19,6 +20,7 @@ interface TaxCollectionProps {
   onCreateRequest?: (req: AdminRequest) => void;
   onArchiveRequest?: (id: string) => void;
   onRefresh?: () => void;
+  isLoading?: boolean;
   onDirectAdminAuth?: (password: string, req: AdminRequest) => Promise<boolean>;
 }
 
@@ -30,7 +32,7 @@ const formatCurrency = (amount: number) => {
   }).format(amount || 0);
 };
 
-export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transactions, config, onPayment, currentUser, municipalityInfo, initialTaxpayer, adminRequests = [], onCreateRequest, onArchiveRequest, onRefresh, onDirectAdminAuth }) => {
+export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transactions, config, onPayment, currentUser, municipalityInfo, initialTaxpayer, adminRequests = [], onCreateRequest, onArchiveRequest, onRefresh, onDirectAdminAuth, isLoading }) => {
   const [selectedTax, setSelectedTax] = useState<TaxType>(TaxType.VEHICULO);
   const [selectedTaxpayerId, setSelectedTaxpayerId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -120,20 +122,31 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
     const currentYear = currentDate.getFullYear();
     const currentMonth = currentDate.getMonth() + 1;
 
-    // 1. Balance / Historical (Prioritizing this)
-    if ((activeTaxpayer.balance || 0) > 0) {
+    // 1. Accumulated Debt (Previous Years) - Arrastre
+    if ((activeTaxpayer.previousYearsDebt || 0) > 0) {
       debts.push({
-        id: 'balance',
-        type: 'DEUDA_HISTORICA',
-        label: 'Deuda Acumulada (Años Anteriores)',
-        amount: activeTaxpayer.balance,
+        id: 'previous-years',
+        type: 'DEUDA_ARRAS',
+        label: 'Deuda Acumulada (meses Anteriores)',
+        amount: activeTaxpayer.previousYearsDebt,
         description: `Saldo pendiente de periodos anteriores`,
         isPriority: true
       });
     }
 
     // 2. Commercial & 3. Garbage (Iterate through months of the current year)
-    for (let m = 1; m <= currentMonth; m++) {
+    let startMonth = 13; // Default to 13 (No debt) unless a start date is assigned in Edition
+    const refDateStr = activeTaxpayer.paymentStartDate || activeTaxpayer.businessStartDate;
+    if (refDateStr) {
+      const pDate = new Date(refDateStr + 'T00:00:00');
+      if (pDate.getFullYear() === currentYear) {
+        startMonth = pDate.getMonth() + 1;
+      } else if (pDate.getFullYear() > currentYear) {
+        startMonth = 13;
+      }
+    }
+
+    for (let m = startMonth; m <= currentMonth; m++) {
       const monthName = new Date(currentYear, m - 1).toLocaleString('es-ES', { month: 'long' });
 
       // Commercial
@@ -155,16 +168,53 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
         });
 
         if (!hasPaidCom) {
-          const rates = config?.commercialRates || {};
-          const amount = activeTaxpayer.commercialCategory ? (rates[activeTaxpayer.commercialCategory] || config?.commercialBaseRate || 0) : (config?.commercialBaseRate || 0);
-          debts.push({
-            id: `com-${m}-${currentYear}`,
-            type: TaxType.COMERCIO,
-            label: `Impuesto Comercial - ${monthName}`,
-            amount: amount,
-            description: `Mes de ${monthName} ${currentYear}`,
-            metadata: { month: m, year: currentYear }
-          });
+          // New Logic: Check for selected tax codes (New Structure)
+          let commercialAmount = 0;
+          let hasCommercialAssignment = false;
+
+          if (activeTaxpayer.selectedTaxCodes && activeTaxpayer.selectedTaxCodes.length > 0) {
+            hasCommercialAssignment = true;
+            activeTaxpayer.selectedTaxCodes.forEach(code => {
+              const s = (taxStructure as any[]).find(st => st.code === code);
+              if (s) {
+                const mRates = activeTaxpayer.magnitude === 'GRANDE' ? s.rates.GRANDE :
+                               activeTaxpayer.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
+                if (Array.isArray(mRates)) {
+                  commercialAmount += activeTaxpayer.selectedRates?.[code] || mRates[0] || 0;
+                } else if (typeof mRates === 'number') {
+                  commercialAmount += mRates;
+                }
+              }
+            });
+          }
+
+          // Add Rotulo if assigned
+          if ((activeTaxpayer.rotuloAmount || 0) > 0) {
+            commercialAmount += activeTaxpayer.rotuloAmount || 0;
+            hasCommercialAssignment = true;
+          }
+
+          // Fallback to old category logic ONLY IF explicitly assigned to a VALID CLASS
+          const validClasses = ['CLASE_A', 'CLASE_B', 'CLASE_C'];
+          if (!hasCommercialAssignment && activeTaxpayer.commercialCategory && validClasses.includes(activeTaxpayer.commercialCategory)) {
+            const rates = config?.commercialRates || {};
+            const catRate = rates[activeTaxpayer.commercialCategory as any];
+            if (catRate !== undefined) {
+              commercialAmount = catRate;
+              hasCommercialAssignment = true;
+            }
+          }
+
+          if (hasCommercialAssignment && commercialAmount > 0) {
+            debts.push({
+              id: `com-${m}-${currentYear}`,
+              type: TaxType.COMERCIO,
+              label: `Impuesto Comercial - ${monthName}`,
+              amount: commercialAmount,
+              description: `Mes de ${monthName} ${currentYear}`,
+              metadata: { month: m, year: currentYear }
+            });
+          }
         }
       }
 
@@ -187,15 +237,19 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
         });
 
         if (!hasPaidBas) {
-          const rate = activeTaxpayer.type === 'JURIDICA' ? (config?.garbageCommercialRate || 0) : (config?.garbageResidentialRate || 0);
-          debts.push({
-            id: `bas-${m}-${currentYear}`,
-            type: TaxType.BASURA,
-            label: `Tasa de Aseo - ${monthName}`,
-            amount: rate,
-            description: `Mes de ${monthName} ${currentYear}`,
-            metadata: { month: m, year: currentYear }
-          });
+          // Ultra-Strict Logic: ONLY use the manual garbageAmount assigned in edition
+          const garbageRate = (activeTaxpayer.garbageAmount || 0);
+
+          if (garbageRate > 0) {
+            debts.push({
+              id: `bas-${m}-${currentYear}`,
+              type: TaxType.BASURA,
+              label: `Tasa de Aseo - ${monthName}`,
+              amount: garbageRate,
+              description: `Mes de ${monthName} ${currentYear}`,
+              metadata: { month: m, year: currentYear }
+            });
+          }
         }
       }
     }
@@ -221,14 +275,17 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                    new Date(t.date).getFullYear() === currentYear;
           });
           if (!hasPaid) {
-            debts.push({
-              id: `veh-${v.plate}-${currentYear}`,
-              type: TaxType.VEHICULO,
-              label: `Impuesto Vehicular (Placa ${v.plate})`,
-              amount: config?.plateCost || 25.00,
-              description: `Impuesto de Circulación - Placa ${v.plate}`,
-              metadata: { plateNumber: v.plate, year: currentYear }
-            });
+            const amount = config?.plateCost || 0;
+            if (amount > 0) {
+              debts.push({
+                id: `veh-${v.plate}-${currentYear}`,
+                type: TaxType.VEHICULO,
+                label: `Impuesto Vehicular (Placa ${v.plate})`,
+                amount: amount,
+                description: `Impuesto de Circulación - Placa ${v.plate}`,
+                metadata: { plateNumber: v.plate, year: currentYear }
+              });
+            }
           }
         }
       });
@@ -239,7 +296,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
 
   const handlePayDebtItem = (debt: any) => {
     const tx = onPayment({
-      taxType: debt.type === 'DEUDA_HISTORICA' ? TaxType.COMERCIO : debt.type, // Fallback tax type
+      taxType: (debt.type === 'DEUDA_HISTORICA' || debt.type === 'DEUDA_ARRAS') ? TaxType.COMERCIO : debt.type, // Fallback tax type
       taxpayerId: selectedTaxpayerId,
       amount: debt.amount,
       paymentMethod: paymentMethod,
@@ -341,9 +398,23 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
     if (!selectedTaxpayerId) return;
 
     const amount = calculateTotal();
-    if (selectedTax === TaxType.COMERCIO && amount === 0) {
-      alert("Este contribuyente no tiene una categoría comercial asignada.");
+    
+    // Logic: Prevent payment if amount is 0 or less (unless specifically allowed for admin adjustments)
+    if (amount <= 0 && selectedTax !== TaxType.CONSTRUCCION) {
+      alert(`No se puede procesar un pago de B/. 0.00. Verifique la configuración de tasas para ${selectedTax} o la categoría del contribuyente.`);
       return;
+    }
+
+    // Logic: Validate Status
+    if (activeTaxpayer.status === 'BLOQUEADO') {
+      alert("Este contribuyente está BLOQUEADO por la administración. No se permiten cobros hasta que sea desbloqueado.");
+      return;
+    }
+
+    if (activeTaxpayer.status === 'SUSPENDIDO') {
+      if (!confirm("ADVERTENCIA: El contribuyente está SUSPENDIDO (Vigencia Expirada). ¿Desea proceder con el cobro para reactivación?")) {
+        return;
+      }
     }
 
     // 1. Metadata for specific tax types
@@ -1001,10 +1072,14 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
           {onRefresh && (
             <button
               onClick={onRefresh}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-sm transition-all"
+              disabled={isLoading}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm shadow-sm transition-all ${
+                isLoading ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+              }`}
               title="Forzar actualización desde el servidor"
             >
-              <RefreshCw size={16} /> <span className="hidden sm:inline">Refrescar</span>
+              <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">{isLoading ? 'Refrescando...' : 'Refrescar'}</span>
             </button>
           )}
 
@@ -1245,10 +1320,11 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
           <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden mb-6 animate-fade-in relative z-10">
             <div className="bg-red-600 text-white p-4 flex justify-between items-center">
               <h3 className="font-bold text-lg flex items-center gap-2">
-                <AlertCircle size={20} /> Deudas Pendientes
+                <AlertCircle size={20} /> 
+                {taxpayerDebts.filter(d => d.type !== 'DEUDA_ARRAS').length} Mes(es) Pendiente(s)
               </h3>
               <div className="flex items-center gap-3">
-                <span className="text-xs bg-white/20 px-2 py-1 rounded font-mono">Total: B/. {formatCurrency(taxpayerDebts.reduce((acc, d) => acc + (d.amount || 0), 0))}</span>
+                <span className="text-xs bg-white/20 px-2 py-1 rounded font-mono">Total Adeudado: B/. {formatCurrency(taxpayerDebts.reduce((acc, d) => acc + (d.amount || 0), 0))}</span>
                 {taxpayerDebts.length > 1 && (
                   <button
                     onClick={handlePayAllDebts}
@@ -1332,7 +1408,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
               <input
                 type="text"
                 required
-                value={plateNumber}
+                value={plateNumber ?? ''}
                 onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg uppercase font-mono text-lg text-center focus:ring-2 focus:ring-emerald-500"
                 placeholder="AB-1234"
@@ -1345,7 +1421,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tarifa</label>
               <select
-                value={trashType}
+                value={trashType ?? ''}
                 onChange={(e) => setTrashType(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white"
               >
@@ -1399,7 +1475,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                   <label className="block text-sm font-bold text-slate-700 mb-1">Tipo de Solicitud</label>
                   <select
                     className="w-full border rounded p-2"
-                    value={newRequestType}
+                    value={newRequestType ?? ''}
                     onChange={(e) => setNewRequestType(e.target.value as RequestType)}
                   >
                     <option value="VOID_TRANSACTION">Anulación / Descobro (Solicitar)</option>
@@ -1422,7 +1498,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                       type="text"
                       className="w-full border rounded p-2"
                       placeholder="Ej. TX-123456"
-                      value={requestTargetId}
+                      value={requestTargetId ?? ''}
                       onChange={(e) => setRequestTargetId(e.target.value)}
                     />
                   </div>
@@ -1446,7 +1522,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                   <textarea
                     className="w-full border rounded p-2 h-24"
                     placeholder="Explique la razón de la solicitud..."
-                    value={newRequestDesc}
+                    value={newRequestDesc ?? ''}
                     onChange={(e) => setNewRequestDesc(e.target.value)}
                   />
                 </div>
@@ -1459,7 +1535,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                         type="password"
                         className="flex-1 border border-slate-300 rounded p-2 text-sm bg-slate-50 focus:bg-white"
                         placeholder="PIN/Clave del Administrador"
-                        value={offlineAdminPassword}
+                        value={offlineAdminPassword ?? ''}
                         onChange={(e) => setOfflineAdminPassword(e.target.value)}
                       />
                       <button

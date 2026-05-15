@@ -111,8 +111,10 @@ class SyncService {
             await this.pullFromServer();
             
             console.log("Synchronization completed successfully.");
-        } catch (error) {
+        } catch (error: any) {
             console.error("Synchronization failed:", error);
+            // Don't rethrow to avoid crashing the caller, but maybe trigger a toast
+            window.dispatchEvent(new CustomEvent('sigma_sync_error', { detail: error }));
         } finally {
             this.isSyncing = false;
         }
@@ -152,9 +154,16 @@ class SyncService {
                         await remoteDb.updateAdminRequest(action.data);
                         break;
                 }
-            } catch (e) {
+            } catch (e: any) {
                 console.error(`Failed to flush action ${action.id}:`, e);
-                remainingQueue.push(action);
+                
+                // If it's a schema error (PGRST204), don't keep it in the queue 
+                // to prevent infinite lag loops, but log it clearly.
+                if (e.code === 'PGRST204') {
+                    console.warn(`[SIGMA Sync] Skipping action ${action.id} due to missing DB column: ${e.message}`);
+                } else {
+                    remainingQueue.push(action);
+                }
             }
         }
 

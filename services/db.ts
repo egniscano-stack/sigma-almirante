@@ -29,6 +29,8 @@ export const mapTaxpayerFromDB = (data: any): Taxpayer => ({
     documents: data.documents || {},
     magnitude: data.magnitude,
     selectedTaxCodes: data.selected_tax_codes || [],
+    selectedRates: data.documents?.selectedRates || data.selected_rates || {},
+    previousYearsDebt: Number(data.documents?.previousYearsDebt) || 0,
     rotuloAmount: Number(data.rotulo_amount) || 0,
     garbageAmount: Number(data.garbage_amount) || 0,
     businessStartDate: data.documents?.businessStartDate,
@@ -55,8 +57,10 @@ const mapTaxpayerToDB = (data: Taxpayer) => ({
     has_garbage_service: data.hasGarbageService,
     documents: {
       ...(data.documents || {}),
-      ...(data.businessStartDate ? { businessStartDate: data.businessStartDate } : {}),
-      ...(data.paymentStartDate ? { paymentStartDate: data.paymentStartDate } : {})
+      businessStartDate: data.businessStartDate || null,
+      paymentStartDate: data.paymentStartDate || null,
+      selectedRates: data.selectedRates || {},
+      previousYearsDebt: data.previousYearsDebt || 0
     },
     magnitude: data.magnitude,
     selected_tax_codes: data.selectedTaxCodes || [],

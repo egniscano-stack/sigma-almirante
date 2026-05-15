@@ -4,18 +4,24 @@ import {
   PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
 } from 'recharts';
 import { Transaction, Taxpayer, TaxConfig, TaxType, CommercialCategory } from '../types';
-import { DollarSign, TrendingUp, Users, AlertCircle, Calendar, Clock, ArrowUpRight, ArrowDownRight, FileText, RefreshCw } from 'lucide-react';
+import { 
+  TrendingUp, TrendingDown, DollarSign, Users, AlertCircle, 
+  CheckCircle, Clock, ChevronRight, Filter, Search, 
+  Download, Briefcase, Calendar, RefreshCw, FileText 
+} from 'lucide-react';
+import taxStructure from '../data/taxStructure.json';
 
 interface DashboardProps {
   transactions: Transaction[];
   taxpayers: Taxpayer[];
   config: TaxConfig;
   onRefresh?: () => void;
+  isLoading?: boolean;
 }
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 
-export const Dashboard: React.FC<DashboardProps> = ({ transactions, taxpayers, config, onRefresh }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ transactions, taxpayers, config, onRefresh, isLoading }) => {
   const [timeFilter, setTimeFilter] = useState<'DAY' | 'WEEK' | 'MONTH'>('MONTH');
 
   // 1. FILTER TRANSACTIONS
@@ -51,40 +57,105 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, taxpayers, c
     const currentYear = new Date().getFullYear();
 
     taxpayers.forEach(t => {
-      let tpDebt = t.balance || 0;
+      let tpDebt = t.previousYearsDebt || 0;
       const activeStatuses = ['ACTIVO', 'MOROSO'];
 
       if (activeStatuses.includes(t.status)) {
         // Iterate all months of current year
-        for (let m = 1; m <= currentMonth; m++) {
+        let startMonth = 13; // Default to 13 (No debt) unless a start date is assigned in Edition
+        const refDateStr = t.paymentStartDate || t.businessStartDate;
+        if (refDateStr) {
+          const pDate = new Date(refDateStr + 'T00:00:00');
+          if (pDate.getFullYear() === currentYear) {
+            startMonth = pDate.getMonth() + 1;
+          } else if (pDate.getFullYear() > currentYear) {
+            startMonth = 13;
+          }
+        }
+
+        for (let m = startMonth; m <= currentMonth; m++) {
           // Commercial
           if (t.hasCommercialActivity) {
-            const hasPaid = transactions.some(tx =>
-              tx.taxpayerId === t.id &&
-              tx.taxType === TaxType.COMERCIO &&
-              (tx.metadata?.month === m || new Date(tx.date).getMonth() + 1 === m) &&
-              new Date(tx.date).getFullYear() === currentYear &&
-              tx.status === 'PAGADO'
-            );
+            const monthName = new Date(currentYear, m - 1).toLocaleString('es-ES', { month: 'long' });
+            const hasPaid = (transactions || []).some(tx => {
+              if (tx.taxpayerId !== t.id || tx.status !== 'PAGADO') return false;
+              
+              // 1. Consolidated
+              if (tx.metadata?.isConsolidated && tx.metadata?.originalItems) {
+                return tx.metadata.originalItems.some((i: any) => i.label.includes(`Comercial - ${monthName}`));
+              }
+
+              if (tx.taxType !== TaxType.COMERCIO) return false;
+              
+              // 2. Metadata / Description
+              if (tx.metadata?.month === m && tx.metadata?.year === currentYear) return true;
+              return tx.description.includes(`Comercial - ${monthName}`);
+            });
             if (!hasPaid) {
-              const rates = config?.commercialRates || {};
-              const rate = t.commercialCategory ? (rates[t.commercialCategory] || config?.commercialBaseRate || 0) : (config?.commercialBaseRate || 0);
-              tpDebt += rate;
+              let commercialRate = 0;
+              let hasCommercialAssignment = false;
+
+              if (t.selectedTaxCodes && t.selectedTaxCodes.length > 0) {
+                hasCommercialAssignment = true;
+                t.selectedTaxCodes.forEach(code => {
+                  const s = (taxStructure as any[]).find(st => st.code === code);
+                  if (s) {
+                    const mRates = t.magnitude === 'GRANDE' ? s.rates.GRANDE :
+                                   t.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
+                    if (Array.isArray(mRates)) {
+                      commercialRate += t.selectedRates?.[code] || mRates[0] || 0;
+                    } else if (typeof mRates === 'number') {
+                      commercialRate += mRates;
+                    }
+                  }
+                });
+              }
+
+              if ((t.rotuloAmount || 0) > 0) {
+                commercialRate += t.rotuloAmount || 0;
+                hasCommercialAssignment = true;
+              }
+
+              const validClasses = ['CLASE_A', 'CLASE_B', 'CLASE_C'];
+              if (!hasCommercialAssignment && t.commercialCategory && validClasses.includes(t.commercialCategory)) {
+                const rates = config?.commercialRates || {};
+                const catRate = rates[t.commercialCategory as any];
+                if (catRate !== undefined) {
+                  commercialRate = catRate;
+                  hasCommercialAssignment = true;
+                }
+              }
+
+              if (hasCommercialAssignment && commercialRate > 0) {
+                tpDebt += commercialRate;
+              }
             }
           }
 
           // Garbage
           if (t.hasGarbageService) {
-            const hasPaid = transactions.some(tx =>
-              tx.taxpayerId === t.id &&
-              tx.taxType === TaxType.BASURA &&
-              (tx.metadata?.month === m || new Date(tx.date).getMonth() + 1 === m) &&
-              new Date(tx.date).getFullYear() === currentYear &&
-              tx.status === 'PAGADO'
-            );
+            const monthName = new Date(currentYear, m - 1).toLocaleString('es-ES', { month: 'long' });
+            const hasPaid = (transactions || []).some(tx => {
+              if (tx.taxpayerId !== t.id || tx.status !== 'PAGADO') return false;
+              
+              // 1. Consolidated
+              if (tx.metadata?.isConsolidated && tx.metadata?.originalItems) {
+                return tx.metadata.originalItems.some((i: any) => i.label.includes(`Tasa de Aseo - ${monthName}`));
+              }
+
+              if (tx.taxType !== TaxType.BASURA) return false;
+
+              // 2. Metadata / Description
+              if (tx.metadata?.month === m && tx.metadata?.year === currentYear) return true;
+              return tx.description.includes(`Tasa de Aseo - ${monthName}`);
+            });
             if (!hasPaid) {
-              const rate = t.type === 'JURIDICA' ? (config?.garbageCommercialRate || 0) : (config?.garbageResidentialRate || 0);
-              tpDebt += rate;
+              const garbageRate = t.garbageAmount || 0;
+              const hasGarbageAssignment = (garbageRate > 0);
+
+              if (hasGarbageAssignment && garbageRate > 0) {
+                tpDebt += garbageRate;
+              }
             }
           }
         }
@@ -122,7 +193,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, taxpayers, c
     { name: 'Vehículos', value: filteredTransactions.filter(t => t.taxType === TaxType.VEHICULO).reduce((a, b) => a + b.amount, 0) },
     { name: 'Basura', value: filteredTransactions.filter(t => t.taxType === TaxType.BASURA).reduce((a, b) => a + b.amount, 0) },
     { name: 'Obras', value: filteredTransactions.filter(t => t.taxType === TaxType.CONSTRUCCION).reduce((a, b) => a + b.amount, 0) },
-  ].filter(i => i.value > 0);  const StatCard = ({ title, value, subtext, icon: Icon, color, trend }: any) => (
+  ].filter(i => i.value > 0);
+
+  const StatCard = ({ title, value, subtext, icon: Icon, color, trend }: any) => (
     <div className="group relative bg-white bg-opacity-80 backdrop-blur-md p-6 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/40 flex flex-col justify-between hover:shadow-[0_20px_50px_rgba(8,_112,_184,_0.08)] hover:-translate-y-1 transition-all duration-300 overflow-hidden h-full">
       {/* Decorative Glow */}
       <div className={`absolute -right-10 -top-10 w-32 h-32 rounded-full opacity-5 blur-3xl transition-opacity group-hover:opacity-20 ${color.split(' ')[0]}`}></div>
@@ -222,8 +295,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, taxpayers, c
           color="bg-blue-500"
         />
         <StatCard
-          title="Contribuyentes Registrados"
-          value={taxpayers.filter(t => t.taxpayerNumber && t.commercialCategory !== 'VIGENCIA EXPIRADA').length.toLocaleString()}
+          title="Contribuyentes Activos"
+          value={taxpayers.filter(t => t.taxpayerNumber && t.commercialCategory !== 'VIGENCIA EXPIRADA' && t.status === 'ACTIVO').length.toLocaleString()}
           subtext={`${taxpayers.filter(t => t.commercialCategory === 'VIGENCIA EXPIRADA').length} en Vigencia Expirada (Sin Número)`}
           icon={Users}
           color="bg-amber-500"

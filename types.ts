@@ -103,6 +103,7 @@ export interface Taxpayer {
   // Migration & Start Dates
   businessStartDate?: string; // Fecha de inicio de operaciones
   paymentStartDate?: string; // Fecha desde donde inician los pagos en el sistema
+  previousYearsDebt?: number;
 }
 
 export interface Transaction {
