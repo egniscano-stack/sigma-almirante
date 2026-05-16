@@ -30,18 +30,13 @@ export default defineConfig(({ mode }) => {
       }
     },
     build: {
-      outDir: '.', // Output to root for extreme hosting compatibility
-      emptyOutDir: false, // Do NOT delete source files!
+      outDir: 'dist',
       // Production build security options
       sourcemap: false,
       minify: 'terser',
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
-        input: {
-          main: path.resolve(__dirname, 'index_dev.html'),
-        },
         output: {
-          // Keep assets in assets/ folder
           chunkFileNames: 'assets/[hash].js',
           entryFileNames: 'assets/[hash].js',
           assetFileNames: 'assets/[hash].[ext]',
