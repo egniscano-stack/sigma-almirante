@@ -1947,6 +1947,26 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                             </>
                           )}
                         </div>
+
+                        {(isAdmin || isCaja1) && (
+                          <div className="mt-6 pt-6 border-t border-red-100">
+                            <label className="flex items-center gap-4 cursor-pointer group">
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${newTp.hasConstruction ? 'bg-red-600 text-white shadow-lg' : 'bg-white text-slate-300 border-2 border-slate-100 group-hover:border-red-200'}`}>
+                                <CheckSquare size={18} />
+                              </div>
+                              <input 
+                                type="checkbox" 
+                                className="hidden" 
+                                checked={newTp.hasConstruction || false}
+                                onChange={e => setNewTp({ ...newTp, hasConstruction: e.target.checked })}
+                              />
+                              <div>
+                                <span className="block text-sm font-black text-red-900 uppercase tracking-widest">Activar Permiso de Construcción</span>
+                                <p className="text-[9px] text-red-600/70 font-bold leading-relaxed">Habilita el seguimiento de obras y remodelaciones. <br/>Opción restringida a Caja Principal y Admin.</p>
+                              </div>
+                            </label>
+                          </div>
+                        )}
                       </div>
 
                       <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl border-t-4 border-red-600">
