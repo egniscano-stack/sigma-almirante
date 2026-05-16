@@ -224,29 +224,36 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
   };
 
 
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
+  };
+
   const submitTaxpayerData = async (taxpayerFormData: Partial<Taxpayer>, filesToUpload: Record<string, File>) => {
     console.log('Starting taxpayer data submission...', taxpayerFormData);
     setIsUploading(true);
     try {
-      // Upload Files First
+      // Upload Files
       const uploadedDocs: Record<string, string> = { ...taxpayerFormData.documents };
-
-      // Define base path
       const docIdSafe = taxpayerFormData.docId?.replace(/[^a-zA-Z0-9]/g, '_') || 'unknown';
 
       for (const [key, file] of Object.entries(filesToUpload)) {
         const ext = file.name.split('.').pop();
         const path = `taxpayers/${docIdSafe}/${key}_${Date.now()}.${ext}`;
         try {
+          // Attempt immediate upload
           const url = await db.uploadTaxpayerDocument(file, path);
           uploadedDocs[key] = url;
         } catch (err: any) {
-          console.error(`Failed to upload ${key}:`, err);
-          const proceed = confirm(`Error subiendo ${key}: ${err.message || 'Error desconocido'}.\n\n¿Desea completar el registro SIN esta imagen?`);
-          if (!proceed) {
-            setIsUploading(false);
-            return;
-          }
+          console.warn(`[Offline Mode] Could not upload ${key} immediately, saving base64 for later sync:`, err);
+          // SAVE AS BASE64 FOR OFFLINE SYNC
+          const base64 = await fileToBase64(file);
+          // We prefix it so SyncService knows it needs to be uploaded before pushing to DB
+          uploadedDocs[key] = `base64:${path}|${base64}`;
         }
       }
 

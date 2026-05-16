@@ -111,6 +111,7 @@ class SyncService {
             await this.pullFromServer();
             
             console.log("Synchronization completed successfully.");
+            window.dispatchEvent(new CustomEvent('sigma_sync_success'));
         } catch (error: any) {
             console.error("Synchronization failed:", error);
             // Don't rethrow to avoid crashing the caller, but maybe trigger a toast
@@ -125,6 +126,36 @@ class SyncService {
         
         for (const action of this.queue) {
             try {
+                // --- PRE-PROCESS: Handle base64 images before pushing to DB ---
+                if (action.type === 'CREATE_TAXPAYER' || action.type === 'UPDATE_TAXPAYER') {
+                    const docs = action.data.documents || {};
+                    let hasPendingUploads = false;
+                    
+                    for (const [key, value] of Object.entries(docs)) {
+                        if (typeof value === 'string' && value.startsWith('base64:')) {
+                            try {
+                                const [path, base64Data] = value.replace('base64:', '').split('|');
+                                // Convert base64 to File
+                                const res = await fetch(base64Data);
+                                const blob = await res.blob();
+                                const file = new File([blob], path.split('/').pop() || 'upload.png', { type: blob.type });
+                                
+                                // Upload to storage
+                                const url = await remoteDb.uploadTaxpayerDocument(file, path);
+                                action.data.documents[key] = url;
+                                hasPendingUploads = true;
+                            } catch (uploadError) {
+                                console.error(`[SIGMA Sync] Failed to process base64 upload for ${key}:`, uploadError);
+                            }
+                        }
+                    }
+                    
+                    if (hasPendingUploads) {
+                        // Resave the queue with updated URLs just in case the next step fails
+                        await localStore.saveSyncQueue(this.queue);
+                    }
+                }
+
                 switch (action.type) {
                     case 'CREATE_TAXPAYER':
                         await remoteDb.createTaxpayer(action.data);

@@ -101,6 +101,23 @@ function App() {
     registeredUsersRef.current = registeredUsers;
   }, [user, taxpayers, registeredUsers]);
 
+  // Sync Success Listener
+  useEffect(() => {
+    const handleSyncSuccess = () => {
+      setNotificationToast({
+        title: 'Sincronización Completada',
+        message: 'Todos los cambios locales se han sincronizado con el servidor correctamente.'
+      });
+      // Optionally play a subtle sound
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+      audio.volume = 0.3;
+      audio.play().catch(e => console.log("Audio play blocked", e));
+    };
+
+    window.addEventListener('sigma_sync_success', handleSyncSuccess);
+    return () => window.removeEventListener('sigma_sync_success', handleSyncSuccess);
+  }, []);
+
   // Request Notification Permissions on Mount
   useEffect(() => {
     if ('Notification' in window && Notification.permission !== 'granted') {
@@ -1159,12 +1176,12 @@ function App() {
       )}
       {/* --- DYNAMIC IN-APP NOTIFICATION TOAST --- */}
       {notificationToast && (
-        <div className={`fixed top-4 right-4 z-[9999] p-6 rounded-xl shadow-2xl animate-bounce-in flex items-start max-w-md border-l-8 backdrop-blur-md transition-all duration-300 transform hover:scale-105 ${notificationToast.title.includes('Aprobada') ? 'bg-emerald-900/95 border-emerald-400 text-white' :
+        <div className={`fixed top-4 right-4 z-[9999] p-6 rounded-xl shadow-2xl animate-bounce-in flex items-start max-w-md border-l-8 backdrop-blur-md transition-all duration-300 transform hover:scale-105 ${notificationToast.title.includes('Aprobada') || notificationToast.title.includes('Sincronización') ? 'bg-emerald-900/95 border-emerald-400 text-white' :
           notificationToast.title.includes('Rechazada') ? 'bg-red-900/95 border-red-500 text-white' :
             'bg-slate-900/95 border-indigo-500 text-white' // Default/Admin
           }`}>
           <div className="mr-4 mt-1 bg-white/20 p-2 rounded-full">
-            {notificationToast.title.includes('Aprobada') ? <CheckCircle size={32} className="text-emerald-300" /> :
+            {notificationToast.title.includes('Aprobada') || notificationToast.title.includes('Sincronización') ? <CheckCircle size={32} className="text-emerald-300" /> :
               notificationToast.title.includes('Rechazada') ? <XCircle size={32} className="text-red-300" /> :
                 <Bell size={32} className="text-indigo-300" />}
           </div>
