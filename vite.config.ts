@@ -30,17 +30,21 @@ export default defineConfig(({ mode }) => {
       }
     },
     build: {
+      outDir: '.', // Output to root for extreme hosting compatibility
+      emptyOutDir: false, // Do NOT delete source files!
       // Production build security options
-      sourcemap: false,       // Do NOT expose source maps in production (hides code structure)
-      minify: 'terser',       // Minify and obfuscate the output
+      sourcemap: false,
+      minify: 'terser',
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
+        input: {
+          main: path.resolve(__dirname, 'index_dev.html'),
+        },
         output: {
-          // Randomize chunk file names to prevent directory enumeration
+          // Keep assets in assets/ folder
           chunkFileNames: 'assets/[hash].js',
           entryFileNames: 'assets/[hash].js',
           assetFileNames: 'assets/[hash].[ext]',
-          // Split vendor code for better caching
           manualChunks: {
             react: ['react', 'react-dom'],
             supabase: ['@supabase/supabase-js'],
