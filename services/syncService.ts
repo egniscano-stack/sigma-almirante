@@ -105,13 +105,17 @@ class SyncService {
 
         try {
             // 1. Push pending changes
-            await this.flushQueue();
+            const itemsProcessed = await this.flushQueue();
 
             // 2. Pull latest data from server
             await this.pullFromServer();
             
             console.log("Synchronization completed successfully.");
-            window.dispatchEvent(new CustomEvent('sigma_sync_success'));
+            
+            // ONLY notify if we actually pushed something to the server
+            if (itemsProcessed > 0) {
+                window.dispatchEvent(new CustomEvent('sigma_sync_success'));
+            }
         } catch (error: any) {
             console.error("Synchronization failed:", error);
             // Don't rethrow to avoid crashing the caller, but maybe trigger a toast
@@ -121,8 +125,9 @@ class SyncService {
         }
     }
 
-    private async flushQueue() {
+    private async flushQueue(): Promise<number> {
         const remainingQueue: SyncAction[] = [];
+        let processedCount = 0;
         
         for (const action of this.queue) {
             try {
@@ -185,6 +190,7 @@ class SyncService {
                         await remoteDb.updateAdminRequest(action.data);
                         break;
                 }
+                processedCount++;
             } catch (e: any) {
                 console.error(`Failed to flush action ${action.id}:`, e);
                 
@@ -200,6 +206,7 @@ class SyncService {
 
         this.queue = remainingQueue;
         await localStore.saveSyncQueue(this.queue);
+        return processedCount;
     }
 
     private async pullFromServer() {

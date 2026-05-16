@@ -129,7 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavig
             <span>Cerrar Sesión</span>
           </button>
           <div className="mt-4 text-center">
-            <p className="text-[10px] text-slate-600">v1.3.0 • {userRole === 'ADMIN' ? 'Administrador' : userRole === 'AUDITOR' ? 'Auditor' : userRole === 'REGISTRO' ? 'Oficial Registro' : 'Cajero'}</p>
+            <p className="text-[10px] text-slate-600">v1.4.0 • {userRole === 'ADMIN' ? 'Administrador' : userRole === 'AUDITOR' ? 'Auditor' : userRole === 'REGISTRO' ? 'Oficial Registro' : 'Cajero'}</p>
           </div>
         </div>
       </div >
