@@ -40,7 +40,7 @@ export const MOCK_TAXPAYERS: Taxpayer[] = [
   {
     id: '2',
     taxpayerNumber: '2023-0002',
-    type: TaxpayerType.NATURAL,
+    type: TaxpayerType.NATURAL_1,
     status: TaxpayerStatus.ACTIVO,
     hasCommercialActivity: false,
     commercialCategory: CommercialCategory.NONE,

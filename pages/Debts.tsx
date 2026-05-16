@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Taxpayer, Transaction, TaxType } from '../types';
 import { Search, Filter, Download, FileText, CheckCircle, AlertCircle, Clock, Trash2, ChevronDown, ChevronRight, Edit, History, ArrowRight, Calendar, Car, Store, RefreshCw } from 'lucide-react';
+import { calculateTaxpayerDebt } from '../services/debtLogic';
 import taxStructure from '../data/taxStructure.json';
 
 interface DebtsProps {
@@ -18,6 +19,7 @@ interface PendingSummary {
   debtCount: number;
   isOverdue: boolean;
   earliestDueDate: string;
+  totalAmount: number;
 }
 
 export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay, userRole, config, onRefresh, isLoading }) => {
@@ -28,171 +30,63 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
   // History Filters
   const [historyMonth, setHistoryMonth] = useState(new Date().getMonth() + 1); // 1-12
   const [historyYear, setHistoryYear] = useState(new Date().getFullYear());
+  const [activityFilter, setActivityFilter] = useState<'ALL' | 'PLACA' | 'COMERCIO' | 'ASEO'>('ALL');
 
   // --- LOGIC 1: CALCULATE PENDING DEBTS (CURRENT) ---
   const pendingSummaries = useMemo(() => {
-    const taxpayerMap = new Map<string, { tp: Taxpayer, count: number, overdue: boolean, earliest: string }>();
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear();
-    const currentMonth = currentDate.getMonth() + 1;
-    const activeStatuses = ['ACTIVO', 'MOROSO'];
+    return taxpayers.map(tp => {
+      const { items, total } = calculateTaxpayerDebt(tp, transactions, config);
+      
+      if (items.length === 0) return null;
 
-    taxpayers.forEach(tp => {
-      let count = 0;
-      let overdue = false;
+      const isOverdue = items.some(d => {
+        if (d.type === 'DEUDA_ARRAS') return true;
+        if (d.metadata?.month && d.metadata?.year) {
+          const now = new Date();
+          const currentMonth = now.getMonth() + 1;
+          const currentYear = now.getFullYear();
+          if (d.metadata.year < currentYear) return true;
+          if (d.metadata.year === currentYear && d.metadata.month < currentMonth) return true;
+          if (d.metadata.year === currentYear && d.metadata.month === currentMonth && now.getDate() > 15) return true;
+        }
+        return false;
+      });
+
+      // Find earliest date
       let earliest = '9999-12-31';
-
-      // 0. Accumulated Debt (Previous Years)
-      if ((tp.previousYearsDebt || 0) > 0) {
-        count++;
-        overdue = true;
-        earliest = `${currentYear}-01-01`;
-      }
-
-      // Check all months
-      let startMonth = 13; // Default to 13 (No debt) unless a start date is assigned in Edition
-      const refDateStr = tp.paymentStartDate || tp.businessStartDate;
-      if (refDateStr) {
-        const pDate = new Date(refDateStr + 'T00:00:00');
-        if (pDate.getFullYear() === currentYear) {
-          startMonth = pDate.getMonth() + 1;
-        } else if (pDate.getFullYear() > currentYear) {
-          startMonth = 13; // Skip all months for this year
+      items.forEach(d => {
+        if (d.metadata?.month && d.metadata?.year) {
+          const dateStr = `${d.metadata.year}-${d.metadata.month.toString().padStart(2, '0')}-01`;
+          if (dateStr < earliest) earliest = dateStr;
         }
-      }
+      });
 
-      for (let m = startMonth; m <= currentMonth; m++) {
-        const monthName = new Date(currentYear, m - 1).toLocaleString('es-ES', { month: 'long' });
-
-        // Commercial
-        let commercialRate = 0;
-        let hasCommercialAssignment = false;
-
-        if (tp.selectedTaxCodes && tp.selectedTaxCodes.length > 0) {
-          hasCommercialAssignment = true;
-          tp.selectedTaxCodes.forEach(code => {
-            const s = (taxStructure as any[]).find(st => st.code === code);
-            if (s) {
-              const mRates = tp.magnitude === 'GRANDE' ? s.rates.GRANDE :
-                             tp.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
-              if (Array.isArray(mRates)) {
-                commercialRate += tp.selectedRates?.[code] || mRates[0] || 0;
-              } else if (typeof mRates === 'number') {
-                commercialRate += mRates;
-              }
-            }
-          });
-        }
-
-        if ((tp.rotuloAmount || 0) > 0) {
-          commercialRate += tp.rotuloAmount || 0;
-          hasCommercialAssignment = true;
-        }
-
-        const validClasses = ['CLASE_A', 'CLASE_B', 'CLASE_C'];
-        if (!hasCommercialAssignment && tp.commercialCategory && validClasses.includes(tp.commercialCategory)) {
-          const rates = config?.commercialRates || {};
-          const catRate = rates[tp.commercialCategory as any];
-          if (catRate !== undefined) {
-            commercialRate = catRate;
-            hasCommercialAssignment = true;
-          }
-        }
-
-        if (tp.hasCommercialActivity && activeStatuses.includes(tp.status) && hasCommercialAssignment && commercialRate > 0) {
-          const hasPaid = (transactions || []).some(t => {
-            if (t.taxpayerId !== tp.id || t.status !== 'PAGADO') return false;
-            
-            // 1. Consolidated
-            if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
-              return t.metadata.originalItems.some((i: any) => i.label.includes(`Comercial - ${monthName}`));
-            }
-
-            if (t.taxType !== TaxType.COMERCIO) return false;
-            
-            // 2. Metadata / Description
-            if (t.metadata?.month === m && t.metadata?.year === currentYear) return true;
-            return t.description.includes(`Comercial - ${monthName}`);
-          });
-
-          if (!hasPaid) {
-            count++;
-            const dueDate = `${currentYear}-${m.toString().padStart(2, '0')}-15`;
-            if (dueDate < earliest) earliest = dueDate;
-            if (m < currentMonth || (m === currentMonth && currentDate.getDate() > 15)) overdue = true;
-          }
-        }
-
-        // Garbage
-        const garbageRate = tp.garbageAmount || 0;
-        const hasGarbageAssignment = (garbageRate > 0);
-
-        if (tp.hasGarbageService && activeStatuses.includes(tp.status) && hasGarbageAssignment && garbageRate > 0) {
-          const hasPaid = (transactions || []).some(t => {
-            if (t.taxpayerId !== tp.id || t.status !== 'PAGADO') return false;
-            
-            // 1. Consolidated
-            if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
-              return t.metadata.originalItems.some((i: any) => i.label.includes(`Tasa de Aseo - ${monthName}`));
-            }
-
-            if (t.taxType !== TaxType.BASURA) return false;
-
-            // 2. Metadata / Description
-            if (t.metadata?.month === m && t.metadata?.year === currentYear) return true;
-            return t.description.includes(`Tasa de Aseo - ${monthName}`);
-          });
-
-          if (!hasPaid) {
-            count++;
-            const dueDate = `${currentYear}-${m.toString().padStart(2, '0')}-15`;
-            if (dueDate < earliest) earliest = dueDate;
-            if (m < currentMonth || (m === currentMonth && currentDate.getDate() > 15)) overdue = true;
-          }
-        }
-      }
-
-      // Vehicles
-      if (tp.vehicles && tp.vehicles.length > 0 && activeStatuses.includes(tp.status) && (config?.plateCost || 0) > 0) {
-        tp.vehicles.forEach(v => {
-          const hasPaid = transactions.some(t => {
-            if (t.taxpayerId !== tp.id || t.status !== 'PAGADO') return false;
-            if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
-              return t.metadata.originalItems.some((i: any) => i.label.includes(`Placa ${v.plate}`));
-            }
-            return t.taxType === TaxType.VEHICULO &&
-                   (t.metadata?.plateNumber === v.plate || t.description.includes(v.plate)) &&
-                   new Date(t.date).getFullYear() === currentYear;
-          });
-          if (!hasPaid) {
-            count++;
-            const lastDigit = parseInt(v.plate.slice(-1)) || 1;
-            const renewalMonth = lastDigit === 0 ? 10 : lastDigit;
-            const dueDate = `${currentYear}-${renewalMonth.toString().padStart(2, '0')}-30`;
-            if (dueDate < earliest) earliest = dueDate;
-            if (currentMonth > renewalMonth) overdue = true;
-          }
-        });
-      }
-
-      if (count > 0) {
-        taxpayerMap.set(tp.id, { tp, count, overdue, earliest });
-      }
-    });
-
-    return Array.from(taxpayerMap.values()).map(item => ({
-      taxpayer: item.tp,
-      debtCount: item.count,
-      isOverdue: item.overdue,
-      earliestDueDate: item.earliest
-    }));
+      return {
+        taxpayer: tp,
+        debtCount: items.length,
+        isOverdue,
+        earliestDueDate: earliest === '9999-12-31' ? 'Saldo Anterior' : earliest,
+        totalAmount: total
+      };
+    }).filter((item): item is PendingSummary => item !== null);
   }, [taxpayers, transactions, config]);
 
   // --- FILTERING LOGIC ---
-  const filteredSummaries = pendingSummaries.filter(item =>
-    item.taxpayer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.taxpayer.docId.includes(searchTerm)
-  );
+  const filteredSummaries = pendingSummaries.filter(item => {
+    const matchesSearch = item.taxpayer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.taxpayer.docId.includes(searchTerm);
+    
+    if (!matchesSearch) return false;
+
+    if (activityFilter === 'ALL') return true;
+    
+    const { items } = calculateTaxpayerDebt(item.taxpayer, transactions, config);
+    if (activityFilter === 'PLACA') return items.some(d => d.type === TaxType.VEHICULO);
+    if (activityFilter === 'COMERCIO') return items.some(d => d.type === TaxType.COMERCIO);
+    if (activityFilter === 'ASEO') return items.some(d => d.type === TaxType.BASURA);
+    
+    return true;
+  });
 
   const filteredHistory = transactions.filter(t => {
     const matchSearch = searchTerm === '' ||
@@ -245,34 +139,52 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
           />
         </div>
 
-        {viewMode === 'HISTORY' && (
-          <div className="flex gap-2">
-            <select
-              value={historyMonth}
-              onChange={(e) => setHistoryMonth(parseInt(e.target.value))}
-              className="p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-bold text-slate-700 outline-none focus:border-blue-500"
-            >
-              {Array.from({ length: 12 }, (_, i) => (
-                <option key={i + 1} value={i + 1}>{new Date(2000, i, 1).toLocaleString('es-ES', { month: 'long' })}</option>
-              ))}
-            </select>
-            <select
-              value={historyYear}
-              onChange={(e) => setHistoryYear(parseInt(e.target.value))}
-              className="p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-bold text-slate-700 outline-none focus:border-blue-500"
-            >
-              {[2023, 2024, 2025, 2026].map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div className="flex gap-2">
+          <select
+            value={activityFilter}
+            onChange={(e) => setActivityFilter(e.target.value as any)}
+            className="p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-bold text-slate-700 outline-none focus:border-emerald-500"
+          >
+            <option value="ALL">Todas las Actividades</option>
+            <option value="PLACA">Solo Placas</option>
+            <option value="COMERCIO">Solo Comercio</option>
+            <option value="ASEO">Solo Aseo</option>
+          </select>
+
+          {viewMode === 'HISTORY' && (
+            <div className="flex gap-2">
+              <select
+                value={historyMonth}
+                onChange={(e) => setHistoryMonth(parseInt(e.target.value))}
+                className="p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-bold text-slate-700 outline-none focus:border-blue-500"
+              >
+                {Array.from({ length: 12 }, (_, i) => (
+                  <option key={i + 1} value={i + 1}>{new Date(2000, i, 1).toLocaleString('es-ES', { month: 'long' })}</option>
+                ))}
+              </select>
+              <select
+                value={historyYear}
+                onChange={(e) => setHistoryYear(parseInt(e.target.value))}
+                className="p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-bold text-slate-700 outline-none focus:border-blue-500"
+              >
+                {[2023, 2024, 2025, 2026].map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* CONTENT: VIEW 1 - PENDING DEBTS */}
       {viewMode === 'PENDING' && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          {filteredSummaries.length > 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-h-[400px]">
+          {isLoading ? (
+             <div className="p-20 text-center flex flex-col items-center justify-center gap-4">
+                <RefreshCw size={48} className="text-emerald-500 animate-spin opacity-50" />
+                <p className="text-slate-500 font-bold animate-pulse">Sincronizando deudas...</p>
+             </div>
+          ) : filteredSummaries.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
@@ -300,9 +212,9 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
                             <p className="text-[10px] text-slate-400 uppercase font-bold">Pendiente(s)</p>
                           </div>
                         </div>
-                        {item.taxpayer.balance && item.taxpayer.balance > 0 && (
-                          <div className="text-[10px] text-red-500 font-bold mt-0.5">Incluye Saldo Anterior</div>
-                        )}
+                        <div className="text-[10px] text-red-500 font-bold mt-1">
+                          Total: B/. {new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(item.totalAmount)}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-center">
                         {item.isOverdue ? (

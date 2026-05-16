@@ -1,6 +1,7 @@
 import React from 'react';
 import { LayoutDashboard, Users, Receipt, ScanLine, Settings, LogOut, FileText, X, AlertCircle, Banknote, MessageCircle, Globe, Building2 } from 'lucide-react';
 import { UserRole } from '../types';
+import { getSession } from '../services/security';
 
 interface SidebarProps {
   currentPage: string;
@@ -26,7 +27,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavig
     { id: 'settings', label: 'Administración', icon: Settings, roles: ['ADMIN'] },
   ];
 
-  const allowedMenuItems = allMenuItems.filter(item => item.roles.includes(userRole));
+  const session = getSession();
+  const uname = session?.username?.toLowerCase() || '';
+  const isAdmin = userRole === 'ADMIN' || session?.role === 'ADMIN' || userRole === 'ALCALDE';
+  
+  // Extremely robust check for Caja 1
+  const isCaja1 = (uname.includes('caja') && (uname.includes('1') || uname.includes('01') || uname.includes('uno'))) || 
+                  uname.includes('caja-1') || uname.includes('caja_1');
+
+  const allowedMenuItems = allMenuItems.filter(item => {
+    // Special case for Construction: Only Caja 1 and Admin
+    if (item.id === 'construction') {
+      return isAdmin || isCaja1;
+    }
+
+    // Basic role check for other items
+    return item.roles.includes(userRole);
+  });
 
   return (
     <>

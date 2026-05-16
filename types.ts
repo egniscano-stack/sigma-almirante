@@ -6,11 +6,14 @@ export enum TaxType {
   BASURA = 'BASURA',
   COMERCIO = 'COMERCIO',
   PAZ_Y_SALVO = 'PAZ Y SALVO',
+  CONSOLIDADO = 'CONSOLIDADO',
 }
 
 export enum TaxpayerType {
-  NATURAL = 'NATURAL',
+  NATURAL_1 = 'NATURAL_1',
+  NATURAL_2 = 'NATURAL_2',
   JURIDICA = 'JURIDICA',
+  PLACA = 'PLACA',
 }
 
 export enum TaxpayerStatus {
@@ -44,6 +47,7 @@ export interface VehicleInfo {
   motorSerial: string;
   chassisSerial: string;
   hasTransferDocuments: boolean; // Documentacion de traspaso
+  yearlyAmount?: number; // Monto de placa individual
 }
 
 // Corregimientos defined by requirements
@@ -97,12 +101,15 @@ export interface Taxpayer {
   magnitude?: 'PEQUEÑO' | 'MEDIANO' | 'GRANDE';
   selectedTaxCodes?: string[];
   selectedRates?: Record<string, number>; // Maps tax code to specific selected rate
-  rotuloAmount?: number;
-  garbageAmount?: number;
+   rotuloAmount?: number;
+   garbageAmount?: number;
+   yearlyAmount?: number;
   
   // Migration & Start Dates
   businessStartDate?: string; // Fecha de inicio de operaciones
   paymentStartDate?: string; // Fecha desde donde inician los pagos en el sistema
+  createdBy?: string; // Usuario que creó el registro
+  lastEditedBy?: string; // Último usuario que editó el registro
   previousYearsDebt?: number;
 }
 

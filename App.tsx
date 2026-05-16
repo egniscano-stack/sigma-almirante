@@ -668,24 +668,65 @@ function App() {
     }
   };
 
+  // Role-Based Filtering Logic
+  const filteredTaxpayers = useMemo(() => {
+    if (!user || user.role === 'ADMIN' || user.role === 'ALCALDE') return taxpayers;
+    
+    const uname = user.username.toLowerCase();
+    if (uname.includes('placa')) {
+      // Caja Placa: Solo contribuyentes con vehículos o código de PLACA
+      return taxpayers.filter(t => 
+        (t.vehicles?.length || 0) > 0 || 
+        (t.selectedTaxCodes || []).some(c => c.includes('PLACA')) ||
+        t.commercialCategory === 'PLACA'
+      );
+    } else if (uname.includes('caja')) {
+      // Caja 1, 2, 3: Todo EXCEPTO placas
+      return taxpayers.filter(t => 
+        (t.vehicles?.length || 0) === 0 && 
+        !(t.selectedTaxCodes || []).some(c => c.includes('PLACA')) &&
+        t.commercialCategory !== 'PLACA'
+      );
+    }
+    
+    return taxpayers;
+  }, [taxpayers, user]);
+
+  const filteredTransactions = useMemo(() => {
+    if (!user || user.role === 'ADMIN' || user.role === 'ALCALDE') return transactions;
+    
+    // For transactions, we filter by the taxpayers that the user can see
+    const allowedTaxpayerIds = new Set(filteredTaxpayers.map(t => t.id));
+    return transactions.filter(tx => allowedTaxpayerIds.has(tx.taxpayerId));
+  }, [transactions, filteredTaxpayers, user]);
+
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
-        return (user?.role === 'ADMIN' || user?.role === 'AUDITOR') ? <Dashboard transactions={transactions} taxpayers={taxpayers} config={config} onRefresh={() => fetchData(true)} /> : null;
+        return (user?.role === 'ADMIN' || user?.role === 'AUDITOR') ? <Dashboard transactions={filteredTransactions} taxpayers={filteredTaxpayers} config={config} onRefresh={() => fetchData(true)} /> : null;
       case 'construction':
-        return (
-          <ConstructionTax
-            currentUserName={user?.name || user?.username || 'Cajero'}
-            municipalityInfo={municipalityInfo}
-            onBack={() => setCurrentPage('dashboard')}
-            onPayment={handlePayment}
-          />
-        );
+        const uname = user?.username.toLowerCase() || '';
+        const isAdmin = user?.role === 'ADMIN' || user?.role === 'ALCALDE';
+        const isCaja1 = (uname.includes('caja') && (uname.includes('1') || uname.includes('01') || uname.includes('uno'))) || 
+                        uname.includes('caja-1') || uname.includes('caja_1');
+        
+        if (isAdmin || isCaja1) {
+          return (
+            <ConstructionTax
+              currentUserName={user?.name || user?.username || 'Cajero'}
+              municipalityInfo={municipalityInfo}
+              onBack={() => setCurrentPage('taxpayers')}
+              onPayment={handlePayment}
+            />
+          );
+        }
+        return null;
       case 'taxpayers':
         return (
           <Taxpayers
-            taxpayers={taxpayers}
-            transactions={transactions}
+            taxpayers={filteredTaxpayers}
+            transactions={filteredTransactions}
+            config={config}
             onAdd={handleAddTaxpayer}
             onUpdate={handleUpdateTaxpayer}
             onDelete={handleDeleteTaxpayer}
@@ -701,8 +742,8 @@ function App() {
           <TaxCollection
             user={user}
             currentUser={user} // Pass as currentUser to match props
-            taxpayers={taxpayers}
-            transactions={transactions}
+            taxpayers={filteredTaxpayers}
+            transactions={filteredTransactions}
             config={config}
             onPayment={handlePayment}
             municipalityInfo={municipalityInfo}
@@ -832,8 +873,8 @@ function App() {
       case 'cobros':
         return (
           <Debts
-            taxpayers={taxpayers}
-            transactions={transactions}
+            taxpayers={filteredTaxpayers}
+            transactions={filteredTransactions}
             onGoToPay={handleGoToPay}
             userRole={user?.role}
             config={config}
@@ -846,7 +887,7 @@ function App() {
           />
         );
       case 'reports':
-        return (user?.role === 'ADMIN' || user?.role === 'AUDITOR') ? <Reports transactions={transactions} users={registeredUsers} currentUser={user} taxpayers={taxpayers} config={config} /> : null;
+        return (user?.role === 'ADMIN' || user?.role === 'AUDITOR') ? <Reports transactions={filteredTransactions} users={registeredUsers} currentUser={user} taxpayers={filteredTaxpayers} config={config} /> : null;
       case 'settings':
         return user?.role === 'ADMIN' ? (
           <Settings
@@ -924,6 +965,7 @@ function App() {
         taxpayer={currentTaxpayer}
         transactions={transactions}
         municipalityInfo={municipalityInfo}
+        config={config}
         onPayment={handlePayment}
         onLogout={handleLogout}
       />

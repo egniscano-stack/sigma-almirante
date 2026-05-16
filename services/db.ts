@@ -24,7 +24,7 @@ export const mapTaxpayerFromDB = (data: any): Taxpayer => ({
     balance: Number(data.balance) || 0,
     hasConstruction: data.has_construction,
     hasGarbageService: data.has_garbage_service,
-    vehicles: [], // Vehicles loaded separately or joined
+    vehicles: data.vehicles || [],
     createdAt: data.created_at,
     documents: data.documents || {},
     magnitude: data.magnitude,
@@ -33,8 +33,11 @@ export const mapTaxpayerFromDB = (data: any): Taxpayer => ({
     previousYearsDebt: Number(data.documents?.previousYearsDebt) || 0,
     rotuloAmount: Number(data.rotulo_amount) || 0,
     garbageAmount: Number(data.garbage_amount) || 0,
-    businessStartDate: data.documents?.businessStartDate,
-    paymentStartDate: data.documents?.paymentStartDate
+    businessStartDate: data.business_start_date || data.documents?.businessStartDate,
+    paymentStartDate: data.payment_start_date || data.documents?.paymentStartDate,
+    yearlyAmount: Number(data.yearly_amount) || 0,
+    createdBy: data.created_by || data.documents?.createdBy,
+    lastEditedBy: data.last_edited_by || data.documents?.lastEditedBy
 });
 
 const mapTaxpayerToDB = (data: Taxpayer) => ({
@@ -60,12 +63,18 @@ const mapTaxpayerToDB = (data: Taxpayer) => ({
       businessStartDate: data.businessStartDate || null,
       paymentStartDate: data.paymentStartDate || null,
       selectedRates: data.selectedRates || {},
-      previousYearsDebt: data.previousYearsDebt || 0
+      previousYearsDebt: data.previousYearsDebt || 0,
+      createdBy: data.createdBy || (data.documents as any)?.createdBy || null,
+      lastEditedBy: data.lastEditedBy || (data.documents as any)?.lastEditedBy || null
     },
     magnitude: data.magnitude,
     selected_tax_codes: data.selectedTaxCodes || [],
     rotulo_amount: data.rotuloAmount || 0,
-    garbage_amount: data.garbageAmount || 0
+    garbage_amount: data.garbageAmount || 0,
+    business_start_date: data.businessStartDate || null,
+    payment_start_date: data.paymentStartDate || null,
+    yearly_amount: data.yearlyAmount || 0,
+    vehicles: data.vehicles || []
 });
 
 export const mapTransactionFromDB = (data: any): Transaction => ({

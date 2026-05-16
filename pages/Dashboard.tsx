@@ -10,6 +10,7 @@ import {
   Download, Briefcase, Calendar, RefreshCw, FileText 
 } from 'lucide-react';
 import taxStructure from '../data/taxStructure.json';
+import { calculateTaxpayerDebt } from '../services/debtLogic';
 
 interface DashboardProps {
   transactions: Transaction[];
@@ -53,118 +54,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, taxpayers, c
     let totalDebtAmount = 0;
     let delinquentCount = 0;
 
-    const currentMonth = new Date().getMonth() + 1;
-    const currentYear = new Date().getFullYear();
-
     taxpayers.forEach(t => {
-      let tpDebt = t.previousYearsDebt || 0;
       const activeStatuses = ['ACTIVO', 'MOROSO'];
-
       if (activeStatuses.includes(t.status)) {
-        // Iterate all months of current year
-        let startMonth = 13; // Default to 13 (No debt) unless a start date is assigned in Edition
-        const refDateStr = t.paymentStartDate || t.businessStartDate;
-        if (refDateStr) {
-          const pDate = new Date(refDateStr + 'T00:00:00');
-          if (pDate.getFullYear() === currentYear) {
-            startMonth = pDate.getMonth() + 1;
-          } else if (pDate.getFullYear() > currentYear) {
-            startMonth = 13;
-          }
+        const { total } = calculateTaxpayerDebt(t, transactions, config);
+        if (total > 0) {
+          totalDebtAmount += total;
+          delinquentCount++;
         }
-
-        for (let m = startMonth; m <= currentMonth; m++) {
-          // Commercial
-          if (t.hasCommercialActivity) {
-            const monthName = new Date(currentYear, m - 1).toLocaleString('es-ES', { month: 'long' });
-            const hasPaid = (transactions || []).some(tx => {
-              if (tx.taxpayerId !== t.id || tx.status !== 'PAGADO') return false;
-              
-              // 1. Consolidated
-              if (tx.metadata?.isConsolidated && tx.metadata?.originalItems) {
-                return tx.metadata.originalItems.some((i: any) => i.label.includes(`Comercial - ${monthName}`));
-              }
-
-              if (tx.taxType !== TaxType.COMERCIO) return false;
-              
-              // 2. Metadata / Description
-              if (tx.metadata?.month === m && tx.metadata?.year === currentYear) return true;
-              return tx.description.includes(`Comercial - ${monthName}`);
-            });
-            if (!hasPaid) {
-              let commercialRate = 0;
-              let hasCommercialAssignment = false;
-
-              if (t.selectedTaxCodes && t.selectedTaxCodes.length > 0) {
-                hasCommercialAssignment = true;
-                t.selectedTaxCodes.forEach(code => {
-                  const s = (taxStructure as any[]).find(st => st.code === code);
-                  if (s) {
-                    const mRates = t.magnitude === 'GRANDE' ? s.rates.GRANDE :
-                                   t.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
-                    if (Array.isArray(mRates)) {
-                      commercialRate += t.selectedRates?.[code] || mRates[0] || 0;
-                    } else if (typeof mRates === 'number') {
-                      commercialRate += mRates;
-                    }
-                  }
-                });
-              }
-
-              if ((t.rotuloAmount || 0) > 0) {
-                commercialRate += t.rotuloAmount || 0;
-                hasCommercialAssignment = true;
-              }
-
-              const validClasses = ['CLASE_A', 'CLASE_B', 'CLASE_C'];
-              if (!hasCommercialAssignment && t.commercialCategory && validClasses.includes(t.commercialCategory)) {
-                const rates = config?.commercialRates || {};
-                const catRate = rates[t.commercialCategory as any];
-                if (catRate !== undefined) {
-                  commercialRate = catRate;
-                  hasCommercialAssignment = true;
-                }
-              }
-
-              if (hasCommercialAssignment && commercialRate > 0) {
-                tpDebt += commercialRate;
-              }
-            }
-          }
-
-          // Garbage
-          if (t.hasGarbageService) {
-            const monthName = new Date(currentYear, m - 1).toLocaleString('es-ES', { month: 'long' });
-            const hasPaid = (transactions || []).some(tx => {
-              if (tx.taxpayerId !== t.id || tx.status !== 'PAGADO') return false;
-              
-              // 1. Consolidated
-              if (tx.metadata?.isConsolidated && tx.metadata?.originalItems) {
-                return tx.metadata.originalItems.some((i: any) => i.label.includes(`Tasa de Aseo - ${monthName}`));
-              }
-
-              if (tx.taxType !== TaxType.BASURA) return false;
-
-              // 2. Metadata / Description
-              if (tx.metadata?.month === m && tx.metadata?.year === currentYear) return true;
-              return tx.description.includes(`Tasa de Aseo - ${monthName}`);
-            });
-            if (!hasPaid) {
-              const garbageRate = t.garbageAmount || 0;
-              const hasGarbageAssignment = (garbageRate > 0);
-
-              if (hasGarbageAssignment && garbageRate > 0) {
-                tpDebt += garbageRate;
-              }
-            }
-          }
-        }
-      }
-
-      // Count as delinquent
-      if (tpDebt > 0) {
-        totalDebtAmount += tpDebt;
-        delinquentCount++;
       }
     });
 

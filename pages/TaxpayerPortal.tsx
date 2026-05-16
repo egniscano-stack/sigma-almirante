@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { Taxpayer, Transaction, TaxType, PaymentMethod, MunicipalityInfo } from '../types';
+import { Taxpayer, Transaction, TaxType, PaymentMethod, MunicipalityInfo, TaxConfig } from '../types';
 import { CreditCard, LogOut, CheckCircle, AlertCircle, History, User, Lock, XCircle, Printer, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { calculateTaxpayerDebt } from '../services/debtLogic';
 
 interface TaxpayerPortalProps {
-    currentUser: any; // User object with extended taxpayer properties ideally
+    currentUser: any; 
     taxpayer: Taxpayer;
     transactions: Transaction[];
     municipalityInfo: MunicipalityInfo;
+    config: TaxConfig;
     onPayment: (paymentData: any) => Transaction;
     onLogout: () => void;
 }
@@ -26,151 +28,44 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
     taxpayer,
     transactions,
     municipalityInfo,
+    config,
     onPayment,
     onLogout
 }) => {
     const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
     const [showPaymentModal, setShowPaymentModal] = useState(false);
-    const [selectedTaxToPay, setSelectedTaxToPay] = useState<TaxType | null>(null);
+    const [selectedDebt, setSelectedDebt] = useState<any | null>(null);
     const [paymentAmount, setPaymentAmount] = useState<number>(0);
     const [lastTransaction, setLastTransaction] = useState<Transaction | null>(null);
     const [showReceipt, setShowReceipt] = useState(false);
     const [showPazSalvo, setShowPazSalvo] = useState(false);
 
-    // --- ROBUST UNIFIED DEBT CALCULATION (MATCHES CAJA & COBROS) ---
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear();
-    const currentMonth = currentDate.getMonth() + 1;
-    const activeStatuses = ['ACTIVO', 'MOROSO'];
-    const pendingTaxes: any[] = [];
-
-    // 1. Balance / Historical (Prioritizing this)
-    if ((taxpayer.balance || 0) > 0) {
-        pendingTaxes.push({
-            id: 'balance',
-            type: 'DEUDA_HISTORICA',
-            label: 'Deuda Acumulada (Años Anteriores)',
-            amount: taxpayer.balance,
-            description: `Saldo pendiente de periodos anteriores`
-        });
-    }
-
-    // 2. Commercial & 3. Garbage (Iterate through months of the current year)
-    for (let m = 1; m <= currentMonth; m++) {
-        const monthName = new Date(currentYear, m - 1).toLocaleString('es-ES', { month: 'long' });
-
-        // Commercial
-        if (taxpayer.hasCommercialActivity && activeStatuses.includes(taxpayer.status)) {
-            const hasPaidCom = transactions.some(t => {
-                if (t.taxpayerId !== taxpayer.id || t.status !== 'PAGADO') return false;
-                
-                // Check if paid via Consolidated Payment (Pay All)
-                if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
-                    return t.metadata.originalItems.some((i: any) => i.label.includes(`Comercial - ${monthName}`));
-                }
-
-                if (t.taxType !== TaxType.COMERCIO) return false;
-                
-                // Strict metadata check
-                if (t.metadata?.month === m && t.metadata?.year === currentYear) return true;
-                
-                // Fallback for simple transactions
-                return t.description.includes(`Comercial - ${monthName}`) || (new Date(t.date).getMonth() + 1 === m && new Date(t.date).getFullYear() === currentYear);
-            });
-
-            if (!hasPaidCom) {
-                pendingTaxes.push({
-                    id: `com-${m}-${currentYear}`,
-                    type: TaxType.COMERCIO,
-                    label: `Impuesto Comercial - ${monthName}`,
-                    amount: 50.00,
-                    description: `Mes de ${monthName} ${currentYear}`,
-                    metadata: { month: m, year: currentYear }
-                });
-            }
-        }
-
-        // Garbage
-        if (taxpayer.hasGarbageService && activeStatuses.includes(taxpayer.status)) {
-            const hasPaidBas = transactions.some(t => {
-                if (t.taxpayerId !== taxpayer.id || t.status !== 'PAGADO') return false;
-                
-                if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
-                    return t.metadata.originalItems.some((i: any) => i.label.includes(`Tasa de Aseo - ${monthName}`));
-                }
-
-                if (t.taxType !== TaxType.BASURA) return false;
-                
-                if (t.metadata?.month === m && t.metadata?.year === currentYear) return true;
-                
-                return t.description.includes(`Tasa de Aseo - ${monthName}`) || (new Date(t.date).getMonth() + 1 === m && new Date(t.date).getFullYear() === currentYear);
-            });
-
-            if (!hasPaidBas) {
-                pendingTaxes.push({
-                    id: `bas-${m}-${currentYear}`,
-                    type: TaxType.BASURA,
-                    label: `Tasa de Aseo - ${monthName}`,
-                    amount: taxpayer.type === 'JURIDICA' ? 15.00 : 5.00,
-                    description: `Mes de ${monthName} ${currentYear}`,
-                    metadata: { month: m, year: currentYear }
-                });
-            }
-        }
-    }
-
-    // 4. Vehicles (Annual)
-    if (taxpayer.vehicles && taxpayer.vehicles.length > 0 && activeStatuses.includes(taxpayer.status)) {
-        taxpayer.vehicles.forEach(v => {
-            const lastDigit = parseInt(v.plate.slice(-1)) || 1;
-            const renewalMonth = lastDigit === 0 ? 10 : lastDigit;
-            
-            // Only count if the renewal month has strictly passed (matching administrative 5-count logic)
-            if (currentMonth >= renewalMonth) {
-                const hasPaid = transactions.some(t => {
-                    if (t.taxpayerId !== taxpayer.id || t.status !== 'PAGADO') return false;
-                    
-                    if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
-                        return t.metadata.originalItems.some((i: any) => i.label.includes(`Placa ${v.plate}`));
-                    }
-
-                    return t.taxType === TaxType.VEHICULO &&
-                           (t.metadata?.plateNumber === v.plate || t.description.includes(v.plate)) &&
-                           new Date(t.date).getFullYear() === currentYear;
-                });
-                if (!hasPaid) {
-                    pendingTaxes.push({
-                        id: `veh-${v.plate}-${currentYear}`,
-                        type: TaxType.VEHICULO,
-                        label: `Impuesto Vehicular (Placa ${v.plate})`,
-                        amount: 25.00,
-                        description: `Impuesto de Circulación - Placa ${v.plate}`,
-                        metadata: { plateNumber: v.plate, year: currentYear }
-                    });
-                }
-            }
-        });
-    }
+    // --- ROBUST UNIFIED DEBT CALCULATION (SYNCED WITH CAJA) ---
+    const { items: pendingTaxes } = calculateTaxpayerDebt(taxpayer, transactions, config);
 
     const myHistory = transactions.filter(t => t.taxpayerId === taxpayer.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const handleInitiatePayment = (tax: any) => {
-        setSelectedTaxToPay(tax.type);
+        setSelectedDebt(tax);
         setPaymentAmount(tax.amount);
         setShowPaymentModal(true);
     };
 
     const processPayment = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedTaxToPay) return;
+        if (!selectedDebt) return;
 
         const tx = onPayment({
             taxpayerId: taxpayer.id,
-            taxType: (selectedTaxToPay === 'DEUDA_HISTORICA' ? TaxType.COMERCIO : selectedTaxToPay) as TaxType,
+            taxType: (selectedDebt.type === 'DEUDA_HISTORICA' || selectedDebt.type === 'DEUDA_ARRAS' ? TaxType.COMERCIO : selectedDebt.type) as TaxType,
             amount: paymentAmount,
             paymentMethod: PaymentMethod.ONLINE,
-            description: `PAGO ONLINE - ${selectedTaxToPay}`,
-            metadata: { source: 'PORTAL_WEB' }
+            description: `PAGO ONLINE - ${selectedDebt.label}`,
+            metadata: { 
+                ...(selectedDebt.metadata || {}),
+                source: 'PORTAL_WEB',
+                payment_source: 'WOMPI_PANAMA'
+            }
         });
 
         setLastTransaction(tx);
@@ -299,29 +194,73 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
 
                 {/* CONTENT */}
                 {activeTab === 'pending' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
+                    <div className="space-y-4 animate-fade-in">
+                        {pendingTaxes.length > 0 && (
+                            <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 border border-white/10 relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-[80px] -mr-32 -mt-32"></div>
+                                <div className="relative z-10 text-center md:text-left">
+                                    <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-400 mb-1">Resumen de Deuda Total</p>
+                                    <h3 className="text-3xl font-black tabular-nums">B/. {formatCurrency(pendingTaxes.reduce((sum, t) => sum + t.amount, 0))}</h3>
+                                    <p className="text-[10px] text-white/50 font-bold uppercase mt-1">Suma de {pendingTaxes.length} rubros pendientes</p>
+                                </div>
+                                <button 
+                                    onClick={() => handleInitiatePayment({
+                                        id: 'consolidated-all',
+                                        type: 'CONSOLIDADO',
+                                        label: 'PAGO TOTAL DE DEUDA',
+                                        amount: pendingTaxes.reduce((sum, t) => sum + t.amount, 0),
+                                        metadata: { isConsolidated: true, originalItems: pendingTaxes }
+                                    })}
+                                    className="relative z-10 w-full md:w-auto bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-10 py-4 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center gap-3"
+                                >
+                                    <CreditCard size={20} /> Pagar Todo el Saldo
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="space-y-3">
                         {pendingTaxes.map(tax => (
-                            <div key={tax.id} className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
+                            <div key={tax.id} className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-emerald-300 transition-all flex flex-col sm:flex-row items-center justify-between gap-4 group">
+                                <div className="flex items-center gap-4 w-full sm:w-auto">
+                                    <div className={`p-3 rounded-xl ${
+                                        (tax.type === 'DEUDA_ARRAS' || tax.metadata?.year < 2026 || (tax.metadata?.year === 2026 && tax.metadata?.month < new Date().getMonth() + 1))
+                                        ? 'bg-red-50 text-red-500' 
+                                        : 'bg-amber-50 text-amber-600'
+                                    }`}>
                                         <AlertCircle size={24} />
                                     </div>
-                                    <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-1 rounded">PENDIENTE</span>
+                                    <div className="min-w-0 flex-1">
+                                        <h3 className="font-black text-slate-800 text-base sm:text-lg uppercase tracking-tight truncate">{tax.label}</h3>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-widest ${
+                                                (tax.type === 'DEUDA_ARRAS' || tax.metadata?.year < 2026 || (tax.metadata?.year === 2026 && tax.metadata?.month < new Date().getMonth() + 1))
+                                                ? 'bg-red-100 text-red-700' 
+                                                : 'bg-amber-100 text-amber-700'
+                                            }`}>
+                                                {(tax.type === 'DEUDA_ARRAS' || tax.metadata?.year < 2026 || (tax.metadata?.year === 2026 && tax.metadata?.month < new Date().getMonth() + 1))
+                                                    ? 'Vencido' 
+                                                    : 'Vence este mes'}
+                                            </span>
+                                            <span className="text-[10px] text-slate-400 font-bold uppercase">{tax.description}</span>
+                                        </div>
+                                    </div>
                                 </div>
-                                <h3 className="font-bold text-slate-800 text-lg mb-1">{tax.label}</h3>
-                                <p className="text-slate-500 text-sm mb-6">Vence: 30 de este mes</p>
 
-                                <div className="flex justify-between items-center border-t border-slate-100 pt-4">
-                                    <span className="text-2xl font-extrabold text-slate-900">B/. {formatCurrency(tax.amount)}</span>
+                                <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto border-t sm:border-t-0 border-slate-100 pt-4 sm:pt-0">
+                                    <div className="text-right">
+                                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Monto a Pagar</p>
+                                        <p className="text-xl font-black text-slate-900 tabular-nums">B/. {formatCurrency(tax.amount)}</p>
+                                    </div>
                                     <button
                                         onClick={() => handleInitiatePayment(tax)}
-                                        className="bg-slate-900 hover:bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold transition-colors flex items-center gap-2 shadow-lg shadow-emerald-900/10"
+                                        className="bg-slate-900 hover:bg-emerald-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-emerald-900/10 active:scale-95"
                                     >
-                                        <CreditCard size={18} /> Pagar Ahora
+                                        <CreditCard size={18} /> Pagar
                                     </button>
                                 </div>
                             </div>
                         ))}
+                        </div>
                         {pendingTaxes.length === 0 && (
                             <div className="col-span-full text-center py-12 bg-white rounded-xl border border-dashed border-slate-300">
                                 <CheckCircle size={48} className="text-emerald-200 mx-auto mb-4" />
@@ -412,10 +351,8 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                         </div>
                     </>
                 )}
-
             </div>
 
-            {/* PAYMENT MODAL (WOMPI INTEGRATION) */}
             {showPaymentModal && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
                     <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
@@ -431,7 +368,7 @@ export const TaxpayerPortal: React.FC<TaxpayerPortalProps> = ({
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-2">
                                 <p className="text-xs text-slate-500 uppercase font-bold mb-1">Monto a Pagar</p>
                                 <p className="text-2xl font-extrabold text-[#2C2A29]">B/. {formatCurrency(paymentAmount)}</p>
-                                <p className="text-xs text-slate-400 mt-1">{selectedTaxToPay}</p>
+                                <p className="text-xs text-slate-400 mt-1">{selectedDebt?.label}</p>
                             </div>
 
                             <div className="space-y-3">

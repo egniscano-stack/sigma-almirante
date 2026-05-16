@@ -5,6 +5,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { QRCodeSVG } from 'qrcode.react';
 import taxStructure from '../data/taxStructure.json';
+import { calculateTaxpayerDebt, DebtItem } from '../services/debtLogic';
 
 interface TaxCollectionProps {
   taxpayers: Taxpayer[];
@@ -33,7 +34,6 @@ const formatCurrency = (amount: number) => {
 };
 
 export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transactions, config, onPayment, currentUser, municipalityInfo, initialTaxpayer, adminRequests = [], onCreateRequest, onArchiveRequest, onRefresh, onDirectAdminAuth, isLoading }) => {
-  const [selectedTax, setSelectedTax] = useState<TaxType>(TaxType.VEHICULO);
   const [selectedTaxpayerId, setSelectedTaxpayerId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -44,11 +44,6 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO);
 
   // Specific Form States
-  const [plateNumber, setPlateNumber] = useState('');
-  const [constArea, setConstArea] = useState(0);
-  const [trashType, setTrashType] = useState('RESIDENCIAL');
-
-  // Invoice State
   const [lastTransaction, setLastTransaction] = useState<Transaction | null>(null);
   const [showInvoice, setShowInvoice] = useState(false);
   const [showPazSalvo, setShowPazSalvo] = useState(false);
@@ -80,7 +75,6 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
 
   // History Filter for Cashier
   const [historyFilterDate, setHistoryFilterDate] = useState(new Date().toLocaleDateString('en-CA')); // YYYY-MM-DD
-  const [manualConstDesc, setManualConstDesc] = useState('');
   const [showRequestsDropdown, setShowRequestsDropdown] = useState(false);
 
   // Centralized notifications now handled in App.tsx to avoid Admin/Cashier confusion
@@ -90,208 +84,14 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
   useEffect(() => {
     if (initialTaxpayer) {
       setSelectedTaxpayerId(initialTaxpayer.id);
-      // Switch tax type based on what they have
-      if (initialTaxpayer.hasCommercialActivity) setSelectedTax(TaxType.COMERCIO);
-      else if (initialTaxpayer.hasGarbageService) setSelectedTax(TaxType.BASURA);
-      else if (initialTaxpayer.hasConstruction) setSelectedTax(TaxType.CONSTRUCCION);
-      else if (initialTaxpayer.vehicles && initialTaxpayer.vehicles.length > 0) setSelectedTax(TaxType.VEHICULO);
     }
   }, [initialTaxpayer]);
-
-  // Ensure selected tax is valid for the current taxpayer
-  useEffect(() => {
-    if (activeTaxpayer) {
-      const available = [
-        { id: TaxType.VEHICULO, enabled: (activeTaxpayer.vehicles?.length || 0) > 0 },
-        { id: TaxType.CONSTRUCCION, enabled: activeTaxpayer.hasConstruction },
-        { id: TaxType.BASURA, enabled: activeTaxpayer.hasGarbageService },
-        { id: TaxType.COMERCIO, enabled: activeTaxpayer.hasCommercialActivity },
-      ].filter(t => t.enabled);
-
-      if (available.length > 0 && !available.find(t => t.id === selectedTax)) {
-        setSelectedTax(available[0].id);
-      }
-    }
-  }, [activeTaxpayer, selectedTax]);
 
   // --- DEBT CALCULATION LOGIC (Consolidated View) ---
   const taxpayerDebts = useMemo(() => {
     if (!activeTaxpayer) return [];
-    const debts: any[] = [];
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear();
-    const currentMonth = currentDate.getMonth() + 1;
-
-    // 1. Accumulated Debt (Previous Years) - Arrastre
-    if ((activeTaxpayer.previousYearsDebt || 0) > 0) {
-      debts.push({
-        id: 'previous-years',
-        type: 'DEUDA_ARRAS',
-        label: 'Deuda Acumulada (meses Anteriores)',
-        amount: activeTaxpayer.previousYearsDebt,
-        description: `Saldo pendiente de periodos anteriores`,
-        isPriority: true
-      });
-    }
-
-    // 2. Commercial & 3. Garbage (Iterate through months of the current year)
-    let startMonth = 13; // Default to 13 (No debt) unless a start date is assigned in Edition
-    const refDateStr = activeTaxpayer.paymentStartDate || activeTaxpayer.businessStartDate;
-    if (refDateStr) {
-      const pDate = new Date(refDateStr + 'T00:00:00');
-      if (pDate.getFullYear() === currentYear) {
-        startMonth = pDate.getMonth() + 1;
-      } else if (pDate.getFullYear() > currentYear) {
-        startMonth = 13;
-      }
-    }
-
-    for (let m = startMonth; m <= currentMonth; m++) {
-      const monthName = new Date(currentYear, m - 1).toLocaleString('es-ES', { month: 'long' });
-
-      // Commercial
-      if (activeTaxpayer.hasCommercialActivity && activeTaxpayer.status !== 'BLOQUEADO') {
-        const hasPaidCom = (transactions || []).some(t => {
-          if (t.taxpayerId !== activeTaxpayer.id || t.status !== 'PAGADO') return false;
-          
-          // 1. Check if paid via Consolidated Payment
-          if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
-            return t.metadata.originalItems.some((i: any) => i.label.includes(`Comercial - ${monthName}`));
-          }
-
-          if (t.taxType !== TaxType.COMERCIO) return false;
-          
-          // 2. Strict metadata check (explicit month payment)
-          if (t.metadata?.month === m && t.metadata?.year === currentYear) return true;
-          
-          return false; // Removed loose date-based fallback to prevent accidental clearing of unrelated debts
-        });
-
-        if (!hasPaidCom) {
-          // New Logic: Check for selected tax codes (New Structure)
-          let commercialAmount = 0;
-          let hasCommercialAssignment = false;
-
-          if (activeTaxpayer.selectedTaxCodes && activeTaxpayer.selectedTaxCodes.length > 0) {
-            hasCommercialAssignment = true;
-            activeTaxpayer.selectedTaxCodes.forEach(code => {
-              const s = (taxStructure as any[]).find(st => st.code === code);
-              if (s) {
-                const mRates = activeTaxpayer.magnitude === 'GRANDE' ? s.rates.GRANDE :
-                               activeTaxpayer.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
-                if (Array.isArray(mRates)) {
-                  commercialAmount += activeTaxpayer.selectedRates?.[code] || mRates[0] || 0;
-                } else if (typeof mRates === 'number') {
-                  commercialAmount += mRates;
-                }
-              }
-            });
-          }
-
-          // Add Rotulo if assigned
-          if ((activeTaxpayer.rotuloAmount || 0) > 0) {
-            commercialAmount += activeTaxpayer.rotuloAmount || 0;
-            hasCommercialAssignment = true;
-          }
-
-          // Fallback to old category logic ONLY IF explicitly assigned to a VALID CLASS
-          const validClasses = ['CLASE_A', 'CLASE_B', 'CLASE_C'];
-          if (!hasCommercialAssignment && activeTaxpayer.commercialCategory && validClasses.includes(activeTaxpayer.commercialCategory)) {
-            const rates = config?.commercialRates || {};
-            const catRate = rates[activeTaxpayer.commercialCategory as any];
-            if (catRate !== undefined) {
-              commercialAmount = catRate;
-              hasCommercialAssignment = true;
-            }
-          }
-
-          if (hasCommercialAssignment && commercialAmount > 0) {
-            debts.push({
-              id: `com-${m}-${currentYear}`,
-              type: TaxType.COMERCIO,
-              label: `Impuesto Comercial - ${monthName}`,
-              amount: commercialAmount,
-              description: `Mes de ${monthName} ${currentYear}`,
-              metadata: { month: m, year: currentYear }
-            });
-          }
-        }
-      }
-
-      // Garbage
-      if (activeTaxpayer.hasGarbageService && activeTaxpayer.status !== 'BLOQUEADO') {
-        const hasPaidBas = (transactions || []).some(t => {
-          if (t.taxpayerId !== activeTaxpayer.id || t.status !== 'PAGADO') return false;
-          
-          // 1. Check if paid via Consolidated Payment
-          if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
-            return t.metadata.originalItems.some((i: any) => i.label.includes(`Tasa de Aseo - ${monthName}`));
-          }
-
-          if (t.taxType !== TaxType.BASURA) return false;
-          
-          // 2. Strict metadata check
-          if (t.metadata?.month === m && t.metadata?.year === currentYear) return true;
-          
-          return false; // Removed loose date-based fallback
-        });
-
-        if (!hasPaidBas) {
-          // Ultra-Strict Logic: ONLY use the manual garbageAmount assigned in edition
-          const garbageRate = (activeTaxpayer.garbageAmount || 0);
-
-          if (garbageRate > 0) {
-            debts.push({
-              id: `bas-${m}-${currentYear}`,
-              type: TaxType.BASURA,
-              label: `Tasa de Aseo - ${monthName}`,
-              amount: garbageRate,
-              description: `Mes de ${monthName} ${currentYear}`,
-              metadata: { month: m, year: currentYear }
-            });
-          }
-        }
-      }
-    }
-
-    // 4. Vehicles (Annual)
-    if (activeTaxpayer.vehicles && activeTaxpayer.vehicles.length > 0) {
-      activeTaxpayer.vehicles.forEach(v => {
-        const lastDigit = parseInt(v.plate.slice(-1)) || 1;
-        const renewalMonth = lastDigit === 0 ? 10 : lastDigit;
-
-        // ONLY show as debt if the renewal month has reached or passed
-        if (currentMonth >= renewalMonth) {
-          const hasPaid = transactions.some(t => {
-            if (t.taxpayerId !== activeTaxpayer.id || t.status !== 'PAGADO') return false;
-            
-            // Check if paid via Consolidated Payment
-            if (t.metadata?.isConsolidated && t.metadata?.originalItems) {
-              return t.metadata.originalItems.some((i: any) => i.label.includes(`Placa ${v.plate}`));
-            }
-
-            return t.taxType === TaxType.VEHICULO &&
-                   (t.metadata?.plateNumber === v.plate || t.description.includes(v.plate)) &&
-                   new Date(t.date).getFullYear() === currentYear;
-          });
-          if (!hasPaid) {
-            const amount = config?.plateCost || 0;
-            if (amount > 0) {
-              debts.push({
-                id: `veh-${v.plate}-${currentYear}`,
-                type: TaxType.VEHICULO,
-                label: `Impuesto Vehicular (Placa ${v.plate})`,
-                amount: amount,
-                description: `Impuesto de Circulación - Placa ${v.plate}`,
-                metadata: { plateNumber: v.plate, year: currentYear }
-              });
-            }
-          }
-        }
-      });
-    }
-
-    return debts;
+    const { items } = calculateTaxpayerDebt(activeTaxpayer, transactions, config);
+    return items;
   }, [activeTaxpayer, transactions, config]);
 
   const handlePayDebtItem = (debt: any) => {
@@ -358,94 +158,6 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
   const handleClearSelection = () => {
     setSelectedTaxpayerId('');
     setSearchTerm('');
-    setPlateNumber('');
-    setConstArea(0);
-  };
-
-  const calculateTotal = () => {
-    switch (selectedTax) {
-      case TaxType.VEHICULO:
-        return config?.plateCost || 0;
-      case TaxType.CONSTRUCCION:
-        return constArea * (config?.constructionRatePerSqm || 0);
-      case TaxType.BASURA:
-        return trashType === 'RESIDENCIAL' ? (config?.garbageResidentialRate || 0) : (config?.garbageCommercialRate || 0);
-      case TaxType.COMERCIO:
-        if (activeTaxpayer?.commercialCategory) {
-          const rates = config?.commercialRates || {};
-          return rates[activeTaxpayer.commercialCategory] || config?.commercialBaseRate || 0;
-        }
-        return config?.commercialBaseRate || 0;
-      default:
-        return 0;
-    }
-  };
-
-  const getTaxDescription = () => {
-    if (selectedTax === TaxType.VEHICULO) return `Impuesto de Circulación Vehicular - Placa ${plateNumber}`;
-    if (selectedTax === TaxType.CONSTRUCCION) return `Permiso de Construcción (${constArea} m²)`;
-    if (selectedTax === TaxType.BASURA) return `Tasa de Aseo - ${trashType}`;
-    if (selectedTax === TaxType.COMERCIO) {
-      const cat = activeTaxpayer?.commercialCategory;
-      const label = cat === CommercialCategory.CLASE_A ? 'Clase A' : cat === CommercialCategory.CLASE_B ? 'Clase B' : 'Clase C';
-      return `Impuesto Comercial Mensual (${label})`;
-    }
-    return 'Impuesto Municipal';
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTaxpayerId) return;
-
-    const amount = calculateTotal();
-    
-    // Logic: Prevent payment if amount is 0 or less (unless specifically allowed for admin adjustments)
-    if (amount <= 0 && selectedTax !== TaxType.CONSTRUCCION) {
-      alert(`No se puede procesar un pago de B/. 0.00. Verifique la configuración de tasas para ${selectedTax} o la categoría del contribuyente.`);
-      return;
-    }
-
-    // Logic: Validate Status
-    if (activeTaxpayer.status === 'BLOQUEADO') {
-      alert("Este contribuyente está BLOQUEADO por la administración. No se permiten cobros hasta que sea desbloqueado.");
-      return;
-    }
-
-    if (activeTaxpayer.status === 'SUSPENDIDO') {
-      if (!confirm("ADVERTENCIA: El contribuyente está SUSPENDIDO (Vigencia Expirada). ¿Desea proceder con el cobro para reactivación?")) {
-        return;
-      }
-    }
-
-    // 1. Metadata for specific tax types
-    let finalMetadata: any = { plateNumber, constArea, trashType };
-    
-    // 2. Auto-assign to oldest debt for monthly taxes
-    if (selectedTax === TaxType.BASURA || selectedTax === TaxType.COMERCIO) {
-      const oldestDebt = taxpayerDebts.find(d => d.type === selectedTax);
-      if (oldestDebt && oldestDebt.metadata) {
-        finalMetadata = { ...finalMetadata, ...oldestDebt.metadata };
-      }
-    }
-
-    const tx = onPayment({
-      taxType: selectedTax,
-      taxpayerId: selectedTaxpayerId,
-      amount: selectedTax === TaxType.CONSTRUCCION ? constArea : calculateTotal(),
-      paymentMethod: paymentMethod,
-      description: selectedTax === TaxType.CONSTRUCCION 
-        ? (manualConstDesc || 'Cobro Manual de Impuesto de Construcción')
-        : getTaxDescription(),
-      metadata: {
-        ...finalMetadata,
-        plateNumber: selectedTax === TaxType.VEHICULO ? plateNumber : undefined,
-        trashType: selectedTax === TaxType.BASURA ? trashType : undefined,
-        constArea: selectedTax === TaxType.CONSTRUCCION ? constArea : undefined,
-      }
-    });
-
-    setLastTransaction(tx);
-    setShowInvoice(true);
   };
 
   const handleFinishCollection = () => {
@@ -457,9 +169,6 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
       // Don't clear taxpayer yet as we need it for the certificate
     } else {
       // Normal Reset
-      setPlateNumber('');
-      setConstArea(0);
-      setManualConstDesc('');
       setSearchTerm('');
       setSelectedTaxpayerId('');
       setPaymentMethod(PaymentMethod.EFECTIVO);
@@ -1159,15 +868,11 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                                 if (req.type === 'PAYMENT_ARRANGEMENT') {
                                   setPaymentMethod(PaymentMethod.ARREGLO_PAGO as any);
                                 } else if (req.type === 'VOID_TRANSACTION' && req.transactionId) {
-                                  // Find original transaction to reload data for correction
+                                  // Find original transaction
                                   const origTx = transactions.find(tx => tx.id === req.transactionId);
                                   if (origTx) {
-                                    setSelectedTax(origTx.taxType);
                                     setPaymentMethod(origTx.paymentMethod);
-                                    if (origTx.metadata?.plateNumber) setPlateNumber(origTx.metadata.plateNumber);
-                                    if (origTx.metadata?.trashType) setTrashType(origTx.metadata.trashType);
-                                    if (origTx.metadata?.constArea) setConstArea(origTx.metadata.constArea);
-                                    alert(`DATOS CARGADOS PARA CORRECCIÓN\n-------------------------\nContribuyente: ${req.taxpayerName}\nConcepto: ${origTx.description}\nPor favor, realice las correcciones y procese el nuevo cobro.`);
+                                    alert(`TRANSACCIÓN CARGADA PARA CORRECCIÓN\n-------------------------\nContribuyente: ${req.taxpayerName}\nConcepto: ${origTx.description}\nPor favor, procese el nuevo cobro desde la lista de deudas.`);
                                   }
                                 }
                                 
@@ -1274,13 +979,18 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
               </div>
             </div>
 
-            <div className="md:col-span-2 flex items-center justify-end p-4">
+            <div className="md:col-span-2 flex items-center justify-end p-4 gap-3">
+              <button
+                onClick={() => setShowRequestModal(true)}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-3 rounded-lg font-bold text-xs border border-slate-300 transition-all active:scale-95"
+              >
+                Solicitar Autorización
+              </button>
               {taxpayerDebts.length === 0 ? (
                 <button
                   onClick={() => {
-                    // Charge $3.00 for the certificate
                     const tx = onPayment({
-                      taxType: TaxType.COMERCIO, // Categorize as Commerce/Misc
+                      taxType: TaxType.COMERCIO,
                       taxpayerId: activeTaxpayer.id,
                       amount: 3.00,
                       paymentMethod: PaymentMethod.EFECTIVO,
@@ -1288,15 +998,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                       metadata: { isPazSalvo: true }
                     });
                     setLastTransaction(tx);
-                    // Generate PDF immediately after "paying"
                     alert("Cobro de B/. 3.00 realizado. Generando certificado...");
-                    // In a real flow we might wait for confirmation, but here we assume 'onPayment' is synchronous for the UI update.
-                    // We can trigger a separate PDF generator for the certificate.
-                    // For now, let's just reuse the invoice modal which shows the payment, 
-                    // BUT theoretically we should show the ACTUAL certificate.
-                    // Let's toggle a flag to show the Certificate Modal instead of Invoice, or both.
-                    // Converting the invoice modal to show certificate if metadata.isPazSalvo is true?
-                    // Or simplified: Just print the invoice which confirms the PAZ Y SALVO payment.
                     setShowInvoice(true);
                   }}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold shadow-lg shadow-emerald-200 flex items-center gap-2 transition-transform active:scale-95"
@@ -1370,98 +1072,6 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
           </div>
         )
       }
-      <div className={`bg-white p-6 rounded-xl shadow-sm border border-slate-100 transition-opacity ${!activeTaxpayer ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-
-        <div className="mb-6">
-          <label className="block text-sm font-bold text-slate-700 mb-3">Tipo de Impuesto</label>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { id: TaxType.VEHICULO, label: 'Placa', icon: Car, enabled: activeTaxpayer?.vehicles && activeTaxpayer.vehicles.length > 0 },
-              { id: TaxType.BASURA, label: 'Basura', icon: Trash2, enabled: activeTaxpayer?.hasGarbageService },
-              { id: TaxType.COMERCIO, label: 'Comercio', icon: Store, enabled: activeTaxpayer?.hasCommercialActivity },
-            ].filter(t => !activeTaxpayer || t.enabled).map((tax) => {
-              const Icon = tax.icon;
-              return (
-                <button
-                  key={tax.id}
-                  type="button"
-                  onClick={() => setSelectedTax(tax.id)}
-                  className={`p-3 rounded-lg border flex flex-col items-center justify-center transition-all h-20 ${selectedTax === tax.id
-                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-500'
-                    : 'border-slate-200 hover:border-emerald-300'
-                    }`}
-                >
-                  <Icon size={20} className="mb-1" />
-                  <span className="text-xs font-bold">{tax.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-
-          {/* Dynamic Fields */}
-          {selectedTax === TaxType.VEHICULO && (
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Número de Placa</label>
-              <input
-                type="text"
-                required
-                value={plateNumber ?? ''}
-                onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg uppercase font-mono text-lg text-center focus:ring-2 focus:ring-emerald-500"
-                placeholder="AB-1234"
-              />
-            </div>
-          )}
-
-
-          {selectedTax === TaxType.BASURA && (
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tarifa</label>
-              <select
-                value={trashType ?? ''}
-                onChange={(e) => setTrashType(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white"
-              >
-                <option value="RESIDENCIAL">Residencial (B/. {formatCurrency(config?.garbageResidentialRate)})</option>
-                <option value="COMERCIAL">Comercial (B/. {formatCurrency(config?.garbageCommercialRate)})</option>
-              </select>
-            </div>
-          )}
-
-          {selectedTax === TaxType.COMERCIO && (
-            <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-200 text-center">
-              <p className="text-xs text-indigo-800 font-bold uppercase mb-1">Categoría Registrada</p>
-              <p className="text-xl font-bold text-indigo-600">
-                {activeTaxpayer?.commercialCategory?.replace('_', ' ') || 'N/A'}
-              </p>
-            </div>
-          )}
-
-          <div className="flex justify-between items-center bg-slate-800 text-white p-4 rounded-lg">
-            <span className="font-medium text-sm">Total a Pagar</span>
-            <span className="font-mono text-2xl font-bold">B/. {formatCurrency(calculateTotal())}</span>
-          </div>
-
-          <button
-            type="submit"
-            disabled={!selectedTaxpayerId || calculateTotal() === 0}
-            className="w-full py-4 rounded-lg bg-emerald-600 text-white font-bold text-lg hover:bg-emerald-700 shadow-lg active:scale-98 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            COBRAR AHORA
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowRequestModal(true)}
-            className="w-full py-3 rounded-lg bg-slate-200 text-slate-700 font-bold hover:bg-slate-300 transition-all text-sm mt-3 border border-slate-300"
-          >
-            SOLICITAR AUTORIZACIÓN / DESCOBRO
-          </button>
-        </form>
-      </div>
 
       {/* --- REQUEST AUTHORIZATION MODAL --- */}
       {
