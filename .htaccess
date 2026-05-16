@@ -1,0 +1,22 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  
+  # 1. Forward all requests to the 'dist' folder where the built app lives
+  # This makes the 'dist' folder behave like the root of the site
+  RewriteCond %{REQUEST_URI} !^/dist/
+  RewriteRule ^(.*)$ dist/$1 [L]
+
+  # 2. Inside 'dist', if the file doesn't exist, serve index.html (SPA routing)
+  RewriteCond %{DOCUMENT_ROOT}/dist/$1 !-f
+  RewriteCond %{DOCUMENT_ROOT}/dist/$1 !-d
+  RewriteRule ^dist/(.*)$ dist/index.html [L]
+</IfModule>
+
+# Prevent directory listing for security
+Options -Indexes
+
+# Block sensitive files
+<FilesMatch "(\.env|\.env\.local|\.git|package\.json|vite\.config\.ts)$">
+  Order allow,deny
+  Deny from all
+</FilesMatch>
