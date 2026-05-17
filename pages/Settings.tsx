@@ -361,13 +361,20 @@ export const Settings: React.FC<SettingsProps> = ({
             {users.map((u, idx) => (
               <div key={idx} className="bg-slate-50 p-4 rounded-lg flex justify-between items-center border border-slate-100 group hover:ring-2 hover:ring-indigo-100 transition-all">
                 <div className="flex items-center">
-                  <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white font-bold mr-3 ${u.role === 'ADMIN' ? 'bg-indigo-600' : 'bg-emerald-600'
+                  <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white font-bold mr-3 ${
+                    u.role === 'ADMIN' ? 'bg-indigo-600' :
+                    u.role === 'CONTABILIDAD' ? 'bg-teal-600' :
+                    u.role === 'PLANILLA' ? 'bg-violet-600' : 'bg-emerald-600'
                     }`}>
                     {u.username.substring(0, 2).toUpperCase()}
                   </div>
                   <div>
                     <p className="text-sm font-bold text-slate-800">{u.name}</p>
-                    <p className="text-xs text-slate-500">Usuario: {u.username} • <span className={u.role === 'ADMIN' ? 'text-indigo-600' : 'text-emerald-600'}>{u.role}</span></p>
+                    <p className="text-xs text-slate-500">Usuario: {u.username} • <span className={
+                      u.role === 'ADMIN' ? 'text-indigo-600' :
+                      u.role === 'CONTABILIDAD' ? 'text-teal-600' :
+                      u.role === 'PLANILLA' ? 'text-violet-600' : 'text-emerald-600'
+                    }>{u.role}</span></p>
                   </div>
                 </div>
                 <button
@@ -428,6 +435,8 @@ export const Settings: React.FC<SettingsProps> = ({
                   <option value="ALCALDE">Alcalde (Dashboard Ejecutivo)</option>
                   <option value="SECRETARIA">Secretaría (Compromisos)</option>
                   <option value="CONTRIBUYENTE">Contribuyente (Acceso Portal)</option>
+                  <option value="CONTABILIDAD">Contabilidad (Dashboard Contable)</option>
+                  <option value="PLANILLA">Planilla y RRHH (Dashboard Nómina)</option>
                 </select>
               </div>
 

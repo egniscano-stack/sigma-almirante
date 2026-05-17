@@ -316,19 +316,94 @@ export const remoteDb = {
     getAppUsers: async (): Promise<User[]> => {
         const { data, error } = await supabase.from('app_users').select('*');
         if (error) throw error;
-        return data as User[];
+        
+        const mapUserFromDB = (u: any): User => {
+            const user = { ...u } as User;
+            if (user.name && user.name.endsWith(' [CONTABILIDAD]')) {
+                user.name = user.name.replace(' [CONTABILIDAD]', '');
+                user.role = 'CONTABILIDAD';
+            } else if (user.name && user.name.endsWith(' [PLANILLA]')) {
+                user.name = user.name.replace(' [PLANILLA]', '');
+                user.role = 'PLANILLA';
+            } else if (user.username.toLowerCase() === 'contabilidad') {
+                user.role = 'CONTABILIDAD';
+            } else if (user.username.toLowerCase() === 'planilla') {
+                user.role = 'PLANILLA';
+            }
+            return user;
+        };
+
+        return (data || []).map(mapUserFromDB);
     },
 
     createAppUser: async (user: User) => {
-        const { data, error } = await supabase.from('app_users').insert(user).select().single();
+        const mapUserToDB = (u: User): User => {
+            const dbUser = { ...u };
+            if (dbUser.role === 'CONTABILIDAD') {
+                dbUser.name = `${dbUser.name} [CONTABILIDAD]`;
+                dbUser.role = 'AUDITOR';
+            } else if (dbUser.role === 'PLANILLA') {
+                dbUser.name = `${dbUser.name} [PLANILLA]`;
+                dbUser.role = 'SECRETARIA';
+            }
+            return dbUser;
+        };
+
+        const mapUserFromDB = (u: any): User => {
+            const user = { ...u } as User;
+            if (user.name && user.name.endsWith(' [CONTABILIDAD]')) {
+                user.name = user.name.replace(' [CONTABILIDAD]', '');
+                user.role = 'CONTABILIDAD';
+            } else if (user.name && user.name.endsWith(' [PLANILLA]')) {
+                user.name = user.name.replace(' [PLANILLA]', '');
+                user.role = 'PLANILLA';
+            } else if (user.username.toLowerCase() === 'contabilidad') {
+                user.role = 'CONTABILIDAD';
+            } else if (user.username.toLowerCase() === 'planilla') {
+                user.role = 'PLANILLA';
+            }
+            return user;
+        };
+
+        const dbUser = mapUserToDB(user);
+        const { data, error } = await supabase.from('app_users').insert(dbUser).select().single();
         if (error) throw error;
-        return data as User;
+        return mapUserFromDB(data);
     },
 
     updateAppUser: async (user: User) => {
-        const { data, error } = await supabase.from('app_users').update(user).eq('username', user.username).select().single();
+        const mapUserToDB = (u: User): User => {
+            const dbUser = { ...u };
+            if (dbUser.role === 'CONTABILIDAD') {
+                dbUser.name = `${dbUser.name} [CONTABILIDAD]`;
+                dbUser.role = 'AUDITOR';
+            } else if (dbUser.role === 'PLANILLA') {
+                dbUser.name = `${dbUser.name} [PLANILLA]`;
+                dbUser.role = 'SECRETARIA';
+            }
+            return dbUser;
+        };
+
+        const mapUserFromDB = (u: any): User => {
+            const user = { ...u } as User;
+            if (user.name && user.name.endsWith(' [CONTABILIDAD]')) {
+                user.name = user.name.replace(' [CONTABILIDAD]', '');
+                user.role = 'CONTABILIDAD';
+            } else if (user.name && user.name.endsWith(' [PLANILLA]')) {
+                user.name = user.name.replace(' [PLANILLA]', '');
+                user.role = 'PLANILLA';
+            } else if (user.username.toLowerCase() === 'contabilidad') {
+                user.role = 'CONTABILIDAD';
+            } else if (user.username.toLowerCase() === 'planilla') {
+                user.role = 'PLANILLA';
+            }
+            return user;
+        };
+
+        const dbUser = mapUserToDB(user);
+        const { data, error } = await supabase.from('app_users').update(dbUser).eq('username', user.username).select().single();
         if (error) throw error;
-        return data as User;
+        return mapUserFromDB(data);
     }
 };
 
