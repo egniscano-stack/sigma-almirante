@@ -353,6 +353,9 @@ export const remoteDb = {
             dbUser.name = `${dbUser.name} [SUSPENDIDO]`;
         }
         
+        // Delete status field before database operation since status is stored inside the name column
+        delete dbUser.status;
+        
         return dbUser;
     },
 
