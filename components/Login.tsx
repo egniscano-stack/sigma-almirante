@@ -72,9 +72,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin, validUsers }) => {
 
         // Determine role overrides for custom dashboards
         let userRole = foundUser.role;
-        if (foundUser.username.toLowerCase() === 'contabilidad') {
+        const lowerUser = foundUser.username.toLowerCase();
+        const lowerName = (foundUser.name || '').toLowerCase();
+        const lowerRole = (foundUser.role || '').toLowerCase();
+
+        if (lowerUser.includes('contabilidad') || lowerRole.includes('contabilidad') || lowerName.includes('contabilidad')) {
           userRole = 'CONTABILIDAD' as any;
-        } else if (foundUser.username.toLowerCase() === 'planilla') {
+        } else if (lowerUser.includes('planilla') || lowerRole.includes('planilla') || lowerName.includes('planilla')) {
           userRole = 'PLANILLA' as any;
         }
 
