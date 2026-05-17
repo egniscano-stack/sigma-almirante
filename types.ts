@@ -28,6 +28,7 @@ export enum CommercialCategory {
   CLASE_A = 'CLASE_A', // Banks, Supermarkets (High)
   CLASE_B = 'CLASE_B', // Stores, Pharmacies (Medium)
   CLASE_C = 'CLASE_C', // Small Kiosks (Low)
+  FUMIGADORA = 'FUMIGADORA', // Fumigadoras
 }
 
 export enum PaymentMethod {

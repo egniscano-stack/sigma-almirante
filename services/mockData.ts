@@ -14,6 +14,7 @@ export const INITIAL_CONFIG: TaxConfig = {
     [CommercialCategory.CLASE_A]: 150.00, // Supermarkets, Banks
     [CommercialCategory.CLASE_B]: 75.00,  // Standard Stores
     [CommercialCategory.CLASE_C]: 25.00,  // Small Shops
+    [CommercialCategory.FUMIGADORA]: 55.00, // Fumigadoras
   }
 };
 

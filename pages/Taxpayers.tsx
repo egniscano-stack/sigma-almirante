@@ -12,7 +12,7 @@ import taxStructure from '../data/taxStructure.json';
 
 const MUNICIPAL_ACTIVITIES = [
   'ABARROTERIA', 'ALMACEN', 'BARBERIA', 'BARES', 'BASURA2026', 'BUHONERIA', 
-  'FARMACIA', 'FERRETERIA', 'GASOLINERA', 'LAVA AUTO', 'LEGUMBRERIA', 
+  'FARMACIA', 'FERRETERIA', 'FUMIGADORA', 'GASOLINERA', 'LAVA AUTO', 'LEGUMBRERIA', 
   'OTROS', 'PARQUEO', 'PLACA', 'RESTAURANTE', 'ROPA AMERICANA', 'SUPERMERCADOS', 
   'TALLER', 'TAXI MAR', 'VIGENCIA EXPIRADA'
 ];
@@ -372,7 +372,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
   // The 19 official activity categories from Almirante
   const mainCategories = [
     'ABARROTERIA', 'ALMACEN', 'BARBERIA', 'BARES', 'BASURA2026', 'BUHONERIA', 
-    'FARMACIA', 'FERRETERIA', 'GASOLINERA', 'LAVA AUTO', 'LEGUMBRERIA', 
+    'FARMACIA', 'FERRETERIA', 'FUMIGADORA', 'GASOLINERA', 'LAVA AUTO', 'LEGUMBRERIA', 
     'OTROS', 'PARQUEO', 'RESTAURANTE', 'ROPA AMERICANA', 'SUPERMERCADOS', 
     'TALLER', 'TAXI MAR', 'VIGENCIA EXPIRADA'
   ];
@@ -434,6 +434,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
       case CommercialCategory.CLASE_A: return 'Clase A (Alto)';
       case CommercialCategory.CLASE_B: return 'Clase B (Medio)';
       case CommercialCategory.CLASE_C: return 'Clase C (Bajo)';
+      case CommercialCategory.FUMIGADORA: return 'Fumigadora';
       default: return 'N/A';
     }
   };
