@@ -470,6 +470,16 @@ function App() {
     }
   };
 
+  const handleDeleteUser = async (username: string) => {
+    try {
+      await db.deleteAppUser(username);
+      setRegisteredUsers(registeredUsers.filter(u => u.username !== username));
+    } catch (e) {
+      console.error("Error deleting user", e);
+      alert("Error al eliminar usuario");
+    }
+  };
+
   const handleGoToPay = (taxpayer: Taxpayer) => {
     setSelectedDebtTaxpayer(taxpayer);
     setCurrentPage('caja');
@@ -938,6 +948,7 @@ function App() {
             users={registeredUsers}
             onCreateUser={handleCreateUser}
             onUpdateUser={handleUpdateUser}
+            onDeleteUser={handleDeleteUser}
             onSimulateScraping={handleSimulateScraping}
             onBackup={handleExcelBackup}
             onImport={handleExcelImport}

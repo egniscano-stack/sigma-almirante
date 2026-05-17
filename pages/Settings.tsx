@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { TaxConfig, MunicipalityInfo, User, UserRole, Taxpayer, Transaction, TaxpayerStatus } from '../types';
-import { Save, Shield, DollarSign, Building, UserPlus, X, Database, Globe, Download, Upload, Server, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { Save, Shield, DollarSign, Building, UserPlus, X, Database, Globe, Download, Upload, Server, FileSpreadsheet, RefreshCw, Power, Trash2 } from 'lucide-react';
 import { GovScraper } from './GovScraper';
 
 interface SettingsProps {
@@ -11,6 +11,7 @@ interface SettingsProps {
   users: User[];
   onUpdateUser: (user: User) => void;
   onCreateUser: (user: User) => void;
+  onDeleteUser: (username: string) => void;
   onSimulateScraping: () => void;
   onBackup: () => void;
   onImport: (file: File) => void;
@@ -23,7 +24,7 @@ interface SettingsProps {
 }
 
 export const Settings: React.FC<SettingsProps> = ({
-  config, onUpdateConfig, municipalityInfo, onUpdateMunicipalityInfo, users, onCreateUser, onUpdateUser, onSimulateScraping, onBackup, onImport,
+  config, onUpdateConfig, municipalityInfo, onUpdateMunicipalityInfo, users, onCreateUser, onUpdateUser, onDeleteUser, onSimulateScraping, onBackup, onImport,
   onImportTaxpayer, taxpayers, transactions, onUpdateTaxpayer, currentUserName, onHardReset
 }) => {
   const [localConfig, setLocalConfig] = useState<TaxConfig>(config || { 
@@ -76,7 +77,7 @@ export const Settings: React.FC<SettingsProps> = ({
       alert('El nombre de usuario ya existe.');
       return;
     }
-    onCreateUser(newUser);
+    onCreateUser({ ...newUser, status: 'ACTIVO' });
     setShowUserModal(false);
     setNewUser({ username: '', name: '', password: '', role: 'CAJERO' }); // Reset
     alert(`Usuario ${newUser.username} creado exitosamente.`);
@@ -359,9 +360,14 @@ export const Settings: React.FC<SettingsProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {users.map((u, idx) => (
-              <div key={idx} className="bg-slate-50 p-4 rounded-lg flex justify-between items-center border border-slate-100 group hover:ring-2 hover:ring-indigo-100 transition-all">
+              <div key={idx} className={`p-4 rounded-lg flex justify-between items-center border transition-all group hover:ring-2 hover:ring-indigo-100 ${
+                u.status === 'SUSPENDIDO' 
+                  ? 'bg-slate-100/70 border-slate-200 text-slate-400 opacity-75' 
+                  : 'bg-slate-50 border-slate-100 text-slate-800'
+              }`}>
                 <div className="flex items-center">
                   <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white font-bold mr-3 ${
+                    u.status === 'SUSPENDIDO' ? 'bg-slate-400' :
                     u.role === 'ADMIN' ? 'bg-indigo-600' :
                     u.role === 'CONTABILIDAD' ? 'bg-teal-600' :
                     u.role === 'PLANILLA' ? 'bg-violet-600' : 'bg-emerald-600'
@@ -369,21 +375,70 @@ export const Settings: React.FC<SettingsProps> = ({
                     {u.username.substring(0, 2).toUpperCase()}
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-slate-800">{u.name}</p>
-                    <p className="text-xs text-slate-500">Usuario: {u.username} • <span className={
-                      u.role === 'ADMIN' ? 'text-indigo-600' :
-                      u.role === 'CONTABILIDAD' ? 'text-teal-600' :
-                      u.role === 'PLANILLA' ? 'text-violet-600' : 'text-emerald-600'
+                    <div className="flex items-center gap-1.5">
+                      <p className={`text-sm font-bold ${u.status === 'SUSPENDIDO' ? 'line-through text-slate-500' : 'text-slate-800'}`}>{u.name}</p>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
+                        u.status === 'SUSPENDIDO' 
+                          ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      }`}>
+                        {u.status === 'SUSPENDIDO' ? 'Suspendido' : 'Activo'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">Usuario: {u.username} • <span className={
+                      u.role === 'ADMIN' ? 'text-indigo-600 font-medium' :
+                      u.role === 'CONTABILIDAD' ? 'text-teal-600 font-medium' :
+                      u.role === 'PLANILLA' ? 'text-violet-600 font-medium' : 'text-emerald-600 font-medium'
                     }>{u.role}</span></p>
                   </div>
                 </div>
-                <button
-                  onClick={() => openPwdModal(u)}
-                  className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 p-2 rounded-full transition-colors"
-                  title="Cambiar Contraseña"
-                >
-                  <Shield size={16} />
-                </button>
+
+                <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                  {/* Reset Password */}
+                  <button
+                    onClick={() => openPwdModal(u)}
+                    className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-full transition-colors"
+                    title="Cambiar Contraseña"
+                  >
+                    <Shield size={14} />
+                  </button>
+                  
+                  {/* Suspend / Activate */}
+                  <button
+                    onClick={() => {
+                      const newStatus = u.status === 'SUSPENDIDO' ? 'ACTIVO' : 'SUSPENDIDO';
+                      const confirmMsg = newStatus === 'SUSPENDIDO' 
+                        ? `¿Está seguro de SUSPENDER las credenciales de ${u.name}? No podrá iniciar sesión.`
+                        : `¿Está seguro de ACTIVAR las credenciales de ${u.name}?`;
+                      if (confirm(confirmMsg)) {
+                        onUpdateUser({ ...u, status: newStatus });
+                      }
+                    }}
+                    className={`p-1.5 rounded-full transition-colors ${
+                      u.status === 'SUSPENDIDO' 
+                        ? 'text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50' 
+                        : 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'
+                    }`}
+                    title={u.status === 'SUSPENDIDO' ? 'Activar Cuenta' : 'Suspender Cuenta'}
+                  >
+                    <Power size={14} />
+                  </button>
+
+                  {/* Delete User */}
+                  {u.role !== 'ADMIN' && (
+                    <button
+                      onClick={() => {
+                        if (confirm(`⚠️ ¿Está seguro de ELIMINAR permanentemente la cuenta de ${u.name}? Esta acción no se puede deshacer.`)) {
+                          onDeleteUser(u.username);
+                        }
+                      }}
+                      className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-full transition-colors"
+                      title="Eliminar Usuario"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
 

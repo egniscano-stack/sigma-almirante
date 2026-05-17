@@ -65,6 +65,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin, validUsers }) => {
       );
 
       if (foundUser) {
+        if (foundUser.status === 'SUSPENDIDO') {
+          setError('🛑 Esta cuenta de usuario se encuentra temporalmente SUSPENDIDA por el administrador.');
+          setIsLoading(false);
+          return;
+        }
+
         // SUCCESS: Clear any failed attempts
         clearLoginAttempts(username.trim());
         setLockoutInfo({ locked: false });

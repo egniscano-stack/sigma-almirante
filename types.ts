@@ -173,6 +173,7 @@ export interface User {
   role: UserRole;
   password?: string; // Included for demo purposes to allow creating users
   last_read_general_chat?: string; // ISO Timestamp
+  status?: 'ACTIVO' | 'SUSPENDIDO';
 }
 
 // --- ADMIN REQUESTS (For Void / Arrangement / Taxpayer Edit) ---

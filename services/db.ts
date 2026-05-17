@@ -313,97 +313,72 @@ export const remoteDb = {
         if (error) throw error;
     },
 
+    mapUserFromDB: (u: any): User => {
+        const user = { ...u } as User;
+        user.status = 'ACTIVO';
+        
+        if (user.name && user.name.endsWith(' [SUSPENDIDO]')) {
+            user.name = user.name.replace(' [SUSPENDIDO]', '');
+            user.status = 'SUSPENDIDO';
+        }
+        
+        if (user.name && user.name.endsWith(' [CONTABILIDAD]')) {
+            user.name = user.name.replace(' [CONTABILIDAD]', '');
+            user.role = 'CONTABILIDAD';
+        } else if (user.name && user.name.endsWith(' [PLANILLA]')) {
+            user.name = user.name.replace(' [PLANILLA]', '');
+            user.role = 'PLANILLA';
+        } else if (user.username.toLowerCase() === 'contabilidad') {
+            user.role = 'CONTABILIDAD';
+        } else if (user.username.toLowerCase() === 'planilla') {
+            user.role = 'PLANILLA';
+        }
+        return user;
+    },
+
+    mapUserToDB: (u: User): User => {
+        const dbUser = { ...u };
+        
+        // Handle role mapping
+        if (dbUser.role === 'CONTABILIDAD') {
+            dbUser.name = `${dbUser.name} [CONTABILIDAD]`;
+            dbUser.role = 'AUDITOR';
+        } else if (dbUser.role === 'PLANILLA') {
+            dbUser.name = `${dbUser.name} [PLANILLA]`;
+            dbUser.role = 'SECRETARIA';
+        }
+        
+        // Handle status mapping
+        if (dbUser.status === 'SUSPENDIDO') {
+            dbUser.name = `${dbUser.name} [SUSPENDIDO]`;
+        }
+        
+        return dbUser;
+    },
+
     getAppUsers: async (): Promise<User[]> => {
         const { data, error } = await supabase.from('app_users').select('*');
         if (error) throw error;
-        
-        const mapUserFromDB = (u: any): User => {
-            const user = { ...u } as User;
-            if (user.name && user.name.endsWith(' [CONTABILIDAD]')) {
-                user.name = user.name.replace(' [CONTABILIDAD]', '');
-                user.role = 'CONTABILIDAD';
-            } else if (user.name && user.name.endsWith(' [PLANILLA]')) {
-                user.name = user.name.replace(' [PLANILLA]', '');
-                user.role = 'PLANILLA';
-            } else if (user.username.toLowerCase() === 'contabilidad') {
-                user.role = 'CONTABILIDAD';
-            } else if (user.username.toLowerCase() === 'planilla') {
-                user.role = 'PLANILLA';
-            }
-            return user;
-        };
-
-        return (data || []).map(mapUserFromDB);
+        return (data || []).map(remoteDb.mapUserFromDB);
     },
 
     createAppUser: async (user: User) => {
-        const mapUserToDB = (u: User): User => {
-            const dbUser = { ...u };
-            if (dbUser.role === 'CONTABILIDAD') {
-                dbUser.name = `${dbUser.name} [CONTABILIDAD]`;
-                dbUser.role = 'AUDITOR';
-            } else if (dbUser.role === 'PLANILLA') {
-                dbUser.name = `${dbUser.name} [PLANILLA]`;
-                dbUser.role = 'SECRETARIA';
-            }
-            return dbUser;
-        };
-
-        const mapUserFromDB = (u: any): User => {
-            const user = { ...u } as User;
-            if (user.name && user.name.endsWith(' [CONTABILIDAD]')) {
-                user.name = user.name.replace(' [CONTABILIDAD]', '');
-                user.role = 'CONTABILIDAD';
-            } else if (user.name && user.name.endsWith(' [PLANILLA]')) {
-                user.name = user.name.replace(' [PLANILLA]', '');
-                user.role = 'PLANILLA';
-            } else if (user.username.toLowerCase() === 'contabilidad') {
-                user.role = 'CONTABILIDAD';
-            } else if (user.username.toLowerCase() === 'planilla') {
-                user.role = 'PLANILLA';
-            }
-            return user;
-        };
-
-        const dbUser = mapUserToDB(user);
+        const dbUser = remoteDb.mapUserToDB(user);
         const { data, error } = await supabase.from('app_users').insert(dbUser).select().single();
         if (error) throw error;
-        return mapUserFromDB(data);
+        return remoteDb.mapUserFromDB(data);
     },
 
     updateAppUser: async (user: User) => {
-        const mapUserToDB = (u: User): User => {
-            const dbUser = { ...u };
-            if (dbUser.role === 'CONTABILIDAD') {
-                dbUser.name = `${dbUser.name} [CONTABILIDAD]`;
-                dbUser.role = 'AUDITOR';
-            } else if (dbUser.role === 'PLANILLA') {
-                dbUser.name = `${dbUser.name} [PLANILLA]`;
-                dbUser.role = 'SECRETARIA';
-            }
-            return dbUser;
-        };
-
-        const mapUserFromDB = (u: any): User => {
-            const user = { ...u } as User;
-            if (user.name && user.name.endsWith(' [CONTABILIDAD]')) {
-                user.name = user.name.replace(' [CONTABILIDAD]', '');
-                user.role = 'CONTABILIDAD';
-            } else if (user.name && user.name.endsWith(' [PLANILLA]')) {
-                user.name = user.name.replace(' [PLANILLA]', '');
-                user.role = 'PLANILLA';
-            } else if (user.username.toLowerCase() === 'contabilidad') {
-                user.role = 'CONTABILIDAD';
-            } else if (user.username.toLowerCase() === 'planilla') {
-                user.role = 'PLANILLA';
-            }
-            return user;
-        };
-
-        const dbUser = mapUserToDB(user);
+        const dbUser = remoteDb.mapUserToDB(user);
         const { data, error } = await supabase.from('app_users').update(dbUser).eq('username', user.username).select().single();
         if (error) throw error;
-        return mapUserFromDB(data);
+        return remoteDb.mapUserFromDB(data);
+    },
+
+    deleteAppUser: async (username: string) => {
+        const { error } = await supabase.from('app_users').delete().eq('username', username);
+        if (error) throw error;
     }
 };
 
@@ -589,6 +564,18 @@ export const db = {
             console.warn("Could not sync user update to server.");
         }
         return user;
+    },
+
+    deleteAppUser: async (username: string) => {
+        const local = await localStore.loadData();
+        local.users = local.users.filter(u => u.username !== username);
+        await localStore.saveData(local);
+        
+        try {
+            await remoteDb.deleteAppUser(username);
+        } catch (e) {
+            console.warn("Could not sync user deletion to server.");
+        }
     },
 
     getReportStats: async () => {
