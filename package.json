@@ -5,8 +5,8 @@
   "type": "module",
   "main": "electron.cjs",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build && cp -r dist/* .",
+    "dev": "cp index.dev.html index.html && vite",
+    "build": "vite build && cp -r dist/* . && cp index.dev.html index.html",
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
