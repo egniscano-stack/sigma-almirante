@@ -70,15 +70,23 @@ export const Login: React.FC<LoginProps> = ({ onLogin, validUsers }) => {
         setLockoutInfo({ locked: false });
         setAttemptWarning('');
 
+        // Determine role overrides for custom dashboards
+        let userRole = foundUser.role;
+        if (foundUser.username.toLowerCase() === 'contabilidad') {
+          userRole = 'CONTABILIDAD' as any;
+        } else if (foundUser.username.toLowerCase() === 'planilla') {
+          userRole = 'PLANILLA' as any;
+        }
+
         // Create secure session
         const session = createSession({
           username: foundUser.username,
-          role: foundUser.role,
+          role: userRole,
           name: foundUser.name,
         });
 
         // Pass user to app with session ID attached
-        onLogin({ ...foundUser, password: undefined }); // Strip password from memory
+        onLogin({ ...foundUser, role: userRole, password: undefined }); // Strip password from memory
       } else {
         // FAILURE: Record attempt
         const result = recordFailedLogin(username.trim());

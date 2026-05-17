@@ -19,6 +19,8 @@ import { TaxpayerPortal } from './pages/TaxpayerPortal';
 import { Landing } from './pages/Landing';
 import { AlcaldeDashboard } from './pages/AlcaldeDashboard';
 import { SecretariaDashboard } from './pages/SecretariaDashboard';
+import { ContabilidadDashboard } from './pages/ContabilidadDashboard';
+import { PlanillaDashboard } from './pages/PlanillaDashboard';
 import { TaxConfig, Taxpayer, Transaction, User, MunicipalityInfo, TaxpayerType, CommercialCategory, TaxpayerStatus, AdminRequest, RequestStatus } from './types';
 import { Menu, ArrowLeft, ArrowRight, Wifi, WifiOff, RefreshCw, Bell, AlertCircle as AlertIcon, CheckCircle, XCircle, LogOut, Download, Archive, Edit, X, Shield, Clock, Trash2, ShieldAlert, FileText } from 'lucide-react';
 import { db, mapTaxpayerFromDB, mapTransactionFromDB } from './services/db';
@@ -356,6 +358,10 @@ function App() {
     setUser(loggedInUser);
     if (loggedInUser.role === 'CAJERO') {
       setCurrentPage('caja');
+    } else if (loggedInUser.role === 'CONTABILIDAD') {
+      setCurrentPage('contabilidad');
+    } else if (loggedInUser.role === 'PLANILLA') {
+      setCurrentPage('planilla');
     } else {
       setCurrentPage('dashboard');
     }
@@ -904,7 +910,24 @@ function App() {
           />
         );
       case 'reports':
-        return (user?.role === 'ADMIN' || user?.role === 'AUDITOR') ? <Reports transactions={filteredTransactions} users={registeredUsers} currentUser={user} taxpayers={filteredTaxpayers} config={config} /> : null;
+        return (user?.role === 'ADMIN' || user?.role === 'AUDITOR' || user?.role === 'CONTABILIDAD') ? <Reports transactions={filteredTransactions} users={registeredUsers} currentUser={user} taxpayers={filteredTaxpayers} config={config} /> : null;
+      case 'contabilidad':
+        return (user?.role === 'ADMIN' || user?.role === 'CONTABILIDAD') ? (
+          <ContabilidadDashboard 
+            transactions={filteredTransactions} 
+            taxpayers={filteredTaxpayers} 
+            config={config} 
+            onRefresh={() => fetchData(true)}
+          />
+        ) : null;
+      case 'planilla':
+        return (user?.role === 'ADMIN' || user?.role === 'PLANILLA') ? (
+          <PlanillaDashboard 
+            transactions={filteredTransactions} 
+            taxpayers={filteredTaxpayers} 
+            config={config}
+          />
+        ) : null;
       case 'settings':
         return user?.role === 'ADMIN' ? (
           <Settings

@@ -17,13 +17,15 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavigate, onLogout, isOpen, onClose, onToggleChat, chatUnreadCount = 0 }) => {
   const allMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'AUDITOR'] },
-    { id: 'taxpayers', label: 'Contribuyentes', icon: Users, roles: ['ADMIN', 'CAJERO', 'AUDITOR', 'REGISTRO'] },
+    { id: 'contabilidad', label: 'Contabilidad', icon: FileText, roles: ['ADMIN', 'CONTABILIDAD'] },
+    { id: 'planilla', label: 'Planilla y RRHH', icon: Users, roles: ['ADMIN', 'PLANILLA'] },
+    { id: 'taxpayers', label: 'Contribuyentes', icon: Users, roles: ['ADMIN', 'CAJERO', 'AUDITOR', 'REGISTRO', 'CONTABILIDAD'] },
     // Split into Caja and Cobros
     { id: 'caja', label: 'Caja', icon: Banknote, roles: ['ADMIN', 'CAJERO'] },
     { id: 'construction', label: 'Cobro de Construcción', icon: Building2, roles: ['ADMIN', 'CAJERO'] },
     { id: 'cobros', label: 'Gestión de Cobros', icon: AlertCircle, roles: ['ADMIN', 'CAJERO', 'AUDITOR'] },
     { id: 'scanner', label: 'Digitalizador IA', icon: ScanLine, roles: ['ADMIN', 'CAJERO', 'REGISTRO'] },
-    { id: 'reports', label: 'Reportes', icon: FileText, roles: ['ADMIN', 'AUDITOR'] },
+    { id: 'reports', label: 'Reportes', icon: FileText, roles: ['ADMIN', 'AUDITOR', 'CONTABILIDAD'] },
     { id: 'settings', label: 'Administración', icon: Settings, roles: ['ADMIN'] },
   ];
 
@@ -129,7 +131,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavig
             <span>Cerrar Sesión</span>
           </button>
           <div className="mt-4 text-center">
-            <p className="text-[10px] text-slate-600">v1.4.0 • {userRole === 'ADMIN' ? 'Administrador' : userRole === 'AUDITOR' ? 'Auditor' : userRole === 'REGISTRO' ? 'Oficial Registro' : 'Cajero'}</p>
+            <p className="text-[10px] text-slate-600">v1.4.0 • {
+              userRole === 'ADMIN' ? 'Administrador' : 
+              userRole === 'AUDITOR' ? 'Auditor' : 
+              userRole === 'REGISTRO' ? 'Oficial Registro' : 
+              userRole === 'CONTABILIDAD' ? 'Director de Contabilidad' :
+              userRole === 'PLANILLA' ? 'Encargado de Planilla' : 'Cajero'
+            }</p>
           </div>
         </div>
       </div >
