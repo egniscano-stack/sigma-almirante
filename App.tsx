@@ -922,7 +922,7 @@ function App() {
       case 'reports':
         return (user?.role === 'ADMIN' || user?.role === 'AUDITOR' || user?.role === 'CONTABILIDAD') ? <Reports transactions={filteredTransactions} users={registeredUsers} currentUser={user} taxpayers={filteredTaxpayers} config={config} /> : null;
       case 'contabilidad':
-        return (user?.role === 'ADMIN' || user?.role === 'CONTABILIDAD') ? (
+        return user?.role === 'CONTABILIDAD' ? (
           <ContabilidadDashboard 
             transactions={filteredTransactions} 
             taxpayers={filteredTaxpayers} 
@@ -931,7 +931,7 @@ function App() {
           />
         ) : null;
       case 'planilla':
-        return (user?.role === 'ADMIN' || user?.role === 'PLANILLA') ? (
+        return user?.role === 'PLANILLA' ? (
           <PlanillaDashboard 
             transactions={filteredTransactions} 
             taxpayers={filteredTaxpayers} 

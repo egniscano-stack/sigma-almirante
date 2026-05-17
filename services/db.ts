@@ -538,15 +538,11 @@ export const db = {
 
     createAppUser: async (user: User) => {
         const local = await localStore.loadData();
+        local.users = local.users.filter(u => u.username !== user.username);
         local.users.push(user);
         await localStore.saveData(local);
         
-        // Push to server if possible
-        try {
-            await remoteDb.createAppUser(user);
-        } catch (e) {
-            console.warn("Could not sync new user to server, will retry later.");
-        }
+        await syncService.addAction('CREATE_USER', user);
         return user;
     },
 
@@ -557,12 +553,7 @@ export const db = {
             local.users[index] = user;
             await localStore.saveData(local);
         }
-        
-        try {
-            await remoteDb.updateAppUser(user);
-        } catch (e) {
-            console.warn("Could not sync user update to server.");
-        }
+        await syncService.addAction('UPDATE_USER', user);
         return user;
     },
 
@@ -570,12 +561,7 @@ export const db = {
         const local = await localStore.loadData();
         local.users = local.users.filter(u => u.username !== username);
         await localStore.saveData(local);
-        
-        try {
-            await remoteDb.deleteAppUser(username);
-        } catch (e) {
-            console.warn("Could not sync user deletion to server.");
-        }
+        await syncService.addAction('DELETE_USER', username);
     },
 
     getReportStats: async () => {

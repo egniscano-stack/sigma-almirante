@@ -17,8 +17,8 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavigate, onLogout, isOpen, onClose, onToggleChat, chatUnreadCount = 0 }) => {
   const allMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'AUDITOR'] },
-    { id: 'contabilidad', label: 'Contabilidad', icon: FileText, roles: ['ADMIN', 'CONTABILIDAD'] },
-    { id: 'planilla', label: 'Planilla y RRHH', icon: Users, roles: ['ADMIN', 'PLANILLA'] },
+    { id: 'contabilidad', label: 'Contabilidad', icon: FileText, roles: ['CONTABILIDAD'] },
+    { id: 'planilla', label: 'Planilla y RRHH', icon: Users, roles: ['PLANILLA'] },
     { id: 'taxpayers', label: 'Contribuyentes', icon: Users, roles: ['ADMIN', 'CAJERO', 'AUDITOR', 'REGISTRO', 'CONTABILIDAD'] },
     // Split into Caja and Cobros
     { id: 'caja', label: 'Caja', icon: Banknote, roles: ['ADMIN', 'CAJERO'] },

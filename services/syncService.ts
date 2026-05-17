@@ -8,7 +8,8 @@ export type SyncActionType =
     | 'CREATE_TAXPAYER' | 'UPDATE_TAXPAYER' | 'DELETE_TAXPAYER'
     | 'CREATE_TRANSACTION' | 'UPDATE_TRANSACTION'
     | 'CREATE_AGENDA' | 'UPDATE_AGENDA'
-    | 'CREATE_ADMIN_REQUEST' | 'UPDATE_ADMIN_REQUEST';
+    | 'CREATE_ADMIN_REQUEST' | 'UPDATE_ADMIN_REQUEST'
+    | 'CREATE_USER' | 'UPDATE_USER' | 'DELETE_USER';
 
 export interface SyncAction {
     id: string;
@@ -188,6 +189,15 @@ class SyncService {
                         break;
                     case 'UPDATE_ADMIN_REQUEST':
                         await remoteDb.updateAdminRequest(action.data);
+                        break;
+                    case 'CREATE_USER':
+                        await remoteDb.createAppUser(action.data);
+                        break;
+                    case 'UPDATE_USER':
+                        await remoteDb.updateAppUser(action.data);
+                        break;
+                    case 'DELETE_USER':
+                        await remoteDb.deleteAppUser(action.data);
                         break;
                 }
                 processedCount++;
