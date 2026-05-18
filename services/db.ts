@@ -524,8 +524,12 @@ export const db = {
         const local = await localStore.loadData();
         local.config = config;
         await localStore.saveData(local);
-        // Special case for config: usually we want to push immediately or let sync handle it
-        await remoteDb.updateConfig(config);
+        // Special case for config: attempt to update remotely, but don't fail offline
+        try {
+            await remoteDb.updateConfig(config);
+        } catch (e) {
+            console.warn("Could not sync config to Supabase (offline), will remain saved locally:", e);
+        }
     },
 
     // --- OTHER METHODS STAY SAME (Remote Only) ---

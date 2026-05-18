@@ -62,30 +62,54 @@ export const localStore = {
      * Loads data from local file
      */
     loadData: async (): Promise<LocalData> => {
+        let data: LocalData | null = null;
+
         // 1. Electron handling
         if ((window as any).electronAPI) {
             const res = await (window as any).electronAPI.backup.load('sigma_data');
-            return res.data || initialData;
-        }
-
-        // 2. Capacitor handling
-        if (Capacitor.isNativePlatform()) {
+            data = res.data;
+        } else if (Capacitor.isNativePlatform()) {
+            // 2. Capacitor handling
             try {
                 const res = await Filesystem.readFile({
                     path: DATA_FILENAME,
                     directory: Directory.Documents,
                     encoding: Encoding.UTF8
                 });
-                return JSON.parse(res.data as string);
+                data = JSON.parse(res.data as string);
             } catch (e) {
-                console.warn("No local file found, using initial data");
-                return initialData;
+                data = null;
             }
+        } else {
+            // 3. Fallback to localStorage
+            const stored = localStorage.getItem('sigma_local_data');
+            data = stored ? JSON.parse(stored) : null;
         }
 
-        // 3. Fallback to localStorage
-        const stored = localStorage.getItem('sigma_local_data');
-        return stored ? JSON.parse(stored) : initialData;
+        // If data exists and has taxpayers, return it
+        if (data && data.taxpayers && data.taxpayers.length > 0) {
+            return data;
+        }
+
+        // Otherwise, attempt to load from bundled initial_seed.json
+        try {
+            console.log("[SIGMA localStore] No local database or empty. Loading bundled initial_seed.json...");
+            const response = await fetch('./initial_seed.json');
+            if (response.ok) {
+                const seed = await response.json();
+                if (seed && seed.taxpayers && seed.taxpayers.length > 0) {
+                    console.log(`[SIGMA localStore] Bundled seed loaded successfully with ${seed.taxpayers.length} taxpayers! Saving locally...`);
+                    // Save seed locally so it's permanently stored and editable
+                    const finalData = { ...initialData, ...seed };
+                    await localStore.saveData(finalData);
+                    return finalData;
+                }
+            }
+        } catch (e) {
+            console.warn("[SIGMA localStore] Bundled seed file not available, falling back to empty database:", e);
+        }
+
+        return data || initialData;
     },
 
     /**

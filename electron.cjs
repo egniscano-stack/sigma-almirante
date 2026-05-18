@@ -31,8 +31,8 @@ function createWindow() {
 app.whenReady().then(() => {
   createWindow();
 
-  // IPC handlers for local backup
-  const backupDir = path.join(app.getPath('userData'), 'SIGMA_Backups');
+  // IPC handlers for local backup in User's Documents folder
+  const backupDir = path.join(app.getPath('documents'), 'SIGMA_Backups');
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
   }

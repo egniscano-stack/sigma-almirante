@@ -688,6 +688,25 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                 <p className="text-[8px] font-bold text-slate-400 uppercase">Contribuyente:</p>
                 <p className="font-bold text-[11px] text-slate-900 leading-tight uppercase">{activeTaxpayer.name}</p>
                 <p className="text-[9px] font-mono text-slate-600">DOC: {activeTaxpayer.docId}</p>
+
+                {/* Vehículos Vinculados (Generales completas del vehículo) */}
+                {activeTaxpayer.vehicles && activeTaxpayer.vehicles.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-slate-200 text-[8px] text-slate-600 space-y-0.5">
+                    <p className="font-bold text-[8px] text-indigo-700 uppercase tracking-wider">Detalles de Placa / Vehículo:</p>
+                    {activeTaxpayer.vehicles.map((v, idx) => (
+                      <div key={idx} className="bg-white p-1.5 rounded border border-slate-100 mt-1 space-y-0.5 font-mono">
+                        <p className="font-bold text-slate-900">PLACA: {v.plate || 'Pendiente'}</p>
+                        <p><span className="font-bold">Marca:</span> {v.brand || 'N/A'}</p>
+                        {v.year && <p><span className="font-bold">Año:</span> {v.year}</p>}
+                        {v.vehicleType && <p><span className="font-bold">Tipo:</span> {v.vehicleType}</p>}
+                        {v.plateType && <p><span className="font-bold">Tipo Placa:</span> {v.plateType}</p>}
+                        {v.color && <p><span className="font-bold">Color:</span> {v.color}</p>}
+                        {v.motorSerial && <p><span className="font-bold">Motor:</span> {v.motorSerial}</p>}
+                        {v.chassisSerial && <p><span className="font-bold">Chasis (VIN):</span> {v.chassisSerial}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Transaction Detail & Breakdown */}

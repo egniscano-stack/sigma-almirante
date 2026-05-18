@@ -49,6 +49,8 @@ export interface VehicleInfo {
   chassisSerial: string;
   hasTransferDocuments: boolean; // Documentacion de traspaso
   yearlyAmount?: number; // Monto de placa individual
+  plateType?: string;
+  vehicleType?: string;
 }
 
 // Corregimientos defined by requirements

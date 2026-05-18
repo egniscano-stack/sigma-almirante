@@ -55,12 +55,16 @@ class SyncService {
 
         await updateStatus();
 
-        Network.addListener('networkStatusChange', (status) => {
-            this.networkStatus = status.connected ? 'online' : 'offline';
-            if (this.networkStatus === 'online') {
-                this.sync();
-            }
-        });
+        try {
+            Network.addListener('networkStatusChange', (status) => {
+                this.networkStatus = status.connected ? 'online' : 'offline';
+                if (this.networkStatus === 'online') {
+                    this.sync();
+                }
+            });
+        } catch (e) {
+            console.warn("Capacitor Network listener not available, using fallback window event listeners:", e);
+        }
 
         // Fallback for non-native environments
         window.addEventListener('online', () => {

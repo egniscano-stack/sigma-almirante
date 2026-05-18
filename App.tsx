@@ -142,16 +142,14 @@ function App() {
       try {
         if (isManual) setIsLoading(true);
         
-        // If manual, force a sync from Supabase first
-        if (!skipLocal) {
-            const localData = await syncService.getLocalData();
-            // Always update state with what we have
-            setTaxpayers(localData.taxpayers || []);
-            setTransactions(localData.transactions || []);
-            setAdminRequests(localData.adminRequests || []);
-            setRegisteredUsers(localData.users || []);
-            if (localData.config) setConfig(localData.config);
-        }
+        // Load data from offline local storage
+        const localData = await syncService.getLocalData();
+        // Always update state with what we have
+        setTaxpayers(localData.taxpayers || []);
+        setTransactions(localData.transactions || []);
+        setAdminRequests(localData.adminRequests || []);
+        setRegisteredUsers(localData.users || []);
+        if (localData.config) setConfig(localData.config);
 
         // Background sync if online (and not already done manually)
         if (!isManual && navigator.onLine) {

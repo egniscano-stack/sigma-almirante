@@ -720,7 +720,14 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                 <p className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors uppercase">
                                   Impuesto Circulación {v.plate}
                                 </p>
-                                <p className="text-[10px] text-slate-400">{v.brand} {v.model} | {v.color}</p>
+                                <p className="text-[10px] text-slate-400">
+                                  {v.brand || v.model || 'Marca no especificada'}{v.year ? ` (${v.year})` : ''}
+                                  {v.vehicleType ? ` | Tipo: ${v.vehicleType}` : ''}
+                                  {v.plateType ? ` | Placa: ${v.plateType}` : ''}
+                                  {v.color ? ` | Color: ${v.color}` : ''}
+                                  {v.motorSerial ? ` | Motor: ${v.motorSerial}` : ''}
+                                  {v.chassisSerial ? ` | Chasis (VIN): ${v.chassisSerial}` : ''}
+                                </p>
                               </td>
                               <td className="px-6 py-4 text-right">
                                 <div className="text-base font-black text-indigo-400 tabular-nums">B/. {formatCurrency((v as any).yearlyAmount || (v as any).yearly_amount || 0)}</div>
@@ -1829,21 +1836,60 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                       <p className="text-xs text-slate-500 mt-1">Define el mes de pago anual correspondiente.</p>
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">Modelo del Auto</label>
-                      <input type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base"
-                        value={newTp.vehicles?.[0]?.model || ''} 
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Marca del Auto</label>
+                      <input type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base bg-white"
+                        value={newTp.vehicles?.[0]?.brand || ''} 
                         onChange={e => {
                           const v = [...(newTp.vehicles || [])];
                           if (!v[0]) v[0] = { plate: '', brand: '', model: '', year: '', color: '', motorSerial: '', chassisSerial: '', hasTransferDocuments: false };
-                          v[0].model = e.target.value;
+                          v[0].brand = e.target.value;
                           setNewTp({ ...newTp, vehicles: v });
                         }} 
-                        placeholder="Ej. Hilux"
+                        placeholder="Ej. Toyota"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Año del Vehículo</label>
+                      <input type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base bg-white"
+                        value={newTp.vehicles?.[0]?.year || ''} 
+                        onChange={e => {
+                          const v = [...(newTp.vehicles || [])];
+                          if (!v[0]) v[0] = { plate: '', brand: '', model: '', year: '', color: '', motorSerial: '', chassisSerial: '', hasTransferDocuments: false };
+                          v[0].year = e.target.value;
+                          setNewTp({ ...newTp, vehicles: v });
+                        }} 
+                        placeholder="Ej. 2024"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Tipo de Vehículo</label>
+                      <input type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base bg-white"
+                        value={newTp.vehicles?.[0]?.vehicleType || ''} 
+                        onChange={e => {
+                          const v = [...(newTp.vehicles || [])];
+                          if (!v[0]) v[0] = { plate: '', brand: '', model: '', year: '', color: '', motorSerial: '', chassisSerial: '', hasTransferDocuments: false };
+                          v[0].vehicleType = e.target.value;
+                          setNewTp({ ...newTp, vehicles: v });
+                        }} 
+                        placeholder="Ej. Sedán, Pick-up, SUV"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Tipo de Placa</label>
+                      <input type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base bg-white"
+                        value={newTp.vehicles?.[0]?.plateType || ''} 
+                        onChange={e => {
+                          const v = [...(newTp.vehicles || [])];
+                          if (!v[0]) v[0] = { plate: '', brand: '', model: '', year: '', color: '', motorSerial: '', chassisSerial: '', hasTransferDocuments: false };
+                          v[0].plateType = e.target.value;
+                          setNewTp({ ...newTp, vehicles: v });
+                        }} 
+                        placeholder="Ej. Particular, Comercial"
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-1">Color</label>
-                      <input type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base"
+                      <input type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base bg-white"
                         value={newTp.vehicles?.[0]?.color || ''} 
                         onChange={e => {
                           const v = [...(newTp.vehicles || [])];
@@ -1854,9 +1900,22 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                         placeholder="Ej. Blanco"
                       />
                     </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Número de Motor</label>
+                      <input type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base font-mono bg-white"
+                        value={newTp.vehicles?.[0]?.motorSerial || ''} 
+                        onChange={e => {
+                          const v = [...(newTp.vehicles || [])];
+                          if (!v[0]) v[0] = { plate: '', brand: '', model: '', year: '', color: '', motorSerial: '', chassisSerial: '', hasTransferDocuments: false };
+                          v[0].motorSerial = e.target.value;
+                          setNewTp({ ...newTp, vehicles: v });
+                        }} 
+                        placeholder="Ej. 2TR-FE123456"
+                      />
+                    </div>
                     <div className="md:col-span-2">
                       <label className="block text-sm font-bold text-slate-700 mb-1">Número de Chasis (VIN)</label>
-                      <input type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base font-mono"
+                      <input type="text" className="w-full border border-slate-300 rounded-lg p-3 px-4 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black text-base font-mono bg-white"
                         value={newTp.vehicles?.[0]?.chassisSerial || ''} 
                         onChange={e => {
                           const v = [...(newTp.vehicles || [])];
