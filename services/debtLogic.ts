@@ -22,6 +22,17 @@ export const calculateTaxpayerDebt = (
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth() + 1;
 
+  // Parse lastPaymentMonth if set
+  let lpYear = 0;
+  let lpMonth = 0;
+  if (t.lastPaymentMonth) {
+    const parts = t.lastPaymentMonth.split('-');
+    if (parts.length === 2) {
+      lpYear = parseInt(parts[0]) || 0;
+      lpMonth = parseInt(parts[1]) || 0;
+    }
+  }
+
   // 1. Accumulated Debt (Previous Years / Manual Arrears)
   if ((t.previousYearsDebt || 0) > 0) {
     debts.push({
@@ -54,8 +65,17 @@ export const calculateTaxpayerDebt = (
           const monthName = monthDate.toLocaleString('es-ES', { month: 'long' });
           const labelSuffix = `${monthName} ${year}`;
 
+          // Check if paid by lastPaymentMonth configuration
+          let isPaidByLastPayment = false;
+          if (lpYear > 0 && lpMonth > 0) {
+            if (year < lpYear || (year === lpYear && m <= lpMonth)) {
+              isPaidByLastPayment = true;
+            }
+          }
+
           // Check if already paid
           const isPaid = (type: TaxType) => {
+            if (isPaidByLastPayment) return true;
             return transactions.some(tx => {
               if (tx.taxpayerId !== t.id || tx.status !== 'PAGADO') return false;
               
@@ -147,7 +167,12 @@ export const calculateTaxpayerDebt = (
 
         const labelSuffix = `${year}`;
         
-        const isPaid = transactions.some(tx => {
+        let isPaidByLastPayment = false;
+        if (lpYear > 0 && lpYear >= year) {
+          isPaidByLastPayment = true;
+        }
+
+        const isPaid = isPaidByLastPayment || transactions.some(tx => {
           if (tx.taxpayerId !== t.id || tx.status !== 'PAGADO') return false;
           if (tx.taxType !== TaxType.VEHICULO) return false;
           return tx.metadata?.year === year || tx.description.includes(labelSuffix);
@@ -156,13 +181,14 @@ export const calculateTaxpayerDebt = (
         if (!isPaid) {
           const amount = t.yearlyAmount || config?.plateCost || 0;
           if (amount > 0) {
+            const plateNum = t.vehicles?.[0]?.plate || '';
             debts.push({
               id: `placa-yearly-${year}`,
               type: TaxType.VEHICULO,
-              label: `Impuesto de Placa Anual - ${year}`,
+              label: `Impuesto Vehicular ${plateNum ? `(Placa ${plateNum}) ` : ''}- ${year}`,
               amount: amount,
               description: `Anualidad correspondiente al año ${year}`,
-              metadata: { year, month: renewalMonth }
+              metadata: { year, month: renewalMonth, plateNumber: plateNum }
             });
           }
         }
@@ -170,15 +196,20 @@ export const calculateTaxpayerDebt = (
     }
   }
 
-  // 3. Vehicles (Annual)
-  if (t.vehicles && t.vehicles.length > 0 && t.status !== 'BLOQUEADO') {
+  // 3. Vehicles (Annual) - SKIP for PLACA to prevent double billing (already calculated in Section 2)
+  if (t.type !== TaxpayerType.PLACA && t.vehicles && t.vehicles.length > 0 && t.status !== 'BLOQUEADO') {
     t.vehicles.forEach(v => {
       const lastDigit = parseInt(v.plate.slice(-1)) || 1;
       const renewalMonth = lastDigit === 0 ? 10 : lastDigit;
 
       // Only if renewal month reached/passed
       if (currentMonth >= renewalMonth) {
-        const hasPaid = transactions.some(tx => {
+        let isPaidByLastPayment = false;
+        if (lpYear > 0 && lpYear >= currentYear) {
+          isPaidByLastPayment = true;
+        }
+
+        const hasPaid = isPaidByLastPayment || transactions.some(tx => {
           if (tx.taxpayerId !== t.id || tx.status !== 'PAGADO') return false;
           
           if (tx.metadata?.isConsolidated && tx.metadata?.originalItems) {

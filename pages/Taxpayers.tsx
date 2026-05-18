@@ -74,6 +74,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
   // Edit Mode State
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showYearlyAmountInput, setShowYearlyAmountInput] = useState(false);
+  const [showLastPaymentInput, setShowLastPaymentInput] = useState(false);
 
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [editReason, setEditReason] = useState('');
@@ -98,6 +100,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
     selectedRates: {},
     rotuloAmount: 0,
     garbageAmount: 0,
+    yearlyAmount: 0,
+    lastPaymentMonth: '',
     balance: 0
   });
 
@@ -130,6 +134,19 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
     setEditingId(tp.id);
     setSearchTerm('');
     setIsSearching(false);
+    
+    // Auto-expand Placa settings if values exist
+    if (freshTp.yearlyAmount && freshTp.yearlyAmount > 0) {
+      setShowYearlyAmountInput(true);
+    } else {
+      setShowYearlyAmountInput(false);
+    }
+    if (freshTp.lastPaymentMonth) {
+      setShowLastPaymentInput(true);
+    } else {
+      setShowLastPaymentInput(false);
+    }
+
     window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll to form
   };
 
@@ -146,6 +163,33 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
     let totalMonths = yearsDiff * 12 + monthsDiff;
     totalMonths += 1; // Inclusive counting (e.g. same month = 1)
     return Math.max(0, totalMonths);
+  };
+
+  // Helper to get formatted inscription link text
+  const getInscriptionLinkText = (dateStr?: string) => {
+    if (!dateStr) return '⚠️ Defina la Fecha de Inscripción arriba para vincular el cobro.';
+    try {
+      const d = new Date(dateStr + 'T00:00:00');
+      const monthName = d.toLocaleString('es-ES', { month: 'long' });
+      const year = d.getFullYear();
+      return `Ligado a ${monthName.toUpperCase()} de ${year} (Mes y Año de Inscripción).`;
+    } catch (e) {
+      return 'Fecha de inscripción no válida.';
+    }
+  };
+
+  // Helper to get the first unpaid period text (month after last payment)
+  const getNextUnpaidPeriodText = (lastPaymentStr?: string) => {
+    if (!lastPaymentStr) return '';
+    try {
+      const [year, month] = lastPaymentStr.split('-').map(Number);
+      const d = new Date(year, month, 1); // Handles month overflow automatically
+      const monthName = d.toLocaleString('es-ES', { month: 'long' });
+      const nextYear = d.getFullYear();
+      return `El cobro iniciará en ${monthName.toUpperCase()} de ${nextYear}.`;
+    } catch (e) {
+      return '';
+    }
   };
 
   // Auto-generate taxpayer number for new records
@@ -206,13 +250,15 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
         balance: total
       }));
     }
-  }, [newTp.magnitude, newTp.selectedTaxCodes, newTp.rotuloAmount, newTp.garbageAmount, newTp.businessStartDate, newTp.paymentStartDate, isEditing, transactions, config]);
+  }, [newTp.magnitude, newTp.selectedTaxCodes, newTp.rotuloAmount, newTp.garbageAmount, newTp.businessStartDate, newTp.paymentStartDate, newTp.yearlyAmount, newTp.lastPaymentMonth, isEditing, transactions, config]);
 
   const handleCancelEdit = () => {
     setNewTp(getInitialFormState());
     setIsEditing(false);
     setEditingId(null);
     setEditReason('');
+    setShowYearlyAmountInput(false);
+    setShowLastPaymentInput(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -324,6 +370,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
         console.log('onAdd completed successfully');
 
         setNewTp(getInitialFormState());
+        setShowYearlyAmountInput(false);
+        setShowLastPaymentInput(false);
         setFiles({});
         
         // Show success modal with a small delay to ensure form reset doesn't flicker it
@@ -680,6 +728,63 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                               </td>
                             </tr>
                           ))}
+
+                          {/* 1.1 Placa Taxpayer Custom Rows (Yearly Amount & Last Payment) */}
+                          {viewTaxpayer.type === TaxpayerType.PLACA && (
+                            <>
+                              {viewTaxpayer.yearlyAmount ? (
+                                <tr className="hover:bg-white/5 transition-colors group border-b border-white/5">
+                                  <td className="px-6 py-4">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-300 bg-amber-500/20 px-2 py-1 rounded">
+                                      TARIFA ANUAL
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <p className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors uppercase">
+                                      Impuesto de Placa Configurado
+                                    </p>
+                                    <p className="text-[10px] text-slate-400">
+                                      {viewTaxpayer.businessStartDate 
+                                        ? `Vinculado al mes de ${new Date(viewTaxpayer.businessStartDate + 'T00:00:00').toLocaleString('es-ES', { month: 'long' }).toUpperCase()} de inscripción` 
+                                        : 'Impuesto Anual de Circulación'}
+                                    </p>
+                                  </td>
+                                  <td className="px-6 py-4 text-right">
+                                    <div className="text-base font-black text-amber-400 tabular-nums">B/. {formatCurrency(viewTaxpayer.yearlyAmount || 0)}</div>
+                                    <div className="text-[9px] text-amber-300/50 font-black uppercase">Anual</div>
+                                  </td>
+                                </tr>
+                              ) : null}
+
+                              {viewTaxpayer.lastPaymentMonth ? (
+                                <tr className="hover:bg-white/5 transition-colors group border-b border-white/5">
+                                  <td className="px-6 py-4">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/20 px-2 py-1 rounded">
+                                      ÚLTIMO PAGO
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <p className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors uppercase">
+                                      Mes del Último Pago Registrado
+                                    </p>
+                                    <p className="text-[10px] text-slate-400">
+                                      {(() => {
+                                        const [year, month] = viewTaxpayer.lastPaymentMonth.split('-').map(Number);
+                                        const d = new Date(year, month - 1, 1);
+                                        return `Registrado hasta ${d.toLocaleString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase()}`;
+                                      })()}
+                                    </p>
+                                  </td>
+                                  <td className="px-6 py-4 text-right">
+                                    <div className="text-sm font-black text-emerald-400 uppercase">
+                                      {viewTaxpayer.balance === 0 ? 'Paz y Salvo' : `Deuda: B/. ${formatCurrency(viewTaxpayer.balance)}`}
+                                    </div>
+                                    <div className="text-[9px] text-emerald-300/50 font-black uppercase">Historial</div>
+                                  </td>
+                                </tr>
+                              ) : null}
+                            </>
+                          )}
 
                           {/* 2. Commercial Activities */}
                           {(isAdmin || isNormalCaja) && (viewTaxpayer.selectedTaxCodes || []).map(code => {
@@ -1762,6 +1867,108 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                         placeholder="Ej. JTE234567890"
                       />
                     </div>
+
+                    {/* DYNAMIC PLATE TAX & PAYMENT CONFIGURATION */}
+                    <div className="md:col-span-2 mt-4 bg-slate-100 p-5 rounded-2xl border border-slate-200 shadow-sm">
+                      <h5 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <span className="p-1 bg-amber-500 text-white rounded-lg text-[10px]">⚙️</span>
+                        Configuración Fiscal de Placa
+                      </h5>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Button or input for Yearly Amount */}
+                        {!showYearlyAmountInput && !newTp.yearlyAmount ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowYearlyAmountInput(true)}
+                            className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-300 rounded-xl text-slate-600 hover:border-indigo-500 hover:text-indigo-600 transition-all font-semibold text-sm bg-white hover:shadow-sm active:scale-95"
+                          >
+                            <span className="text-lg font-black">+</span> Agregar Monto de Pago Anual
+                          </button>
+                        ) : (
+                          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm transition-all hover:border-indigo-200">
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="text-xs font-bold text-slate-700">Monto de Pago Anual</label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowYearlyAmountInput(false);
+                                  setNewTp({ ...newTp, yearlyAmount: 0 });
+                                }}
+                                className="text-xs text-red-500 hover:text-red-700 font-bold transition-colors"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-slate-400 font-bold text-sm">B/.</span>
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                className="w-full p-2 border border-slate-300 rounded-lg text-right font-black text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all text-sm bg-white"
+                                value={newTp.yearlyAmount || ''}
+                                onChange={(e) => setNewTp({ ...newTp, yearlyAmount: parseFloat(e.target.value) || 0 })}
+                                placeholder="0.00"
+                              />
+                            </div>
+                            <span className="text-[10px] text-slate-500 block italic leading-tight bg-slate-50 p-2 rounded-lg border border-slate-100">
+                              {getInscriptionLinkText(newTp.businessStartDate)}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Button or input for Last Payment Month */}
+                        {!showLastPaymentInput && !newTp.lastPaymentMonth ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowLastPaymentInput(true)}
+                            className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-300 rounded-xl text-slate-600 hover:border-indigo-500 hover:text-indigo-600 transition-all font-semibold text-sm bg-white hover:shadow-sm active:scale-95"
+                          >
+                            <span className="text-lg font-black">+</span> Agregar Mes del Último Pago
+                          </button>
+                        ) : (
+                          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm transition-all hover:border-indigo-200">
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="text-xs font-bold text-slate-700">Mes del Último Pago</label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowLastPaymentInput(false);
+                                  setNewTp({ ...newTp, lastPaymentMonth: '' });
+                                }}
+                                className="text-xs text-red-500 hover:text-red-700 font-bold transition-colors"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                            <input
+                              type="month"
+                              className="w-full p-2 mb-2 border border-slate-300 rounded-lg font-semibold text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all bg-white text-sm"
+                              value={newTp.lastPaymentMonth || ''}
+                              onChange={(e) => setNewTp({ ...newTp, lastPaymentMonth: e.target.value })}
+                            />
+                            {newTp.lastPaymentMonth && (
+                              <div className="mt-2 flex flex-col gap-1.5">
+                                <span className="text-[10px] text-slate-500 block italic leading-tight">
+                                  {getNextUnpaidPeriodText(newTp.lastPaymentMonth)}
+                                </span>
+                                {newTp.balance === 0 ? (
+                                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-xs font-bold w-fit">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    PAZ Y SALVO (Deuda: B/. 0.00)
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-xs font-bold w-fit">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                    DEUDA: B/. {formatCurrency(newTp.balance || 0)}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </>
                 )}
                 {isEditing && (
@@ -1919,9 +2126,10 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                 <span className="text-slate-300 font-bold">B/.</span>
                                 <input 
                                   type="number" inputMode="decimal"
-                                  className="w-full p-2 border border-slate-100 rounded-lg text-right font-black text-slate-800 focus:border-red-500 outline-none transition-all"
-                                  value={newTp.yearlyAmount ?? ''}
+                                  className="w-full p-2 border border-slate-100 rounded-lg text-right font-black text-slate-800 focus:border-red-500 outline-none transition-all bg-white"
+                                  value={newTp.yearlyAmount || ''}
                                   onChange={(e) => setNewTp({ ...newTp, yearlyAmount: parseFloat(e.target.value) || 0 })}
+                                  placeholder="0.00"
                                 />
                               </div>
                               <p className="text-[9px] text-slate-400 mt-2 italic">Este monto se cobrará una vez al año según la fecha de inscripción.</p>

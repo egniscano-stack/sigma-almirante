@@ -36,6 +36,7 @@ export const mapTaxpayerFromDB = (data: any): Taxpayer => ({
     businessStartDate: data.business_start_date || data.documents?.businessStartDate,
     paymentStartDate: data.payment_start_date || data.documents?.paymentStartDate,
     yearlyAmount: Number(data.yearly_amount) || 0,
+    lastPaymentMonth: data.documents?.lastPaymentMonth || '',
     createdBy: data.created_by || data.documents?.createdBy,
     lastEditedBy: data.last_edited_by || data.documents?.lastEditedBy
 });
@@ -64,6 +65,7 @@ const mapTaxpayerToDB = (data: Taxpayer) => ({
       paymentStartDate: data.paymentStartDate || null,
       selectedRates: data.selectedRates || {},
       previousYearsDebt: data.previousYearsDebt || 0,
+      lastPaymentMonth: data.lastPaymentMonth || null,
       createdBy: data.createdBy || (data.documents as any)?.createdBy || null,
       lastEditedBy: data.lastEditedBy || (data.documents as any)?.lastEditedBy || null
     },

@@ -109,6 +109,7 @@ export interface Taxpayer {
   // Migration & Start Dates
   businessStartDate?: string; // Fecha de inicio de operaciones
   paymentStartDate?: string; // Fecha desde donde inician los pagos en el sistema
+  lastPaymentMonth?: string; // Mes y año del último pago registrado (e.g. YYYY-MM)
   createdBy?: string; // Usuario que creó el registro
   lastEditedBy?: string; // Último usuario que editó el registro
   previousYearsDebt?: number;
