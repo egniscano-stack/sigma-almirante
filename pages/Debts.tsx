@@ -277,8 +277,8 @@ export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
-                  {filteredHistory.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-slate-50">
+                  {filteredHistory.map((tx, idx) => (
+                    <tr key={`${tx.id}-${idx}`} className="hover:bg-slate-50">
                       <td className="px-6 py-4 text-slate-500">{tx.date}</td>
                       <td className="px-6 py-4 font-mono text-slate-600">{tx.id}</td>
                       <td className="px-6 py-4 font-bold text-slate-800">

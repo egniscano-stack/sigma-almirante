@@ -948,9 +948,9 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
             {showDropdown && searchTerm.length > 0 && (
               <div className="absolute top-full left-0 w-full mt-1 bg-white rounded-xl shadow-2xl border border-slate-200 max-h-80 overflow-y-auto z-50">
                 {filteredTaxpayers.length > 0 ? (
-                  filteredTaxpayers.map((tp) => (
+                  filteredTaxpayers.map((tp, idx) => (
                     <div
-                      key={tp.id}
+                      key={`coll-${tp.id}-${tp.taxpayerNumber || ''}-${idx}`}
                       onClick={() => handleSelectTaxpayer(tp)}
                       className="p-4 hover:bg-emerald-50 cursor-pointer transition-colors border-b border-slate-50 last:border-0"
                     >

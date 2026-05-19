@@ -708,9 +708,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                          {/* 1. Vehicles (Placas) */}
-                          {(isAdmin || isPlacaStation) && (viewTaxpayer.vehicles || []).map((v, idx) => (
-                            <tr key={`v-${idx}`} className="hover:bg-white/5 transition-colors group">
+                          {(isAdmin || isPlacaStation) ? (viewTaxpayer.vehicles || []).map((v, idx) => (
+                            <tr key={`v-${idx}-${v.plate || ''}`} className="hover:bg-white/5 transition-colors group">
                               <td className="px-6 py-4">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300 bg-indigo-500/20 px-2 py-1 rounded">
                                   PLACA
@@ -734,9 +733,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                 <div className="text-[9px] text-indigo-300/50 font-black uppercase">Anual</div>
                               </td>
                             </tr>
-                          ))}
+                          )) : null}
 
-                          {/* 1.1 Placa Taxpayer Custom Rows (Yearly Amount & Last Payment) */}
                           {viewTaxpayer.type === TaxpayerType.PLACA && viewTaxpayer.yearlyAmount ? (
                             <tr className="hover:bg-white/5 transition-colors group border-b border-white/5">
                               <td className="px-6 py-4">
@@ -789,8 +787,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                             </tr>
                           ) : null}
 
-                          {/* 2. Commercial Activities */}
-                          {(isAdmin || isNormalCaja) && (viewTaxpayer.selectedTaxCodes || []).map(code => {
+                          {(isAdmin || isNormalCaja) ? (viewTaxpayer.selectedTaxCodes || []).map((code, idx) => {
                             const struct = (taxStructure as any[]).find(s => s.code === code);
                             const rate = viewTaxpayer.selectedRates?.[code];
                             let finalRate = rate;
@@ -799,7 +796,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                finalRate = typeof magnitudeRates === 'number' ? magnitudeRates : magnitudeRates[0];
                             }
                             return (
-                              <tr key={code} className="hover:bg-white/5 transition-colors group">
+                              <tr key={`code-${code}-${idx}`} className="hover:bg-white/5 transition-colors group">
                                 <td className="px-6 py-4">
                                   <span className="text-[10px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/20 px-2 py-1 rounded">
                                     {code}
@@ -817,10 +814,9 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                 </td>
                               </tr>
                             );
-                          })}
+                          }) : null}
 
-                          {/* 3. Signage (Rótulos) */}
-                          {(isAdmin || isNormalCaja) && (viewTaxpayer.rotuloAmount || 0) > 0 && (
+                          {(isAdmin || isNormalCaja) && (viewTaxpayer.rotuloAmount || 0) > 0 ? (
                             <tr className="hover:bg-white/5 transition-colors group">
                               <td className="px-6 py-4">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-red-300 bg-red-500/20 px-2 py-1 rounded">
@@ -837,10 +833,9 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                 <div className="text-[9px] text-red-300/50 font-black uppercase">Mensual</div>
                               </td>
                             </tr>
-                          )}
+                          ) : null}
 
-                          {/* 4. Garbage (Aseo) */}
-                          {(isAdmin || isNormalCaja) && (viewTaxpayer.garbageAmount || 0) > 0 && (
+                          {(isAdmin || isNormalCaja) && (viewTaxpayer.garbageAmount || 0) > 0 ? (
                             <tr className="hover:bg-white/5 transition-colors group">
                               <td className="px-6 py-4">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/20 px-2 py-1 rounded">
@@ -857,9 +852,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                 <div className="text-[9px] text-emerald-300/50 font-black uppercase">Mensual</div>
                               </td>
                             </tr>
-                          )}
+                          ) : null}
 
-                          {/* 5. Total Row */}
                           <tr className="bg-white/10 border-t border-white/20">
                             <td className="px-6 py-5 text-indigo-300">
                                 <span className="text-[10px] font-black uppercase tracking-widest bg-indigo-500/30 px-2 py-1 rounded">
@@ -1476,9 +1470,9 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
               <div className="max-h-[60vh] overflow-y-auto bg-slate-50/50">
                 {searchResults.length > 0 ? (
                   <div className="grid grid-cols-1 divide-y divide-slate-200/60">
-                    {searchResults.map(tp => (
+                    {searchResults.map((tp, idx) => (
                       <div
-                        key={tp.id}
+                        key={`search-${tp.id}-${tp.taxpayerNumber || ''}-${idx}`}
                         onClick={() => {
                           setHistoryTaxpayer(tp);
                           setSearchTerm('');
@@ -2523,8 +2517,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {taxpayers.length > 0 ? (
-                  taxpayers.slice(0, 100).sort((a,b) => (a.name||'').localeCompare(b.name||'')).map(tp => (
-                    <tr key={tp.id} className="hover:bg-slate-50 transition-colors group">
+                  taxpayers.slice(0, 100).sort((a,b) => (a.name||'').localeCompare(b.name||'')).map((tp, idx) => (
+                    <tr key={`tp-${tp.id}-${tp.taxpayerNumber || ''}-${idx}`} className="hover:bg-slate-50 transition-colors group">
                       <td className="px-8 py-5">
                         <div className="font-black text-slate-800 uppercase tracking-tight group-hover:text-indigo-600 transition-colors">{tp.name}</div>
                         <div className="text-[10px] font-bold text-slate-400 mt-0.5">{tp.taxpayerNumber}</div>

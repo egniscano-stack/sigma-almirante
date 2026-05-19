@@ -345,8 +345,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, taxpayers, c
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 text-sm">
-              {filteredTransactions.slice(0, 10).map((tx) => (
-                <tr key={tx.id} className="group hover:bg-slate-50/80 transition-colors">
+              {filteredTransactions.slice(0, 10).map((tx, idx) => (
+                <tr key={`${tx.id}-${idx}`} className="group hover:bg-slate-50/80 transition-colors">
                   <td className="px-8 py-6 font-mono text-xs text-slate-400">#{tx.id.slice(-8).toUpperCase()}</td>
                   <td className="px-8 py-6">
                     <div className="flex flex-col">
