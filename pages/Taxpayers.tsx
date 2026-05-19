@@ -638,7 +638,9 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                       <div className="grid grid-cols-2 gap-6">
                         <div>
                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Identificación</p>
-                          <p className="text-base font-mono font-bold text-indigo-600">{viewTaxpayer.docId} {viewTaxpayer.dv ? `DV-${viewTaxpayer.dv}` : ''}</p>
+                          <p className="text-base font-mono font-bold text-indigo-600">
+                            {`${viewTaxpayer.docId} ${viewTaxpayer.dv ? `DV-${viewTaxpayer.dv}` : ''}`}
+                          </p>
                         </div>
                         <div>
                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">N° Contribuyente</p>
@@ -649,7 +651,9 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                          <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${getStatusColor(viewTaxpayer.status)}`}>
                            {viewTaxpayer.status}
                          </span>
-                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Desde: {viewTaxpayer.businessStartDate || viewTaxpayer.createdAt}</span>
+                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                           {`Desde: ${viewTaxpayer.businessStartDate || viewTaxpayer.createdAt}`}
+                         </span>
                       </div>
                       
                       {/* Audit Trail */}
@@ -717,19 +721,16 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                               </td>
                               <td className="px-6 py-4">
                                 <p className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors uppercase">
-                                  Impuesto Circulación {v.plate}
+                                  {`Impuesto Circulación ${v.plate}`}
                                 </p>
                                 <p className="text-[10px] text-slate-400">
-                                  {v.brand || v.model || 'Marca no especificada'}{v.year ? ` (${v.year})` : ''}
-                                  {v.vehicleType ? ` | Tipo: ${v.vehicleType}` : ''}
-                                  {v.plateType ? ` | Placa: ${v.plateType}` : ''}
-                                  {v.color ? ` | Color: ${v.color}` : ''}
-                                  {v.motorSerial ? ` | Motor: ${v.motorSerial}` : ''}
-                                  {v.chassisSerial ? ` | Chasis (VIN): ${v.chassisSerial}` : ''}
+                                  <span>
+                                    {`${v.brand || v.model || 'Marca no especificada'}${v.year ? ` (${v.year})` : ''}${v.vehicleType ? ` | Tipo: ${v.vehicleType}` : ''}${v.plateType ? ` | Placa: ${v.plateType}` : ''}${v.color ? ` | Color: ${v.color}` : ''}${v.motorSerial ? ` | Motor: ${v.motorSerial}` : ''}${v.chassisSerial ? ` | Chasis (VIN): ${v.chassisSerial}` : ''}`}
+                                  </span>
                                 </p>
                               </td>
                               <td className="px-6 py-4 text-right">
-                                <div className="text-base font-black text-indigo-400 tabular-nums">B/. {formatCurrency((v as any).yearlyAmount || (v as any).yearly_amount || 0)}</div>
+                                <div className="text-base font-black text-indigo-400 tabular-nums">{`B/. ${formatCurrency((v as any).yearlyAmount || (v as any).yearly_amount || 0)}`}</div>
                                 <div className="text-[9px] text-indigo-300/50 font-black uppercase">Anual</div>
                               </td>
                             </tr>
@@ -747,13 +748,15 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                   Impuesto de Placa Configurado
                                 </p>
                                 <p className="text-[10px] text-slate-400">
-                                  {viewTaxpayer.businessStartDate 
-                                    ? `Vinculado al mes de ${new Date(viewTaxpayer.businessStartDate + 'T00:00:00').toLocaleString('es-ES', { month: 'long' }).toUpperCase()} de inscripción` 
-                                    : 'Impuesto Anual de Circulación'}
+                                  <span>
+                                    {viewTaxpayer.businessStartDate 
+                                      ? `Vinculado al mes de ${new Date(viewTaxpayer.businessStartDate + 'T00:00:00').toLocaleString('es-ES', { month: 'long' }).toUpperCase()} de inscripción` 
+                                      : 'Impuesto Anual de Circulación'}
+                                  </span>
                                 </p>
                               </td>
                               <td className="px-6 py-4 text-right">
-                                <div className="text-base font-black text-amber-400 tabular-nums">B/. {formatCurrency(viewTaxpayer.yearlyAmount || 0)}</div>
+                                <div className="text-base font-black text-amber-400 tabular-nums">{`B/. ${formatCurrency(viewTaxpayer.yearlyAmount || 0)}`}</div>
                                 <div className="text-[9px] text-amber-300/50 font-black uppercase">Anual</div>
                               </td>
                             </tr>
@@ -771,16 +774,20 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                   Mes del Último Pago Registrado
                                 </p>
                                 <p className="text-[10px] text-slate-400">
-                                  {(() => {
-                                    const [year, month] = viewTaxpayer.lastPaymentMonth.split('-').map(Number);
-                                    const d = new Date(year, month - 1, 1);
-                                    return `Registrado hasta ${d.toLocaleString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase()}`;
-                                  })()}
+                                  <span>
+                                    {(() => {
+                                      const [year, month] = viewTaxpayer.lastPaymentMonth.split('-').map(Number);
+                                      const d = new Date(year, month - 1, 1);
+                                      return `Registrado hasta ${d.toLocaleString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase()}`;
+                                    })()}
+                                  </span>
                                 </p>
                               </td>
                               <td className="px-6 py-4 text-right">
                                 <div className="text-sm font-black text-emerald-400 uppercase">
-                                  {viewTaxpayer.balance === 0 ? 'Paz y Salvo' : `Deuda: B/. ${formatCurrency(viewTaxpayer.balance)}`}
+                                  <span>
+                                    {viewTaxpayer.balance === 0 ? 'Paz y Salvo' : `Deuda: B/. ${formatCurrency(viewTaxpayer.balance)}`}
+                                  </span>
                                 </div>
                                 <div className="text-[9px] text-emerald-300/50 font-black uppercase">Historial</div>
                               </td>
@@ -809,7 +816,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                   <p className="text-[10px] text-slate-400">Negocio / Establecimiento</p>
                                 </td>
                                 <td className="px-6 py-4 text-right">
-                                  <div className="text-base font-black text-emerald-400 tabular-nums">B/. {formatCurrency(finalRate || 0)}</div>
+                                  <div className="text-base font-black text-emerald-400 tabular-nums">{`B/. ${formatCurrency(finalRate || 0)}`}</div>
                                   <div className="text-[9px] text-emerald-300/50 font-black uppercase">Mensual</div>
                                 </td>
                               </tr>
@@ -829,7 +836,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                 </p>
                               </td>
                               <td className="px-6 py-4 text-right">
-                                <div className="text-base font-black text-red-400 tabular-nums">B/. {formatCurrency(viewTaxpayer.rotuloAmount!)}</div>
+                                <div className="text-base font-black text-red-400 tabular-nums">{`B/. ${formatCurrency(viewTaxpayer.rotuloAmount!)}`}</div>
                                 <div className="text-[9px] text-red-300/50 font-black uppercase">Mensual</div>
                               </td>
                             </tr>
@@ -848,7 +855,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                 </p>
                               </td>
                               <td className="px-6 py-4 text-right">
-                                <div className="text-base font-black text-emerald-400 tabular-nums">B/. {formatCurrency(viewTaxpayer.garbageAmount!)}</div>
+                                <div className="text-base font-black text-emerald-400 tabular-nums">{`B/. ${formatCurrency(viewTaxpayer.garbageAmount!)}`}</div>
                                 <div className="text-[9px] text-emerald-300/50 font-black uppercase">Mensual</div>
                               </td>
                             </tr>
@@ -857,18 +864,15 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                           <tr className="bg-white/10 border-t border-white/20">
                             <td className="px-6 py-5 text-indigo-300">
                                 <span className="text-[10px] font-black uppercase tracking-widest bg-indigo-500/30 px-2 py-1 rounded">
-                                  TOTAL ACTIVOS: {
-                                     (isAdmin || isPlacaStation ? (viewTaxpayer.vehicles?.length || 0) : 0) + 
-                                     (isAdmin || isNormalCaja ? (viewTaxpayer.selectedTaxCodes?.length || 0) + ((viewTaxpayer.garbageAmount || 0) > 0 ? 1 : 0) : 0)
-                                  }
+                                  {`TOTAL ACTIVOS: ${(isAdmin || isPlacaStation ? (viewTaxpayer.vehicles?.length || 0) : 0) + (isAdmin || isNormalCaja ? (viewTaxpayer.selectedTaxCodes?.length || 0) + ((viewTaxpayer.garbageAmount || 0) > 0 ? 1 : 0) : 0)}`}
                                 </span>
                             </td>
                             <td className="px-6 py-5 text-right text-[10px] font-black text-indigo-300 uppercase tracking-widest">
-                                Resumen de Carga {isPlacaStation ? 'Anual' : 'Mensual'}
+                                {`Resumen de Carga ${isPlacaStation ? 'Anual' : 'Mensual'}`}
                             </td>
                             <td className="px-6 py-5 text-right">
                               <span className="text-xl font-black text-white tabular-nums drop-shadow-[0_0_15px_rgba(99,102,241,0.5)]">
-                                B/. {formatCurrency(
+                                {`B/. ${formatCurrency(
                                   (isAdmin || isPlacaStation ? (viewTaxpayer.yearlyAmount || 0) : 0) + 
                                   (isAdmin || isNormalCaja ? (
                                      ((viewTaxpayer.selectedTaxCodes || []).reduce((acc, code) => {
@@ -880,7 +884,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                          return acc + (typeof magnitudeRates === 'number' ? magnitudeRates : (magnitudeRates[0] || 0));
                                        }, 0)) + (viewTaxpayer.rotuloAmount || 0) + (viewTaxpayer.garbageAmount || 0)
                                   ) : 0)
-                                )}
+                                )}`}
                               </span>
                             </td>
                           </tr>
