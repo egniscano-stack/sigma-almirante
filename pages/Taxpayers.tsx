@@ -737,61 +737,57 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                           ))}
 
                           {/* 1.1 Placa Taxpayer Custom Rows (Yearly Amount & Last Payment) */}
-                          {viewTaxpayer.type === TaxpayerType.PLACA && (
-                            <>
-                              {viewTaxpayer.yearlyAmount ? (
-                                <tr className="hover:bg-white/5 transition-colors group border-b border-white/5">
-                                  <td className="px-6 py-4">
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-300 bg-amber-500/20 px-2 py-1 rounded">
-                                      TARIFA ANUAL
-                                    </span>
-                                  </td>
-                                  <td className="px-6 py-4">
-                                    <p className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors uppercase">
-                                      Impuesto de Placa Configurado
-                                    </p>
-                                    <p className="text-[10px] text-slate-400">
-                                      {viewTaxpayer.businessStartDate 
-                                        ? `Vinculado al mes de ${new Date(viewTaxpayer.businessStartDate + 'T00:00:00').toLocaleString('es-ES', { month: 'long' }).toUpperCase()} de inscripción` 
-                                        : 'Impuesto Anual de Circulación'}
-                                    </p>
-                                  </td>
-                                  <td className="px-6 py-4 text-right">
-                                    <div className="text-base font-black text-amber-400 tabular-nums">B/. {formatCurrency(viewTaxpayer.yearlyAmount || 0)}</div>
-                                    <div className="text-[9px] text-amber-300/50 font-black uppercase">Anual</div>
-                                  </td>
-                                </tr>
-                              ) : null}
+                          {viewTaxpayer.type === TaxpayerType.PLACA && viewTaxpayer.yearlyAmount ? (
+                            <tr className="hover:bg-white/5 transition-colors group border-b border-white/5">
+                              <td className="px-6 py-4">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-amber-300 bg-amber-500/20 px-2 py-1 rounded">
+                                  TARIFA ANUAL
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <p className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors uppercase">
+                                  Impuesto de Placa Configurado
+                                </p>
+                                <p className="text-[10px] text-slate-400">
+                                  {viewTaxpayer.businessStartDate 
+                                    ? `Vinculado al mes de ${new Date(viewTaxpayer.businessStartDate + 'T00:00:00').toLocaleString('es-ES', { month: 'long' }).toUpperCase()} de inscripción` 
+                                    : 'Impuesto Anual de Circulación'}
+                                </p>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="text-base font-black text-amber-400 tabular-nums">B/. {formatCurrency(viewTaxpayer.yearlyAmount || 0)}</div>
+                                <div className="text-[9px] text-amber-300/50 font-black uppercase">Anual</div>
+                              </td>
+                            </tr>
+                          ) : null}
 
-                              {viewTaxpayer.lastPaymentMonth ? (
-                                <tr className="hover:bg-white/5 transition-colors group border-b border-white/5">
-                                  <td className="px-6 py-4">
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/20 px-2 py-1 rounded">
-                                      ÚLTIMO PAGO
-                                    </span>
-                                  </td>
-                                  <td className="px-6 py-4">
-                                    <p className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors uppercase">
-                                      Mes del Último Pago Registrado
-                                    </p>
-                                    <p className="text-[10px] text-slate-400">
-                                      {(() => {
-                                        const [year, month] = viewTaxpayer.lastPaymentMonth.split('-').map(Number);
-                                        const d = new Date(year, month - 1, 1);
-                                        return `Registrado hasta ${d.toLocaleString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase()}`;
-                                      })()}
-                                    </p>
-                                  </td>
-                                  <td className="px-6 py-4 text-right">
-                                    <div className="text-sm font-black text-emerald-400 uppercase">
-                                      {viewTaxpayer.balance === 0 ? 'Paz y Salvo' : `Deuda: B/. ${formatCurrency(viewTaxpayer.balance)}`}
-                                    </div>
-                                    <div className="text-[9px] text-emerald-300/50 font-black uppercase">Historial</div>
-                                  </td>
-                                </tr>
-                              ) : null}
-                            </>
-                          )}
+                          {viewTaxpayer.type === TaxpayerType.PLACA && viewTaxpayer.lastPaymentMonth ? (
+                            <tr className="hover:bg-white/5 transition-colors group border-b border-white/5">
+                              <td className="px-6 py-4">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/20 px-2 py-1 rounded">
+                                  ÚLTIMO PAGO
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <p className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors uppercase">
+                                  Mes del Último Pago Registrado
+                                </p>
+                                <p className="text-[10px] text-slate-400">
+                                  {(() => {
+                                    const [year, month] = viewTaxpayer.lastPaymentMonth.split('-').map(Number);
+                                    const d = new Date(year, month - 1, 1);
+                                    return `Registrado hasta ${d.toLocaleString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase()}`;
+                                  })()}
+                                </p>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="text-sm font-black text-emerald-400 uppercase">
+                                  {viewTaxpayer.balance === 0 ? 'Paz y Salvo' : `Deuda: B/. ${formatCurrency(viewTaxpayer.balance)}`}
+                                </div>
+                                <div className="text-[9px] text-emerald-300/50 font-black uppercase">Historial</div>
+                              </td>
+                            </tr>
+                          ) : null}
 
                           {/* 2. Commercial Activities */}
                           {(isAdmin || isNormalCaja) && (viewTaxpayer.selectedTaxCodes || []).map(code => {
