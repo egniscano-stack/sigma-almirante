@@ -24,6 +24,17 @@ const formatCurrency = (amount: number) => {
   }).format(amount || 0);
 };
 
+const renderRateInfo = (rate: any): string => {
+  if (Array.isArray(rate)) {
+    return rate.map(r => `B/. ${formatCurrency(r)}`).join(', ');
+  } else if (typeof rate === 'number') {
+    return rate > 0 ? `B/. ${formatCurrency(rate)}` : 'N/A';
+  } else if (typeof rate === 'string') {
+    return rate;
+  }
+  return 'N/A';
+};
+
 interface TaxpayersProps {
   taxpayers: Taxpayer[];
   transactions: Transaction[]; // Receive transactions to filter history
@@ -210,47 +221,16 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
 
   // Recalculate balance when magnitude, selected codes, or dates change
   React.useEffect(() => {
-    const newSelectedRates = { ...(newTp.selectedRates || {}) };
-    let changed = false;
-    let monthlyTotal = 0;
-
-    (newTp.selectedTaxCodes || []).forEach(code => {
-      const struct = (taxStructure as any[]).find(s => s.code === code);
-      if (struct) {
-        const magnitudeRates = newTp.magnitude === 'GRANDE' ? struct.rates.GRANDE :
-                             newTp.magnitude === 'MEDIANO' ? struct.rates.MEDIANO : struct.rates.PEQUENO;
-        
-        if (Array.isArray(magnitudeRates)) {
-          if (newSelectedRates[code] === undefined || !magnitudeRates.includes(newSelectedRates[code])) {
-            newSelectedRates[code] = magnitudeRates[0];
-            changed = true;
-          }
-          monthlyTotal += newSelectedRates[code];
-        } else if (typeof magnitudeRates === 'number') {
-          if (newSelectedRates[code] !== magnitudeRates) {
-            newSelectedRates[code] = magnitudeRates;
-            changed = true;
-          }
-          monthlyTotal += magnitudeRates;
-        }
-      }
-    });
-
-    // Add manual adjustments (monthly)
-    monthlyTotal += (newTp.rotuloAmount || 0);
-    monthlyTotal += (newTp.garbageAmount || 0);
-
     // Calculate arrears using unified logic
     const { total } = calculateTaxpayerDebt(newTp as Taxpayer, transactions, config);
 
-    if (changed || total !== newTp.balance) {
+    if (total !== newTp.balance) {
       setNewTp(prev => ({
         ...prev,
-        selectedRates: newSelectedRates,
         balance: total
       }));
     }
-  }, [newTp.magnitude, newTp.selectedTaxCodes, newTp.rotuloAmount, newTp.garbageAmount, newTp.businessStartDate, newTp.paymentStartDate, newTp.yearlyAmount, newTp.lastPaymentMonth, isEditing, transactions, config]);
+  }, [newTp.selectedTaxCodes, newTp.selectedRates, newTp.rotuloAmount, newTp.garbageAmount, newTp.businessStartDate, newTp.paymentStartDate, newTp.yearlyAmount, newTp.lastPaymentMonth, isEditing, transactions, config]);
 
   const handleCancelEdit = () => {
     setNewTp(getInitialFormState());
@@ -1044,33 +1024,18 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                         <button
                           key={m}
                           onClick={async () => {
-                            const updated = { ...viewTaxpayer, magnitude: m };
+                            const session = getSession();
+                            const currentUserIdent = session ? `${session.name} (${session.username})` : 'Usuario Desconocido';
                             
-                            // Recalculate balance
-                             const newSelectedRates = { ...(updated.selectedRates || {}) };
-                             
-                             let total = 0;
-                             (updated.selectedTaxCodes || []).forEach(code => {
-                               const struct = (taxStructure as any[]).find(s => s.code === code);
-                               if (struct) {
-                                 const magnitudeRates = m === 'GRANDE' ? struct.rates.GRANDE :
-                                                      m === 'MEDIANO' ? struct.rates.MEDIANO : struct.rates.PEQUENO;
-                                 
-                                 if (Array.isArray(magnitudeRates)) {
-                                   if (newSelectedRates[code] === undefined || !magnitudeRates.includes(newSelectedRates[code])) {
-                                     newSelectedRates[code] = magnitudeRates[0];
-                                   }
-                                   if (typeof newSelectedRates[code] === 'number') {
-                                     total += newSelectedRates[code];
-                                   }
-                                 } else if (typeof magnitudeRates === 'number') {
-                                   newSelectedRates[code] = magnitudeRates;
-                                   total += magnitudeRates;
-                                 }
-                               }
-                             });
-                             updated.selectedRates = newSelectedRates;
-                             updated.balance = total + (updated.rotuloAmount || 0) + (updated.garbageAmount || 0);
+                            const updated = { 
+                              ...viewTaxpayer, 
+                              magnitude: m,
+                              lastEditedBy: currentUserIdent
+                            };
+                            
+                            // Recalculate balance using unified debt logic
+                            const { total: newBalance } = calculateTaxpayerDebt(updated as Taxpayer, transactions, config);
+                            updated.balance = newBalance;
                             
                             await onUpdate(updated);
                             setViewTaxpayer(updated);
@@ -1086,259 +1051,211 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                    <div className="lg:col-span-2">
-                      <div className="relative mb-6">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <input
-                          type="text"
-                          placeholder="Buscar actividad por nombre o código..."
-                          className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-[1.5rem] shadow-sm focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black"
-                          value={taxSearchTerm}
-                          onChange={(e) => setTaxSearchTerm(e.target.value)}
-                        />
-                      </div>
+                  {(() => {
+                    const monthlyProjection = (() => {
+                      let sum = 0;
+                      (viewTaxpayer.selectedTaxCodes || []).forEach(code => {
+                        const rate = viewTaxpayer.selectedRates?.[code] ?? 0;
+                        sum += rate;
+                      });
+                      return sum + (viewTaxpayer.rotuloAmount || 0) + (viewTaxpayer.garbageAmount || 0);
+                    })();
 
-                      <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
-                        <table className="w-full text-left">
-                          <thead className="bg-slate-50 border-b border-slate-100">
-                            <tr>
-                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Código</th>
-                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Actividad</th>
-                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Cuota ({viewTaxpayer.magnitude})</th>
-                              <th className="px-6 py-4 text-right"></th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-50">
-                              {taxStructure
-                                .filter(item =>
-                                  (item.code || '').toLowerCase().includes(taxSearchTerm.toLowerCase()) ||
-                                  (item.activity || '').toLowerCase().includes(taxSearchTerm.toLowerCase())
-                                )
-                                .map((item) => {
-                                  const isSelected = viewTaxpayer.selectedTaxCodes?.includes(item.code);
+                    return (
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                        <div className="lg:col-span-2">
+                          <div className="relative mb-6">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                            <input
+                              type="text"
+                              placeholder="Buscar actividad por nombre o código..."
+                              className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-[1.5rem] shadow-sm focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-black"
+                              value={taxSearchTerm}
+                              onChange={(e) => setTaxSearchTerm(e.target.value)}
+                            />
+                          </div>
 
-                                  return (
-                                    <tr key={item.code} className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-indigo-50/30' : ''}`}>
-                                      <td className="px-6 py-4 font-mono font-black text-indigo-600 text-sm">{item.code}</td>
-                                      <td className="px-6 py-4">
-                                        <span className="block font-bold text-slate-700 text-sm">{item.activity}</span>
-                                        {isSelected && <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">&bull; Seleccionado</span>}
-                                      </td>
-                                    <td className="px-6 py-4 text-right font-black text-slate-900">
-                                      {(() => {
-                                        const magnitudeRates = viewTaxpayer.magnitude === 'GRANDE' ? item.rates.GRANDE :
-                                                             viewTaxpayer.magnitude === 'MEDIANO' ? item.rates.MEDIANO : item.rates.PEQUENO;
-                                        
-                                        if (Array.isArray(magnitudeRates)) {
-                                          const currentRate = viewTaxpayer.selectedRates?.[item.code] || magnitudeRates[0];
-                                          return (
-                                            <div className="flex flex-col items-end gap-1">
-                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Multi-regimen</span>
-                                              {isSelected ? (
-                                                <select 
-                                                  className="text-xs p-1 border rounded bg-white text-black font-bold"
-                                                  value={currentRate}
-                                                  onChange={async (e) => {
-                                                    const val = parseFloat(e.target.value);
-                                                    const updated = {
-                                                      ...viewTaxpayer,
-                                                      selectedRates: {
-                                                        ...(viewTaxpayer.selectedRates || {}),
-                                                        [item.code]: val
-                                                      }
-                                                    };
-                                                    
-                                                    // Recalculate balance
-                                                    let newTotal = 0;
-                                                    (updated.selectedTaxCodes || []).forEach(c => {
-                                                      const s = (taxStructure as any[]).find(st => st.code === c);
-                                                      if (s) {
-                                                        const mRates = updated.magnitude === 'GRANDE' ? s.rates.GRANDE :
-                                                                       updated.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
-                                                        if (Array.isArray(mRates)) {
-                                                          const rate = updated.selectedRates?.[c] || mRates[0];
-                                                          if (typeof rate === 'number') newTotal += rate;
-                                                        } else if (typeof mRates === 'number') {
-                                                          newTotal += mRates;
-                                                        }
-                                                      }
-                                                    });
-                                                    updated.balance = newTotal + (updated.rotuloAmount || 0) + (updated.garbageAmount || 0);
-                                                    
-                                                    await onUpdate(updated);
-                                                    setViewTaxpayer(updated);
-                                                  }}
-                                                >
-                                                  {magnitudeRates.map((r: number, i: number) => (
-                                                    <option key={i} value={r}>Opción {i+1}: B/. {formatCurrency(r)}</option>
-                                                  ))}
-                                                </select>
-                                              ) : (
-                                                <span className="text-sm">B/. {formatCurrency(magnitudeRates[0])}+</span>
-                                              )}
+                          <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                            <table className="w-full text-left text-xs">
+                              <thead className="sticky top-0 bg-slate-50 border-b border-slate-100 text-slate-900 font-black uppercase tracking-widest text-[9px]">
+                                <tr>
+                                  <th className="p-3 pl-5">Código</th>
+                                  <th className="p-3">Actividad Económica y Tarifas Sugeridas</th>
+                                  <th className="p-3 pr-5 text-right">Monto Evaluado (B/.)</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {taxStructure
+                                  .filter(item =>
+                                    (item.code || '').toLowerCase().includes(taxSearchTerm.toLowerCase()) ||
+                                    (item.activity || '').toLowerCase().includes(taxSearchTerm.toLowerCase())
+                                  )
+                                  .map((item) => {
+                                    const isSelected = viewTaxpayer.selectedTaxCodes?.includes(item.code);
+                                    const currentManualValue = viewTaxpayer.selectedRates?.[item.code] ?? '';
+
+                                    return (
+                                      <tr key={item.code} className={`transition-colors ${isSelected ? 'bg-indigo-50/50' : 'hover:bg-slate-50'}`}>
+                                        <td className="p-3 pl-5 font-mono font-bold text-indigo-600 align-top pt-4">{item.code}</td>
+                                        <td className="p-3 font-medium text-slate-700">
+                                          <div className="font-bold text-xs uppercase tracking-tight text-slate-800">{item.activity}</div>
+                                          
+                                          {/* Grid de magnitudes y tarifas sugeridas */}
+                                          <div className="grid grid-cols-3 gap-2 mt-2 max-w-md">
+                                            <div className="bg-slate-50 border border-slate-100 rounded-lg p-2 text-[9px]">
+                                              <span className="block text-slate-400 font-bold uppercase text-[8px]">Pequeño</span>
+                                              <span className="font-extrabold text-slate-700">{renderRateInfo(item.rates.PEQUENO)}</span>
                                             </div>
-                                          );
-                                        } else if (typeof magnitudeRates === 'number') {
-                                          return `B/. ${formatCurrency(magnitudeRates)}`;
-                                        } else {
-                                          return magnitudeRates;
-                                        }
-                                      })()}
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                      <button
-                                        onClick={async () => {
-                                          const current = viewTaxpayer.selectedTaxCodes || [];
-                                          const updatedCodes = isSelected
-                                            ? current.filter(c => c !== item.code)
-                                            : [...current, item.code];
-                                          
-                                          const updated = { ...viewTaxpayer, selectedTaxCodes: updatedCodes };
-                                          
-                                          let total = 0;
-                                          const newSelectedRates = { ...(updated.selectedRates || {}) };
-
-                                          updatedCodes.forEach(code => {
-                                            const struct = (taxStructure as any[]).find(s => s.code === code);
-                                            if (struct) {
-                                              const magnitudeRates = updated.magnitude === 'GRANDE' ? struct.rates.GRANDE :
-                                                                   updated.magnitude === 'MEDIANO' ? struct.rates.MEDIANO : struct.rates.PEQUENO;
-                                              
-                                              if (Array.isArray(magnitudeRates)) {
-                                                if (newSelectedRates[code] === undefined || !magnitudeRates.includes(newSelectedRates[code])) {
-                                                  newSelectedRates[code] = magnitudeRates[0];
+                                            <div className="bg-slate-50 border border-slate-100 rounded-lg p-2 text-[9px]">
+                                              <span className="block text-slate-400 font-bold uppercase text-[8px]">Mediano</span>
+                                              <span className="font-extrabold text-slate-700">{renderRateInfo(item.rates.MEDIANO)}</span>
+                                            </div>
+                                            <div className="bg-slate-50 border border-slate-100 rounded-lg p-2 text-[9px]">
+                                              <span className="block text-slate-400 font-bold uppercase text-[8px]">Grande</span>
+                                              <span className="font-extrabold text-slate-700">{renderRateInfo(item.rates.GRANDE)}</span>
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td className="p-3 pr-5 text-right align-top pt-4">
+                                          <div className="flex items-center gap-1 justify-end">
+                                            <span className="text-slate-400 font-black text-xs">B/.</span>
+                                            <input
+                                              type="number"
+                                              step="0.01"
+                                              min="0"
+                                              className="w-24 p-2 border border-slate-200 rounded-lg text-right font-black text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all bg-white text-slate-900 shadow-sm"
+                                              placeholder="0.00"
+                                              value={currentManualValue}
+                                              onChange={async (e) => {
+                                                const valStr = e.target.value;
+                                                const val = valStr === '' ? 0 : parseFloat(valStr) || 0;
+                                                const currentCodes = viewTaxpayer.selectedTaxCodes || [];
+                                                
+                                                let updatedCodes = [...currentCodes];
+                                                const currentRates = { ...(viewTaxpayer.selectedRates || {}) };
+                                                
+                                                if (val > 0) {
+                                                  if (!updatedCodes.includes(item.code)) {
+                                                    updatedCodes.push(item.code);
+                                                  }
+                                                  currentRates[item.code] = val;
+                                                } else {
+                                                  updatedCodes = updatedCodes.filter(c => c !== item.code);
+                                                  delete currentRates[item.code];
                                                 }
-                                                total += newSelectedRates[code];
-                                              } else if (typeof magnitudeRates === 'number') {
-                                                newSelectedRates[code] = magnitudeRates;
-                                                total += magnitudeRates;
-                                              }
-                                            }
-                                          });
-                                          updated.selectedRates = newSelectedRates;
-                                          updated.balance = total + (updated.rotuloAmount || 0) + (updated.garbageAmount || 0);
-                                          
-                                          await onUpdate(updated);
-                                          setViewTaxpayer(updated);
-                                        }}
-                                        className={`p-2 rounded-xl transition-all ${isSelected ? 'bg-red-500 text-white shadow-lg rotate-0' : 'bg-slate-100 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600'}`}
-                                      >
-                                        <CheckSquare size={18} />
-                                      </button>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    <div className="space-y-6">
-                      <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 rounded-full blur-[40px] -mr-16 -mt-16"></div>
-                        <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-6">Resumen Mensual Estimado</h4>
-                        
-                        <div className="space-y-4 mb-8">
-                          <div className="flex justify-between items-center text-sm border-b border-white/5 pb-3">
-                            <span className="text-slate-400">Actividades Seleccionadas</span>
-                            <span className="font-black">{viewTaxpayer.selectedTaxCodes?.length || 0}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-sm border-b border-white/5 pb-3">
-                            <span className="text-slate-400">Impuesto Rótulo</span>
-                            <input 
-                              type="number" 
-                              inputMode="decimal"
-                              className="w-20 bg-transparent border-b border-indigo-500/30 text-right font-black text-indigo-400 focus:border-indigo-400 outline-none" 
-                              value={viewTaxpayer.rotuloAmount ?? ''}
-                              onChange={async (e) => {
-                                const val = parseFloat(e.target.value) || 0;
-                                const session = getSession();
-                                const currentUserIdent = session ? `${session.name} (${session.username})` : 'Usuario Desconocido';
-                                const updated = { ...viewTaxpayer, rotuloAmount: val, lastEditedBy: currentUserIdent };
-                                
-                                // Recalculate balance
-                                let newTotal = 0;
-                                (updated.selectedTaxCodes || []).forEach(c => {
-                                  const s = (taxStructure as any[]).find(st => st.code === c);
-                                  if (s) {
-                                    const mRates = updated.magnitude === 'GRANDE' ? s.rates.GRANDE :
-                                                   updated.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
-                                    if (Array.isArray(mRates)) {
-                                      const rate = updated.selectedRates?.[c] || mRates[0];
-                                      if (typeof rate === 'number') newTotal += rate;
-                                    } else if (typeof mRates === 'number') {
-                                      newTotal += mRates;
-                                    }
-                                  }
-                                });
-                                newTotal += val + (updated.garbageAmount || 0);
-                                updated.balance = newTotal;
-                                
-                                await onUpdate(updated);
-                                setViewTaxpayer(updated);
-                              }}
-                            />
-                          </div>
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-slate-400">Servicio Basura</span>
-                            <input 
-                              type="number" 
-                              inputMode="decimal"
-                              className="w-20 bg-transparent border-b border-emerald-500/30 text-right font-black text-emerald-400 focus:border-emerald-400 outline-none" 
-                              value={viewTaxpayer.garbageAmount ?? ''}
-                              onChange={async (e) => {
-                                const val = parseFloat(e.target.value) || 0;
-                                const session = getSession();
-                                const currentUserIdent = session ? `${session.name} (${session.username})` : 'Usuario Desconocido';
-                                const updated = { ...viewTaxpayer, garbageAmount: val, lastEditedBy: currentUserIdent };
-                                
-                                // Recalculate balance
-                                let newTotal = 0;
-                                (updated.selectedTaxCodes || []).forEach(c => {
-                                  const s = (taxStructure as any[]).find(st => st.code === c);
-                                  if (s) {
-                                    const mRates = updated.magnitude === 'GRANDE' ? s.rates.GRANDE :
-                                                   updated.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
-                                    if (Array.isArray(mRates)) {
-                                      const rate = updated.selectedRates?.[c] || mRates[0];
-                                      if (typeof rate === 'number') newTotal += rate;
-                                    } else if (typeof mRates === 'number') {
-                                      newTotal += mRates;
-                                    }
-                                  }
-                                });
-                                newTotal += val + (updated.rotuloAmount || 0);
-                                updated.balance = newTotal;
-                                
-                                await onUpdate(updated);
-                                setViewTaxpayer(updated);
-                              }}
-                            />
+                                                
+                                                const session = getSession();
+                                                const currentUserIdent = session ? `${session.name} (${session.username})` : 'Usuario Desconocido';
+                                                
+                                                const updated = {
+                                                  ...viewTaxpayer,
+                                                  selectedTaxCodes: updatedCodes,
+                                                  selectedRates: currentRates,
+                                                  lastEditedBy: currentUserIdent
+                                                };
+                                                
+                                                // Recalculate balance using unified debt logic
+                                                const { total: newBalance } = calculateTaxpayerDebt(updated as Taxpayer, transactions, config);
+                                                updated.balance = newBalance;
+                                                
+                                                await onUpdate(updated);
+                                                setViewTaxpayer(updated);
+                                              }}
+                                            />
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                              </tbody>
+                            </table>
                           </div>
                         </div>
 
-                        <div className="pt-6 border-t border-white/10">
-                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total a Recaudar</p>
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black tabular-nums">B/. {formatCurrency(viewTaxpayer.balance || 0)}</span>
-                            <span className="text-[10px] font-black text-indigo-400 uppercase">/ Mes</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="bg-amber-50 border border-amber-200 p-6 rounded-3xl">
-                         <div className="flex gap-3">
-                            <AlertCircle className="text-amber-600 shrink-0" size={20} />
-                            <div>
-                               <p className="text-xs font-bold text-amber-900 leading-tight">Nota de Facturación</p>
-                               <p className="text-[10px] text-amber-800/70 mt-1">Los cambios en la estructura tributaria se verán reflejados en el próximo ciclo de facturación mensual.</p>
+                        <div className="space-y-6">
+                          <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 rounded-full blur-[40px] -mr-16 -mt-16"></div>
+                            <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-6">Resumen Mensual Estimado</h4>
+                            
+                            <div className="space-y-4 mb-8">
+                              <div className="flex justify-between items-center text-sm border-b border-white/5 pb-3">
+                                <span className="text-slate-400">Actividades Seleccionadas</span>
+                                <span className="font-black">{viewTaxpayer.selectedTaxCodes?.length || 0}</span>
+                              </div>
+                              <div className="flex justify-between items-center text-sm border-b border-white/5 pb-3">
+                                <span className="text-slate-400">Impuesto Rótulo</span>
+                                <input 
+                                  type="number" 
+                                  inputMode="decimal"
+                                  className="w-20 bg-transparent border-b border-indigo-500/30 text-right font-black text-indigo-400 focus:border-indigo-400 outline-none" 
+                                  value={viewTaxpayer.rotuloAmount ?? ''}
+                                  onChange={async (e) => {
+                                    const val = parseFloat(e.target.value) || 0;
+                                    const session = getSession();
+                                    const currentUserIdent = session ? `${session.name} (${session.username})` : 'Usuario Desconocido';
+                                    const updated = { ...viewTaxpayer, rotuloAmount: val, lastEditedBy: currentUserIdent };
+                                    
+                                    // Recalculate balance using unified debt logic
+                                    const { total: newBalance } = calculateTaxpayerDebt(updated as Taxpayer, transactions, config);
+                                    updated.balance = newBalance;
+                                    
+                                    await onUpdate(updated);
+                                    setViewTaxpayer(updated);
+                                  }}
+                                />
+                              </div>
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-400">Servicio Basura</span>
+                                <input 
+                                  type="number" 
+                                  inputMode="decimal"
+                                  className="w-20 bg-transparent border-b border-emerald-500/30 text-right font-black text-emerald-400 focus:border-emerald-400 outline-none" 
+                                  value={viewTaxpayer.garbageAmount ?? ''}
+                                  onChange={async (e) => {
+                                    const val = parseFloat(e.target.value) || 0;
+                                    const session = getSession();
+                                    const currentUserIdent = session ? `${session.name} (${session.username})` : 'Usuario Desconocido';
+                                    const updated = { ...viewTaxpayer, garbageAmount: val, lastEditedBy: currentUserIdent };
+                                    
+                                    // Recalculate balance using unified debt logic
+                                    const { total: newBalance } = calculateTaxpayerDebt(updated as Taxpayer, transactions, config);
+                                    updated.balance = newBalance;
+                                    
+                                    await onUpdate(updated);
+                                    setViewTaxpayer(updated);
+                                  }}
+                                />
+                              </div>
                             </div>
-                         </div>
+
+                            <div className="pt-6 border-t border-white/10 space-y-4">
+                              <div>
+                                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Cuota Proyectada</p>
+                                <div className="flex items-baseline gap-2">
+                                  <span className="text-3xl font-black tabular-nums text-white">B/. {formatCurrency(monthlyProjection)}</span>
+                                  <span className="text-[10px] font-black text-indigo-400 uppercase">/ Mes</span>
+                                </div>
+                              </div>
+                              <div className="bg-indigo-950/50 p-4 rounded-2xl border border-indigo-500/20">
+                                <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1">Deuda Pendiente Total</p>
+                                <span className="text-2xl font-black tabular-nums text-emerald-400">B/. {formatCurrency(viewTaxpayer.balance || 0)}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="bg-amber-50 border border-amber-200 p-6 rounded-3xl">
+                            <div className="flex gap-3">
+                              <AlertCircle className="text-amber-600 shrink-0" size={20} />
+                              <div>
+                                <p className="text-xs font-bold text-amber-900 leading-tight">Nota de Facturación</p>
+                                <p className="text-[10px] text-amber-800/70 mt-1">Los cambios en la estructura tributaria se verán reflejados en el próximo ciclo de facturación mensual.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -2088,8 +2005,8 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                             <thead className="sticky top-0 bg-red-100 text-red-900 font-black uppercase tracking-widest text-[9px]">
                               <tr>
                                 <th className="p-3 pl-5">Código</th>
-                                <th className="p-3">Actividad Económica</th>
-                                <th className="p-3 pr-5 text-right">Añadir</th>
+                                <th className="p-3">Actividad Económica y Tarifas Sugeridas</th>
+                                <th className="p-3 pr-5 text-right">Monto Evaluado (B/.)</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-red-50">
@@ -2100,61 +2017,66 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                 )
                                 .map((item) => {
                                   const isSelected = newTp.selectedTaxCodes?.includes(item.code);
+                                  const currentManualValue = newTp.selectedRates?.[item.code] ?? '';
+                                  
                                   return (
                                     <tr key={item.code} className={`transition-colors ${isSelected ? 'bg-red-50/50' : 'hover:bg-slate-50'}`}>
-                                      <td className="p-3 pl-5 font-mono font-bold text-red-600">{item.code}</td>
+                                      <td className="p-3 pl-5 font-mono font-bold text-red-600 align-top pt-4">{item.code}</td>
                                       <td className="p-3 font-medium text-slate-700">
-                                        <div className="font-bold">{item.activity}</div>
-                                        {isSelected && (
-                                          <div className="mt-2 animate-fade-in">
-                                            {(() => {
-                                              const magnitudeRates = newTp.magnitude === 'GRANDE' ? item.rates.GRANDE :
-                                                                   newTp.magnitude === 'MEDIANO' ? item.rates.MEDIANO : item.rates.PEQUENO;
-                                              
-                                              if (Array.isArray(magnitudeRates)) {
-                                                return (
-                                                  <select 
-                                                    className="w-full text-[10px] p-2 border border-red-200 rounded-lg bg-white text-black font-bold shadow-sm"
-                                                    value={newTp.selectedRates?.[item.code] || magnitudeRates[0]}
-                                                    onChange={(e) => {
-                                                      const val = parseFloat(e.target.value);
-                                                      setNewTp(prev => ({
-                                                        ...prev,
-                                                        selectedRates: {
-                                                          ...(prev.selectedRates || {}),
-                                                          [item.code]: val
-                                                        }
-                                                      }));
-                                                    }}
-                                                  >
-                                                    {magnitudeRates.map((r: number, i: number) => (
-                                                      <option key={i} value={r}>Tarifa {i + 1}: B/. {formatCurrency(r)}</option>
-                                                    ))}
-                                                  </select>
-                                                );
-                                              } else if (typeof magnitudeRates === 'number') {
-                                                return <div className="text-[10px] font-black text-red-500 bg-red-100 px-2 py-0.5 rounded-full inline-block">B/. {formatCurrency(magnitudeRates)}</div>;
-                                              } else {
-                                                return <div className="text-[10px] font-bold text-slate-400 italic">{magnitudeRates}</div>;
-                                              }
-                                            })()}
+                                        <div className="font-bold text-xs uppercase tracking-tight text-slate-800">{item.activity}</div>
+                                        
+                                        {/* Grid de magnitudes y tarifas sugeridas */}
+                                        <div className="grid grid-cols-3 gap-2 mt-2 max-w-md">
+                                          <div className="bg-slate-50 border border-slate-100 rounded-lg p-2 text-[9px]">
+                                            <span className="block text-slate-400 font-bold uppercase text-[8px]">Pequeño</span>
+                                            <span className="font-extrabold text-slate-700">{renderRateInfo(item.rates.PEQUENO)}</span>
                                           </div>
-                                        )}
+                                          <div className="bg-slate-50 border border-slate-100 rounded-lg p-2 text-[9px]">
+                                            <span className="block text-slate-400 font-bold uppercase text-[8px]">Mediano</span>
+                                            <span className="font-extrabold text-slate-700">{renderRateInfo(item.rates.MEDIANO)}</span>
+                                          </div>
+                                          <div className="bg-slate-50 border border-slate-100 rounded-lg p-2 text-[9px]">
+                                            <span className="block text-slate-400 font-bold uppercase text-[8px]">Grande</span>
+                                            <span className="font-extrabold text-slate-700">{renderRateInfo(item.rates.GRANDE)}</span>
+                                          </div>
+                                        </div>
                                       </td>
-                                      <td className="p-3 pr-5 text-right">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const current = newTp.selectedTaxCodes || [];
-                                            const updated = isSelected
-                                              ? current.filter(c => c !== item.code)
-                                              : [...current, item.code];
-                                            setNewTp({ ...newTp, selectedTaxCodes: updated });
-                                          }}
-                                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isSelected ? 'bg-red-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-600'}`}
-                                        >
-                                          <CheckSquare size={16} />
-                                        </button>
+                                      <td className="p-3 pr-5 text-right align-top pt-4">
+                                        <div className="flex items-center gap-1 justify-end">
+                                          <span className="text-slate-400 font-black text-xs">B/.</span>
+                                          <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            className="w-24 p-2 border border-slate-200 rounded-lg text-right font-black text-xs focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all bg-white text-slate-900 shadow-sm"
+                                            placeholder="0.00"
+                                            value={currentManualValue}
+                                            onChange={(e) => {
+                                              const valStr = e.target.value;
+                                              const val = valStr === '' ? 0 : parseFloat(valStr) || 0;
+                                              const currentCodes = newTp.selectedTaxCodes || [];
+                                              
+                                              let updatedCodes = [...currentCodes];
+                                              const currentRates = { ...(newTp.selectedRates || {}) };
+                                              
+                                              if (val > 0) {
+                                                if (!updatedCodes.includes(item.code)) {
+                                                  updatedCodes.push(item.code);
+                                                }
+                                                currentRates[item.code] = val;
+                                              } else {
+                                                updatedCodes = updatedCodes.filter(c => c !== item.code);
+                                                delete currentRates[item.code];
+                                              }
+                                              
+                                              setNewTp(prev => ({
+                                                ...prev,
+                                                selectedTaxCodes: updatedCodes,
+                                                selectedRates: currentRates
+                                              }));
+                                            }}
+                                          />
+                                        </div>
                                       </td>
                                     </tr>
                                   );
@@ -2167,76 +2089,27 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
 
                     {/* Summary & Manual Adjustments */}
                     <div className="space-y-6">
-                      <div className="bg-white rounded-2xl border border-red-100 shadow-sm p-5">
-                        <h5 className="text-[10px] font-black text-red-900 uppercase tracking-widest mb-4 flex items-center gap-2">
-                          <Settings size={14} /> {newTp.type === TaxpayerType.PLACA ? 'Ajustes Anuales' : 'Ajustes Mensuales'}
-                        </h5>
-                        <div className="space-y-4">
-                          {newTp.type === TaxpayerType.PLACA ? (
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Costo de Placa Anual</label>
-                              <div className="flex items-center gap-2">
-                                <span className="text-slate-300 font-bold">B/.</span>
-                                <input 
-                                  type="number" inputMode="decimal"
-                                  className="w-full p-2 border border-slate-100 rounded-lg text-right font-black text-slate-800 focus:border-red-500 outline-none transition-all bg-white"
-                                  value={newTp.yearlyAmount || ''}
-                                  onChange={(e) => setNewTp({ ...newTp, yearlyAmount: parseFloat(e.target.value) || 0 })}
-                                  placeholder="0.00"
-                                />
-                              </div>
-                              <p className="text-[9px] text-slate-400 mt-2 italic">Este monto se cobrará una vez al año según la fecha de inscripción.</p>
-                            </div>
-                          ) : (
-                            <>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Impuesto Rótulo</label>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-slate-300 font-bold">B/.</span>
-                                  <input 
-                                    type="number" inputMode="decimal"
-                                    className="w-full p-2 border border-slate-100 rounded-lg text-right font-black text-slate-800 focus:border-red-500 outline-none transition-all"
-                                    value={newTp.rotuloAmount ?? ''}
-                                    onChange={(e) => setNewTp({ ...newTp, rotuloAmount: parseFloat(e.target.value) || 0 })}
-                                  />
-                                </div>
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Servicio Basura</label>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-slate-300 font-bold">B/.</span>
-                                  <input 
-                                    type="number" inputMode="decimal"
-                                    className="w-full p-2 border border-slate-100 rounded-lg text-right font-black text-slate-800 focus:border-red-500 outline-none transition-all"
-                                    value={newTp.garbageAmount ?? ''}
-                                    onChange={(e) => setNewTp({ ...newTp, garbageAmount: parseFloat(e.target.value) || 0 })}
-                                  />
-                                </div>
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        {(isAdmin || isCaja1) && (
-                          <div className="mt-6 pt-6 border-t border-red-100">
-                            <label className="flex items-center gap-4 cursor-pointer group">
-                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${newTp.hasConstruction ? 'bg-red-600 text-white shadow-lg' : 'bg-white text-slate-300 border-2 border-slate-100 group-hover:border-red-200'}`}>
-                                <CheckSquare size={18} />
-                              </div>
+                      {newTp.type === TaxpayerType.PLACA && (
+                        <div className="bg-white rounded-2xl border border-red-100 shadow-sm p-5">
+                          <h5 className="text-[10px] font-black text-red-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+                            <Settings size={14} /> Ajustes Anuales
+                          </h5>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Costo de Placa Anual</label>
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-300 font-bold">B/.</span>
                               <input 
-                                type="checkbox" 
-                                className="hidden" 
-                                checked={newTp.hasConstruction || false}
-                                onChange={e => setNewTp({ ...newTp, hasConstruction: e.target.checked })}
+                                type="number" inputMode="decimal"
+                                className="w-full p-2 border border-slate-100 rounded-lg text-right font-black text-slate-800 focus:border-red-500 outline-none transition-all bg-white"
+                                value={newTp.yearlyAmount || ''}
+                                onChange={(e) => setNewTp({ ...newTp, yearlyAmount: parseFloat(e.target.value) || 0 })}
+                                placeholder="0.00"
                               />
-                              <div>
-                                <span className="block text-sm font-black text-red-900 uppercase tracking-widest">Activar Permiso de Construcción</span>
-                                <p className="text-[9px] text-red-600/70 font-bold leading-relaxed">Habilita el seguimiento de obras y remodelaciones. <br/>Opción restringida a Caja Principal y Admin.</p>
-                              </div>
-                            </label>
+                            </div>
+                            <p className="text-[9px] text-slate-400 mt-2 italic">Este monto se cobrará una vez al año según la fecha de inscripción.</p>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
 
                       <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl border-t-4 border-red-600">
                         <div className="flex items-center gap-3 mb-6">
@@ -2249,9 +2122,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                         <div className="space-y-3 mb-6 max-h-[150px] overflow-y-auto pr-2 custom-scrollbar text-white">
                           {(newTp.selectedTaxCodes || []).map(code => {
                             const act = taxStructure.find(s => s.code === code);
-                            const rates = newTp.magnitude === 'GRANDE' ? act?.rates.GRANDE :
-                                         newTp.magnitude === 'MEDIANO' ? act?.rates.MEDIANO : act?.rates.PEQUENO;
-                            const amount = Array.isArray(rates) ? (newTp.selectedRates?.[code] || rates[0]) : (typeof rates === 'number' ? rates : 0);
+                            const amount = newTp.selectedRates?.[code] || 0;
                             
                             return (
                               <div key={code} className="flex justify-between text-[11px] border-b border-white/5 pb-2">
@@ -2284,10 +2155,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                               <span className="text-2xl font-black text-white">
                                 B/. {formatCurrency(
                                   (newTp.selectedTaxCodes || []).reduce((acc, code) => {
-                                    const act = taxStructure.find(s => s.code === code);
-                                    const rates = newTp.magnitude === 'GRANDE' ? act?.rates.GRANDE :
-                                                 newTp.magnitude === 'MEDIANO' ? act?.rates.MEDIANO : act?.rates.PEQUENO;
-                                    const amount = Array.isArray(rates) ? (newTp.selectedRates?.[code] || rates[0]) : (typeof rates === 'number' ? rates : 0);
+                                    const amount = newTp.selectedRates?.[code] || 0;
                                     return acc + amount;
                                   }, 0) + (newTp.rotuloAmount || 0) + (newTp.garbageAmount || 0)
                                 )}

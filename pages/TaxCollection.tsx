@@ -25,6 +25,7 @@ interface TaxCollectionProps {
   onDirectAdminAuth?: (password: string, req: AdminRequest) => Promise<boolean>;
 }
 
+
 // Helper to format currency with thousands separator (1,000.00)
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-US', {
@@ -32,6 +33,18 @@ const formatCurrency = (amount: number) => {
     maximumFractionDigits: 2,
   }).format(amount || 0);
 };
+
+const renderRateInfo = (rate: any): string => {
+  if (Array.isArray(rate)) {
+    return rate.map(r => `B/. ${formatCurrency(r)}`).join(', ');
+  } else if (typeof rate === 'number') {
+    return rate > 0 ? `B/. ${formatCurrency(rate)}` : 'N/A';
+  } else if (typeof rate === 'string') {
+    return rate;
+  }
+  return 'N/A';
+};
+
 
 export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transactions, config, onPayment, currentUser, municipalityInfo, initialTaxpayer, adminRequests = [], onCreateRequest, onArchiveRequest, onRefresh, onDirectAdminAuth, isLoading }) => {
   const [selectedTaxpayerId, setSelectedTaxpayerId] = useState<string>('');
@@ -79,6 +92,153 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
 
   // Centralized notifications now handled in App.tsx to avoid Admin/Cashier confusion
   const prevRequestsRef = useRef<AdminRequest[]>([]);
+
+  // --- DIRECT CHARGE FORM STATES ---
+  const [showDirectChargeModal, setShowDirectChargeModal] = useState(false);
+  const [isManualPayer, setIsManualPayer] = useState(false);
+  const [directSelectedTaxpayerId, setDirectSelectedTaxpayerId] = useState('');
+  const [directManualName, setDirectManualName] = useState('');
+  const [directManualDocId, setDirectManualDocId] = useState('');
+  const [directManualAddress, setDirectManualAddress] = useState('');
+  const [directManualPhone, setDirectManualPhone] = useState('');
+  const [directChargeType, setDirectChargeType] = useState<'COMERCIO' | 'EVENTO'>('COMERCIO');
+  const [directEventDays, setDirectEventDays] = useState<number>(1);
+  const [directTaxCode, setDirectTaxCode] = useState('');
+  const [directTaxActivityName, setDirectTaxActivityName] = useState('');
+  const [directAmount, setDirectAmount] = useState('');
+  const [directPaymentMethod, setDirectPaymentMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO);
+  
+  // Autocomplete taxpayer search in modal
+  const [directSearchTerm, setDirectSearchTerm] = useState('');
+  const [directShowDropdown, setDirectShowDropdown] = useState(false);
+  
+  // Autocomplete code search in modal
+  const [directCodeSearchTerm, setDirectCodeSearchTerm] = useState('');
+  const [directCodeShowDropdown, setDirectCodeShowDropdown] = useState(false);
+
+  const directSearchContainerRef = useRef<HTMLDivElement>(null);
+  const directCodeContainerRef = useRef<HTMLDivElement>(null);
+
+  const directFilteredTaxpayers = useMemo(() => {
+    if (!directSearchTerm) return [];
+    return taxpayers.filter(t =>
+      t.name.toLowerCase().includes(directSearchTerm.toLowerCase()) ||
+      t.docId.includes(directSearchTerm) ||
+      t.taxpayerNumber?.includes(directSearchTerm)
+    );
+  }, [directSearchTerm, taxpayers]);
+
+  const directFilteredTaxCodes = useMemo(() => {
+    if (!directCodeSearchTerm) return [];
+    return (taxStructure as any[]).filter(item => 
+      item.code.toLowerCase().includes(directCodeSearchTerm.toLowerCase()) ||
+      item.activity.toLowerCase().includes(directCodeSearchTerm.toLowerCase())
+    ).slice(0, 10);
+  }, [directCodeSearchTerm]);
+
+  const directSelectedTaxpayer = taxpayers.find(t => t.id === directSelectedTaxpayerId);
+
+  const handleProcessDirectCharge = async () => {
+    // Validations
+    let payerName = '';
+    let payerDocId = '';
+    let payerAddress = '';
+    let payerPhone = '';
+
+    if (isManualPayer) {
+      if (!directManualName.trim()) {
+        alert("Por favor, ingrese el nombre del pagador.");
+        return;
+      }
+      if (!directManualDocId.trim()) {
+        alert("Por favor, ingrese la cédula o RUC del pagador.");
+        return;
+      }
+      payerName = directManualName.trim();
+      payerDocId = directManualDocId.trim();
+      payerAddress = directManualAddress.trim() || 'N/A';
+      payerPhone = directManualPhone.trim() || 'N/A';
+    } else {
+      if (!directSelectedTaxpayerId) {
+        alert("Por favor, seleccione un contribuyente.");
+        return;
+      }
+      if (!directSelectedTaxpayer) {
+        alert("Contribuyente seleccionado inválido.");
+        return;
+      }
+      payerName = directSelectedTaxpayer.name;
+      payerDocId = directSelectedTaxpayer.docId;
+      payerAddress = directSelectedTaxpayer.address || 'N/A';
+      payerPhone = directSelectedTaxpayer.phone || 'N/A';
+    }
+
+    if (!directTaxCode.trim()) {
+      alert("Por favor, ingrese o seleccione un código tributario.");
+      return;
+    }
+
+    const amountNum = parseFloat(directAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      alert("Por favor, ingrese un monto a cobrar válido mayor a 0.");
+      return;
+    }
+
+    // Build description based on charge type
+    let chargeTypeLabel = '';
+    if (directChargeType === 'COMERCIO') {
+      chargeTypeLabel = 'ACTIVIDAD COMERCIAL';
+    } else {
+      chargeTypeLabel = `EVENTO ESPECIAL (${directEventDays} DÍA${directEventDays > 1 ? 'S' : ''}${directEventDays === 90 ? ' - RENOVABLE' : ''})`;
+    }
+
+    const description = `COBRO DIRECTO - ${chargeTypeLabel} (CÓD: ${directTaxCode.trim()}${directTaxActivityName ? ` - ${directTaxActivityName}` : ''})`;
+
+    const tx = await onPayment({
+      taxType: TaxType.COMERCIO,
+      taxpayerId: isManualPayer ? undefined : directSelectedTaxpayerId,
+      amount: amountNum,
+      paymentMethod: directPaymentMethod,
+      description: description,
+      metadata: {
+        isDirectCharge: true,
+        chargeType: directChargeType,
+        eventDays: directChargeType === 'EVENTO' ? directEventDays : undefined,
+        taxCode: directTaxCode.trim(),
+        taxActivity: directTaxActivityName,
+        manualPayer: isManualPayer ? payerName : undefined,
+        manualPayerDoc: isManualPayer ? payerDocId : undefined,
+        manualPayerAddress: isManualPayer ? payerAddress : undefined,
+        manualPayerPhone: isManualPayer ? payerPhone : undefined,
+        registeredPayer: !isManualPayer ? {
+          id: directSelectedTaxpayer.id,
+          name: directSelectedTaxpayer.name,
+          docId: directSelectedTaxpayer.docId,
+          address: directSelectedTaxpayer.address,
+          phone: directSelectedTaxpayer.phone
+        } : undefined
+      }
+    });
+
+    setLastTransaction(tx);
+    setShowDirectChargeModal(false);
+    setShowInvoice(true);
+
+    // Reset Form
+    setIsManualPayer(false);
+    setDirectSelectedTaxpayerId('');
+    setDirectManualName('');
+    setDirectManualDocId('');
+    setDirectManualAddress('');
+    setDirectManualPhone('');
+    setDirectChargeType('COMERCIO');
+    setDirectEventDays(1);
+    setDirectTaxCode('');
+    setDirectTaxActivityName('');
+    setDirectAmount('');
+    setDirectSearchTerm('');
+    setDirectCodeSearchTerm('');
+  };
 
   // Pre-fill from props if available
   useEffect(() => {
@@ -143,6 +303,12 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
     const handleClickOutside = (event: MouseEvent) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
         setShowDropdown(false);
+      }
+      if (directSearchContainerRef.current && !directSearchContainerRef.current.contains(event.target as Node)) {
+        setDirectShowDropdown(false);
+      }
+      if (directCodeContainerRef.current && !directCodeContainerRef.current.contains(event.target as Node)) {
+        setDirectCodeShowDropdown(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -627,165 +793,212 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
       )}
 
       {/* --- INVOICE MODAL (COMPACT & OPTIMIZED) --- */}
-      {showInvoice && lastTransaction && activeTaxpayer && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <style>{`
-                @media print {
-                    @page { size: portrait; margin: 0; }
-                    body * { visibility: hidden; }
-                    #invoice-modal-content, #invoice-modal-content * { visibility: visible; }
-                    #invoice-modal-content { 
-                        position: absolute; left: 0; top: 0; 
-                        width: 80mm;
-                        margin: 0; padding: 0; box-shadow: none; border: none; 
+      {showInvoice && lastTransaction && (
+        (() => {
+          const payerName = lastTransaction.metadata?.manualPayer 
+            || lastTransaction.metadata?.registeredPayer?.name 
+            || taxpayers.find(tp => tp.id === lastTransaction.taxpayerId)?.name 
+            || activeTaxpayer?.name 
+            || 'Pagador Eventual';
+
+          const payerDocId = lastTransaction.metadata?.manualPayerDoc 
+            || lastTransaction.metadata?.registeredPayer?.docId 
+            || taxpayers.find(tp => tp.id === lastTransaction.taxpayerId)?.docId 
+            || activeTaxpayer?.docId 
+            || 'N/A';
+
+          const payerAddress = lastTransaction.metadata?.manualPayerAddress 
+            || lastTransaction.metadata?.registeredPayer?.address 
+            || taxpayers.find(tp => tp.id === lastTransaction.taxpayerId)?.address 
+            || activeTaxpayer?.address 
+            || 'N/A';
+
+          const payerPhone = lastTransaction.metadata?.manualPayerPhone 
+            || lastTransaction.metadata?.registeredPayer?.phone 
+            || taxpayers.find(tp => tp.id === lastTransaction.taxpayerId)?.phone 
+            || activeTaxpayer?.phone 
+            || 'N/A';
+
+          const resolvedTaxpayer = taxpayers.find(tp => tp.id === lastTransaction.taxpayerId) 
+            || (lastTransaction.metadata?.registeredPayer ? taxpayers.find(tp => tp.id === lastTransaction.metadata.registeredPayer.id) : null) 
+            || activeTaxpayer;
+
+          return (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+              <style>{`
+                    @media print {
+                        @page { size: portrait; margin: 0; }
+                        body * { visibility: hidden; }
+                        #invoice-modal-content, #invoice-modal-content * { visibility: visible; }
+                        #invoice-modal-content { 
+                            position: absolute; left: 0; top: 0; 
+                            width: 80mm;
+                            margin: 0; padding: 0; box-shadow: none; border: none; 
+                        }
+                        .no-print { display: none !important; }
+                        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                     }
-                    .no-print { display: none !important; }
-                    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                }
-            `}</style>
+                `}</style>
 
-          <div id="invoice-modal-content" className="bg-white shadow-2xl w-full max-w-[320px] rounded-lg overflow-hidden flex flex-col relative">
-            
-            {/* Status Badge - Floating Corner */}
-            <div className="absolute top-4 right-4 z-10">
-              <span className={`px-2 py-1 rounded border-2 text-[8px] font-black tracking-tighter uppercase shadow-sm ${
-                lastTransaction.status === 'ANULADO' 
-                  ? 'bg-red-50 text-red-600 border-red-200' 
-                  : 'bg-emerald-50 text-emerald-600 border-emerald-200'
-              }`}>
-                {lastTransaction.status === 'ANULADO' ? '● ANULADO' : '● PAGADO'}
-              </span>
-            </div>
-
-            {/* Invoice Header - Thermal Optimized (80mm) */}
-            <div className="bg-white p-2 text-center overflow-hidden">
-              {/* Centered Logo */}
-              <div className="flex justify-center mb-1">
-                <img
-                  src={`${import.meta.env.BASE_URL}logo-municipio.png`}
-                  alt="Escudo Municipal"
-                  className="h-24 object-contain"
-                />
-              </div>
-
-              {/* Municipal Header - Compact & Centered */}
-              <div className="border-b border-dashed border-slate-400 pb-2 mb-2">
-                <h1 className="text-sm font-extrabold uppercase text-slate-900 leading-tight">Municipio de Almirante</h1>
-                <p className="text-[9px] text-slate-600 font-medium uppercase leading-tight">República de Panamá</p>
-                <p className="text-[10px] text-slate-700 font-bold uppercase">RUC: 1-22-333 DV 44</p>
-                <p className="text-[9px] text-slate-500 uppercase">Tesorería Municipal</p>
-              </div>
-
-              {/* Receipt Info */}
-              <div className="mb-2">
-                <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Recibo de Caja</h2>
-                <p className="font-mono text-sm font-black text-slate-900">Nº {lastTransaction.id}</p>
-                <p className="text-[9px] text-slate-500 font-medium">{lastTransaction.date} | {lastTransaction.time}</p>
-              </div>
-
-              {/* Taxpayer Info - Compact */}
-              <div className="bg-slate-50 p-2 rounded mb-3 border border-slate-100 text-left">
-                <p className="text-[8px] font-bold text-slate-400 uppercase">Contribuyente:</p>
-                <p className="font-bold text-[11px] text-slate-900 leading-tight uppercase">{activeTaxpayer.name}</p>
-                <p className="text-[9px] font-mono text-slate-600">DOC: {activeTaxpayer.docId}</p>
-
-                {/* Vehículos Vinculados (Generales completas del vehículo) */}
-                {activeTaxpayer.vehicles && activeTaxpayer.vehicles.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-slate-200 text-[8px] text-slate-600 space-y-0.5">
-                    <p className="font-bold text-[8px] text-indigo-700 uppercase tracking-wider">Detalles de Placa / Vehículo:</p>
-                    {activeTaxpayer.vehicles.map((v, idx) => (
-                      <div key={idx} className="bg-white p-1.5 rounded border border-slate-100 mt-1 space-y-0.5 font-mono">
-                        <p className="font-bold text-slate-900">PLACA: {v.plate || 'Pendiente'}</p>
-                        <p><span className="font-bold">Marca:</span> {v.brand || 'N/A'}</p>
-                        {v.year && <p><span className="font-bold">Año:</span> {v.year}</p>}
-                        {v.vehicleType && <p><span className="font-bold">Tipo:</span> {v.vehicleType}</p>}
-                        {v.plateType && <p><span className="font-bold">Tipo Placa:</span> {v.plateType}</p>}
-                        {v.color && <p><span className="font-bold">Color:</span> {v.color}</p>}
-                        {v.motorSerial && <p><span className="font-bold">Motor:</span> {v.motorSerial}</p>}
-                        {v.chassisSerial && <p><span className="font-bold">Chasis (VIN):</span> {v.chassisSerial}</p>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Transaction Detail & Breakdown */}
-              <div className="border-b border-dashed border-slate-400 pb-2 mb-2">
-                <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase mb-1">
-                  <span>Concepto</span>
-                  <span>Monto</span>
-                </div>
+              <div id="invoice-modal-content" className="bg-white shadow-2xl w-full max-w-[320px] rounded-lg overflow-hidden flex flex-col relative">
                 
-                {lastTransaction.metadata?.isConsolidated ? (
-                  <div className="space-y-1">
-                    {(lastTransaction.metadata.originalItems || []).map((item: any, idx: number) => (
-                      <div key={idx} className="flex justify-between items-start text-left">
-                        <p className="text-[9px] font-bold text-slate-800 leading-tight uppercase max-w-[180px]">{item.label}</p>
-                        <p className="text-[9px] font-bold text-slate-900">{formatCurrency(item.amount)}</p>
+                {/* Status Badge - Floating Corner */}
+                <div className="absolute top-4 right-4 z-10">
+                  <span className={`px-2 py-1 rounded border-2 text-[8px] font-black tracking-tighter uppercase shadow-sm ${
+                    lastTransaction.status === 'ANULADO' 
+                      ? 'bg-red-50 text-red-600 border-red-200' 
+                      : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                  }`}>
+                    {lastTransaction.status === 'ANULADO' ? '● ANULADO' : '● PAGADO'}
+                  </span>
+                </div>
+
+                {/* Invoice Header - Thermal Optimized (80mm) */}
+                <div className="bg-white p-2 text-center overflow-hidden">
+                  {/* Centered Logo */}
+                  <div className="flex justify-center mb-1">
+                    <img
+                      src={`${import.meta.env.BASE_URL}logo-municipio.png`}
+                      alt="Escudo Municipal"
+                      className="h-24 object-contain"
+                    />
+                  </div>
+
+                  {/* Municipal Header - Compact & Centered */}
+                  <div className="border-b border-dashed border-slate-400 pb-2 mb-2">
+                    <h1 className="text-sm font-extrabold uppercase text-slate-900 leading-tight">Municipio de Almirante</h1>
+                    <p className="text-[9px] text-slate-600 font-medium uppercase leading-tight">República de Panamá</p>
+                    <p className="text-[10px] text-slate-700 font-bold uppercase">RUC: 1-22-333 DV 44</p>
+                    <p className="text-[9px] text-slate-500 uppercase">Tesorería Municipal</p>
+                  </div>
+
+                  {/* Receipt Info */}
+                  <div className="mb-2">
+                    <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Recibo de Caja</h2>
+                    <p className="font-mono text-sm font-black text-slate-900">Nº {lastTransaction.id}</p>
+                    <p className="text-[9px] text-slate-500 font-medium">{lastTransaction.date} | {lastTransaction.time}</p>
+                  </div>
+
+                  {/* Taxpayer Info - Compact */}
+                  <div className="bg-slate-50 p-2 rounded mb-3 border border-slate-100 text-left">
+                    <p className="text-[8px] font-bold text-slate-400 uppercase">Contribuyente:</p>
+                    <p className="font-bold text-[11px] text-slate-900 leading-tight uppercase">{payerName}</p>
+                    <p className="text-[9px] font-mono text-slate-600">DOC: {payerDocId}</p>
+                    {payerAddress !== 'N/A' && <p className="text-[9px] text-slate-500 font-medium leading-tight mt-0.5">DIR: {payerAddress}</p>}
+                    {payerPhone !== 'N/A' && <p className="text-[9px] text-slate-500 font-medium leading-tight mt-0.5">TEL: {payerPhone}</p>}
+
+                    {/* Direct Charge Details */}
+                    {lastTransaction.metadata?.isDirectCharge && (
+                      <div className="mt-2 pt-2 border-t border-slate-200 text-[8px] text-slate-600 space-y-0.5 font-mono">
+                        <p className="font-bold text-[8px] text-emerald-700 uppercase tracking-wider">Detalles de Cobro Directo:</p>
+                        <p><span className="font-bold">Tipo:</span> {
+                          lastTransaction.metadata.chargeType === 'COMERCIO' ? 'ACTIVIDAD COMERCIAL' :
+                          lastTransaction.metadata.chargeType === 'EVENTO' ? `EVENTO ESPECIAL (${lastTransaction.metadata.eventDays || 1} DÍA${(lastTransaction.metadata.eventDays || 1) > 1 ? 'S' : ''}${lastTransaction.metadata.eventDays === 90 ? ' - RENOVABLE' : ''})` : 'OTRO'
+                        }</p>
+                        <p><span className="font-bold">Código:</span> {lastTransaction.metadata.taxCode}</p>
+                        {lastTransaction.metadata.taxActivity && <p><span className="font-bold">Actividad:</span> {lastTransaction.metadata.taxActivity}</p>}
                       </div>
-                    ))}
-                    <p className="text-[8px] text-slate-500 italic mt-2">Método: {getPaymentMethodLabel(lastTransaction.paymentMethod)}</p>
+                    )}
+
+                    {/* Vehículos Vinculados (Generales completas del vehículo) */}
+                    {resolvedTaxpayer && resolvedTaxpayer.vehicles && resolvedTaxpayer.vehicles.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-slate-200 text-[8px] text-slate-600 space-y-0.5">
+                        <p className="font-bold text-[8px] text-indigo-700 uppercase tracking-wider">Detalles de Placa / Vehículo:</p>
+                        {resolvedTaxpayer.vehicles.map((v, idx) => (
+                          <div key={idx} className="bg-white p-1.5 rounded border border-slate-100 mt-1 space-y-0.5 font-mono">
+                            <p className="font-bold text-slate-900">PLACA: {v.plate || 'Pendiente'}</p>
+                            <p><span className="font-bold">Marca:</span> {v.brand || 'N/A'}</p>
+                            {v.year && <p><span className="font-bold">Año:</span> {v.year}</p>}
+                            {v.vehicleType && <p><span className="font-bold">Tipo:</span> {v.vehicleType}</p>}
+                            {v.plateType && <p><span className="font-bold">Tipo Placa:</span> {v.plateType}</p>}
+                            {v.color && <p><span className="font-bold">Color:</span> {v.color}</p>}
+                            {v.motorSerial && <p><span className="font-bold">Motor:</span> {v.motorSerial}</p>}
+                            {v.chassisSerial && <p><span className="font-bold">Chasis (VIN):</span> {v.chassisSerial}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="flex justify-between items-start gap-2">
-                    <div className="text-left">
-                      <p className="text-[10px] font-extrabold text-slate-800 leading-tight uppercase">{lastTransaction.description}</p>
-                      {lastTransaction.metadata?.plateNumber && <p className="text-[8px] text-slate-500 mt-0.5">Placa: {lastTransaction.metadata.plateNumber}</p>}
-                      <p className="text-[8px] text-slate-500 italic">Método: {getPaymentMethodLabel(lastTransaction.paymentMethod)}</p>
+
+                  {/* Transaction Detail & Breakdown */}
+                  <div className="border-b border-dashed border-slate-400 pb-2 mb-2">
+                    <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase mb-1">
+                      <span>Concepto</span>
+                      <span>Monto</span>
                     </div>
-                    <p className="font-black text-xs text-slate-900 whitespace-nowrap">B/. {formatCurrency(lastTransaction.amount)}</p>
+                    
+                    {lastTransaction.metadata?.isConsolidated ? (
+                      <div className="space-y-1">
+                        {(lastTransaction.metadata.originalItems || []).map((item: any, idx: number) => (
+                          <div key={idx} className="flex justify-between items-start text-left">
+                            <p className="text-[9px] font-bold text-slate-800 leading-tight uppercase max-w-[180px]">{item.label}</p>
+                            <p className="text-[9px] font-bold text-slate-900">{formatCurrency(item.amount)}</p>
+                          </div>
+                        ))}
+                        <p className="text-[8px] text-slate-500 italic mt-2">Método: {getPaymentMethodLabel(lastTransaction.paymentMethod)}</p>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="text-left">
+                          <p className="text-[10px] font-extrabold text-slate-800 leading-tight uppercase">{lastTransaction.description}</p>
+                          {lastTransaction.metadata?.plateNumber && <p className="text-[8px] text-slate-500 mt-0.5">Placa: {lastTransaction.metadata.plateNumber}</p>}
+                          <p className="text-[8px] text-slate-500 italic">Método: {getPaymentMethodLabel(lastTransaction.paymentMethod)}</p>
+                        </div>
+                        <p className="font-black text-xs text-slate-900 whitespace-nowrap">B/. {formatCurrency(lastTransaction.amount)}</p>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {/* Total Box */}
-              <div className="flex justify-between items-center py-2 px-1 border-b-2 border-slate-900 mb-4">
-                <span className="text-[10px] font-black text-slate-900 uppercase">Total Pagado:</span>
-                <span className="text-sm font-black text-slate-900">B/. {formatCurrency(lastTransaction.amount)}</span>
-              </div>
+                  {/* Total Box */}
+                  <div className="flex justify-between items-center py-2 px-1 border-b-2 border-slate-900 mb-4">
+                    <span className="text-[10px] font-black text-slate-900 uppercase">Total Pagado:</span>
+                    <span className="text-sm font-black text-slate-900">B/. {formatCurrency(lastTransaction.amount)}</span>
+                  </div>
 
-              {/* Signatures & Legal */}
-              <div className="space-y-4">
-                <div className="flex flex-col items-center">
-                  <div className="border-b border-slate-300 w-24 mb-1"></div>
-                  <p className="text-[8px] font-bold text-slate-500 uppercase">Cajero: {lastTransaction.tellerName}</p>
+                  {/* Signatures & Legal */}
+                  <div className="space-y-4">
+                    <div className="flex flex-col items-center">
+                      <div className="border-b border-slate-300 w-24 mb-1"></div>
+                      <p className="text-[8px] font-bold text-slate-500 uppercase">Cajero: {lastTransaction.tellerName}</p>
+                    </div>
+                    <p className="text-[8px] text-slate-400 italic leading-tight px-4">
+                      Comprobante oficial de pago. Verifique sus datos antes de retirarse.
+                    </p>
+                    <div className="pt-2">
+                        <p className="text-[7px] font-mono text-slate-300 uppercase tracking-widest">SIGMA - MUNICIPIO DE ALMIRANTE</p>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-[8px] text-slate-400 italic leading-tight px-4">
-                  Comprobante oficial de pago. Verifique sus datos antes de retirarse.
-                </p>
-                <div className="pt-2">
-                    <p className="text-[7px] font-mono text-slate-300 uppercase tracking-widest">SIGMA - MUNICIPIO DE ALMIRANTE</p>
+
+                {/* Action Bar (Hidden in Print) - Uniform Buttons */}
+                <div className="bg-slate-50 p-3 border-t border-slate-200 flex flex-row gap-2 no-print w-full">
+                  <button
+                    onClick={downloadPDF}
+                    disabled={isGeneratingPdf}
+                    className="flex-1 flex flex-col items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-bold text-[10px] shadow-sm transition-all"
+                    title="Descargar PDF"
+                  >
+                    <Download size={14} /> <span>{isGeneratingPdf ? '...' : 'PDF'}</span>
+                  </button>
+                  <button 
+                    onClick={printInvoice} 
+                    className="flex-1 flex flex-col items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-md font-bold text-[10px] shadow-sm transition-all"
+                    title="Imprimir Recibo"
+                  >
+                    <Printer size={14} /> <span>Imprimir</span>
+                  </button>
+                  <button 
+                    onClick={handleFinishCollection} 
+                    className="flex-1 flex flex-col items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-md font-bold text-[10px] shadow-sm transition-all"
+                    title="Regresar a Caja"
+                  >
+                    <ArrowLeft size={14} /> <span>Finalizar</span>
+                  </button>
                 </div>
               </div>
             </div>
-
-            {/* Action Bar (Hidden in Print) - Uniform Buttons */}
-            <div className="bg-slate-50 p-3 border-t border-slate-200 flex flex-row gap-2 no-print w-full">
-              <button
-                onClick={downloadPDF}
-                disabled={isGeneratingPdf}
-                className="flex-1 flex flex-col items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-bold text-[10px] shadow-sm transition-all"
-                title="Descargar PDF"
-              >
-                <Download size={14} /> <span>{isGeneratingPdf ? '...' : 'PDF'}</span>
-              </button>
-              <button 
-                onClick={printInvoice} 
-                className="flex-1 flex flex-col items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-md font-bold text-[10px] shadow-sm transition-all"
-                title="Imprimir Recibo"
-              >
-                <Printer size={14} /> <span>Imprimir</span>
-              </button>
-              <button 
-                onClick={handleFinishCollection} 
-                className="flex-1 flex flex-col items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-md font-bold text-[10px] shadow-sm transition-all"
-                title="Regresar a Caja"
-              >
-                <ArrowLeft size={14} /> <span>Finalizar</span>
-              </button>
-            </div>
-          </div>
-        </div>
+          );
+        })()
       )}
 
       {/* --- HEADER --- */}
@@ -914,6 +1127,14 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
               </div>
             )}
           </div>
+
+          <button
+            onClick={() => setShowDirectChargeModal(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <CreditCard size={16} />
+            <span>Cobrar Directamente</span>
+          </button>
 
           <button
             onClick={handleDailyClosing}
@@ -1374,6 +1595,415 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
           </table>
         </div>
       </div>
+
+      {/* --- DIRECT CHARGE MODAL --- */}
+      {showDirectChargeModal && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto pt-10">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl w-full max-w-2xl overflow-hidden animate-scale-up my-8">
+            {/* Header */}
+            <div className="bg-slate-900 text-white p-5 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-black uppercase tracking-wider">Cobrar Directamente</h3>
+                <p className="text-xs text-slate-400">Registrar cobros eventuales y actividades comerciales rápidamente.</p>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowDirectChargeModal(false);
+                }}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+              
+              {/* 1. Tipo de Pagador Selector (Tabs) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tipo de Pagador</label>
+                <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsManualPayer(false);
+                      setDirectManualName('');
+                      setDirectManualDocId('');
+                      setDirectManualAddress('');
+                      setDirectManualPhone('');
+                    }}
+                    className={`py-2.5 rounded-lg text-xs font-bold transition-all ${
+                      !isManualPayer 
+                        ? 'bg-white text-slate-900 shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Contribuyente Registrado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsManualPayer(true);
+                      setDirectSelectedTaxpayerId('');
+                      setDirectSearchTerm('');
+                    }}
+                    className={`py-2.5 rounded-lg text-xs font-bold transition-all ${
+                      isManualPayer 
+                        ? 'bg-white text-slate-900 shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Pagador Eventual (Manual)
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Payer Details Input based on choice */}
+              {!isManualPayer ? (
+                <div className="relative" ref={directSearchContainerRef}>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Buscar Contribuyente</label>
+                  {!directSelectedTaxpayer ? (
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Search className="h-4 w-4 text-slate-400" />
+                      </div>
+                      <input
+                        type="text"
+                        className="block w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="Escriba nombre, RUC o Cédula..."
+                        value={directSearchTerm}
+                        onChange={(e) => {
+                          setDirectSearchTerm(e.target.value);
+                          setDirectShowDropdown(true);
+                        }}
+                        onFocus={() => setDirectShowDropdown(true)}
+                      />
+
+                      {directShowDropdown && directSearchTerm.length > 0 && (
+                        <div className="absolute top-full left-0 w-full mt-1 bg-white rounded-lg shadow-xl border border-slate-200 max-h-48 overflow-y-auto z-50">
+                          {directFilteredTaxpayers.length > 0 ? (
+                            directFilteredTaxpayers.map((tp) => (
+                              <div
+                                key={`direct-tp-${tp.id}`}
+                                onClick={() => {
+                                  setDirectSelectedTaxpayerId(tp.id);
+                                  setDirectSearchTerm('');
+                                  setDirectShowDropdown(false);
+                                }}
+                                className="p-3 hover:bg-emerald-50 cursor-pointer transition-colors border-b border-slate-100 last:border-0 text-xs"
+                              >
+                                <div className="flex justify-between items-center">
+                                  <p className="font-bold text-slate-800">{tp.name}</p>
+                                  <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-mono font-bold">#{tp.taxpayerNumber || 'N/A'}</span>
+                                </div>
+                                <p className="text-[10px] text-slate-500 font-mono">ID: {tp.docId}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="p-4 text-center text-slate-400 text-xs italic">
+                              No se encontraron contribuyentes.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="bg-slate-900 text-white rounded-xl p-3.5 flex justify-between items-center shadow-inner">
+                      <div>
+                        <p className="font-bold text-sm uppercase">{directSelectedTaxpayer.name}</p>
+                        <p className="text-[10px] text-slate-300 font-mono mt-0.5">
+                          ID: {directSelectedTaxpayer.docId} | Reg: #{directSelectedTaxpayer.taxpayerNumber || 'N/A'}
+                        </p>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => setDirectSelectedTaxpayerId('')}
+                        className="bg-white/10 hover:bg-white/20 p-1.5 rounded transition-all"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nombre Completo *</label>
+                    <input
+                      type="text"
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                      placeholder="Ej. Juan Pérez"
+                      value={directManualName}
+                      onChange={(e) => setDirectManualName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cédula / RUC *</label>
+                    <input
+                      type="text"
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                      placeholder="Ej. 1-234-5678 o RUC..."
+                      value={directManualDocId}
+                      onChange={(e) => setDirectManualDocId(e.target.value)}
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dirección Residencial / Comercial</label>
+                    <input
+                      type="text"
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                      placeholder="Ej. Calle 3ra, Almirante"
+                      value={directManualAddress}
+                      onChange={(e) => setDirectManualAddress(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Teléfono</label>
+                    <input
+                      type="text"
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                      placeholder="Ej. 6677-8899"
+                      value={directManualPhone}
+                      onChange={(e) => setDirectManualPhone(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 3. Tipo de Registro Selector Cards */}
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tipo de Registro / Cobro</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div 
+                    onClick={() => setDirectChargeType('COMERCIO')}
+                    className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                      directChargeType === 'COMERCIO' 
+                        ? 'border-emerald-500 bg-emerald-50/50 shadow-md' 
+                        : 'border-slate-200 hover:border-slate-300 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <Store size={16} className={directChargeType === 'COMERCIO' ? 'text-emerald-600' : 'text-slate-400'} />
+                      <p className="font-bold text-xs text-slate-800">Actividad Comercial</p>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-snug">Establecimientos permanentes en el distrito.</p>
+                  </div>
+
+                  <div 
+                    onClick={() => setDirectChargeType('EVENTO')}
+                    className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                      directChargeType === 'EVENTO' 
+                        ? 'border-amber-500 bg-amber-50/50 shadow-md' 
+                        : 'border-slate-200 hover:border-slate-300 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <CreditCard size={16} className={directChargeType === 'EVENTO' ? 'text-amber-600' : 'text-slate-400'} />
+                      <p className="font-bold text-xs text-slate-800">Evento Especial</p>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-snug">Permiso temporal de 1 a 90 días renovables.</p>
+                  </div>
+                </div>
+
+                {/* Manual Days Input — only shown when EVENTO is selected */}
+                {directChargeType === 'EVENTO' && (
+                  <div className="mt-3 bg-amber-50/60 border border-amber-200 rounded-xl p-4 animate-in fade-in">
+                    <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-2">Duración del Evento (Días)</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        min="1"
+                        max="90"
+                        className="w-24 p-2.5 border border-amber-300 rounded-lg font-black text-sm text-center focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all bg-white text-slate-900 shadow-sm"
+                        value={directEventDays}
+                        onChange={(e) => {
+                          let val = parseInt(e.target.value) || 1;
+                          if (val < 1) val = 1;
+                          if (val > 90) val = 90;
+                          setDirectEventDays(val);
+                        }}
+                      />
+                      <span className="text-xs font-bold text-amber-700">día{directEventDays > 1 ? 's' : ''}</span>
+                      {directEventDays === 90 && (
+                        <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-1 rounded-full">Renovable</span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-amber-600 mt-1.5 italic">Máximo permitido: 90 días. Al llegar a 90 días el permiso es renovable.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* 4. Servicios y Estructura Tributaria */}
+              <div className="space-y-4">
+                <div className="relative" ref={directCodeContainerRef}>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Asignar Código Tributario</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Search className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <input
+                      type="text"
+                      className="block w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="Buscar por código tributario o actividad..."
+                      value={directCodeSearchTerm}
+                      onChange={(e) => {
+                        setDirectCodeSearchTerm(e.target.value);
+                        setDirectCodeShowDropdown(true);
+                      }}
+                      onFocus={() => setDirectCodeShowDropdown(true)}
+                    />
+
+                    {directCodeShowDropdown && directCodeSearchTerm.length > 0 && (
+                      <div className="absolute top-full left-0 w-full mt-1 bg-white rounded-lg shadow-xl border border-slate-200 max-h-48 overflow-y-auto z-50">
+                        {directFilteredTaxCodes.length > 0 ? (
+                          directFilteredTaxCodes.map((item) => (
+                            <div
+                              key={`direct-code-${item.code}`}
+                              onClick={() => {
+                                setDirectTaxCode(item.code);
+                                setDirectTaxActivityName(item.activity);
+                                setDirectCodeSearchTerm(`${item.code} - ${item.activity}`);
+                                setDirectCodeShowDropdown(false);
+                              }}
+                              className="p-3 hover:bg-emerald-50 cursor-pointer transition-colors border-b border-slate-100 last:border-0 text-xs"
+                            >
+                              <div className="flex justify-between items-center mb-0.5">
+                                <span className="font-mono font-bold text-emerald-600">{item.code}</span>
+                              </div>
+                              <p className="text-[11px] font-bold text-slate-800 uppercase line-clamp-1">{item.activity}</p>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-4 text-center text-slate-400 text-xs italic">
+                            No se encontraron códigos tributarios.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Display Reference Pricing Ranges & Activity Info if Code is selected */}
+                {directTaxCode && (
+                  (() => {
+                    const struct = (taxStructure as any[]).find(s => s.code === directTaxCode);
+                    if (!struct) return null;
+
+                    return (
+                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                        <div className="border-b border-slate-200 pb-2">
+                          <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Actividad Tributaria Seleccionada</p>
+                          <p className="font-mono text-xs font-bold text-slate-900 mt-1">{struct.code} — <span className="uppercase font-sans font-black text-[11px]">{struct.activity}</span></p>
+                        </div>
+
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">Rangos Tarifarios de Referencia (Acuerdo Municipal)</p>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="bg-white border border-slate-200 rounded-lg p-2.5 text-center shadow-sm">
+                              <span className="block text-slate-400 font-bold uppercase text-[8px] tracking-wider mb-0.5">Pequeño</span>
+                              <span className="font-extrabold text-slate-800 text-[10px]">{renderRateInfo(struct.rates.PEQUENO)}</span>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-lg p-2.5 text-center shadow-sm">
+                              <span className="block text-slate-400 font-bold uppercase text-[8px] tracking-wider mb-0.5">Mediano</span>
+                              <span className="font-extrabold text-slate-800 text-[10px]">{renderRateInfo(struct.rates.MEDIANO)}</span>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-lg p-2.5 text-center shadow-sm">
+                              <span className="block text-slate-400 font-bold uppercase text-[8px] tracking-wider mb-0.5">Grande</span>
+                              <span className="font-extrabold text-slate-800 text-[10px]">{renderRateInfo(struct.rates.GRANDE)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-200">
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">Establecer Monto Evaluado a Cobrar *</label>
+                          <div className="flex items-center gap-2 max-w-xs">
+                            <span className="text-slate-400 font-black text-sm">B/.</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="w-full p-2.5 border border-slate-300 rounded-lg font-black text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all bg-white text-slate-900 shadow-sm"
+                              placeholder="0.00"
+                              value={directAmount}
+                              onChange={(e) => setDirectAmount(e.target.value)}
+                            />
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1 italic">
+                            Ingrese el monto evaluado según los rangos tarifarios de referencia mostrados.
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+
+              {/* 5. Método de Pago */}
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Método de Pago</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: PaymentMethod.EFECTIVO, label: 'Efectivo', icon: Banknote },
+                    { id: PaymentMethod.TARJETA, label: 'Tarjeta', icon: CreditCard },
+                    { id: PaymentMethod.ONLINE, label: 'ACH / Yappy / Online', icon: CreditCard },
+                  ].map((m) => {
+                    const Icon = m.icon;
+                    const isSelected = directPaymentMethod === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setDirectPaymentMethod(m.id)}
+                        className={`p-3 rounded-lg border flex flex-col items-center justify-center gap-1.5 font-bold text-xs transition-all ${
+                          isSelected 
+                            ? 'bg-slate-900 border-slate-900 text-white shadow' 
+                            : 'border-slate-200 hover:bg-slate-50 text-slate-600 bg-white'
+                        }`}
+                      >
+                        <Icon size={16} />
+                        <span>{m.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDirectChargeModal(false);
+                  setIsManualPayer(false);
+                  setDirectSelectedTaxpayerId('');
+                  setDirectManualName('');
+                  setDirectManualDocId('');
+                  setDirectManualAddress('');
+                  setDirectManualPhone('');
+                  setDirectChargeType('COMERCIO');
+                  setDirectEventDays(1);
+                  setDirectTaxCode('');
+                  setDirectTaxActivityName('');
+                  setDirectAmount('');
+                  setDirectSearchTerm('');
+                  setDirectCodeSearchTerm('');
+                }}
+                className="bg-white hover:bg-slate-100 text-slate-700 font-bold py-2.5 px-4 rounded-xl border border-slate-200 text-xs transition-all active:scale-95"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleProcessDirectCharge}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl text-xs transition-all active:scale-95 shadow-md shadow-emerald-100"
+              >
+                Procesar Cobro Directo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div >
   );

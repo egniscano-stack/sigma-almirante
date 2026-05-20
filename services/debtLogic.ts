@@ -106,8 +106,11 @@ export const calculateTaxpayerDebt = (
                 if (s) {
                   const mRates = t.magnitude === 'GRANDE' ? s.rates.GRANDE :
                                  t.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
-                  if (Array.isArray(mRates)) {
-                    commercialAmount += t.selectedRates?.[code] || mRates[0] || 0;
+                  const customRate = typeof t.selectedRates?.[code] === 'number' ? t.selectedRates[code] : parseFloat(t.selectedRates?.[code] as any);
+                  if (!isNaN(customRate)) {
+                    commercialAmount += customRate;
+                  } else if (Array.isArray(mRates)) {
+                    commercialAmount += mRates[0] || 0;
                   } else if (typeof mRates === 'number') {
                     commercialAmount += mRates;
                   }

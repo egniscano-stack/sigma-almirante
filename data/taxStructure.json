@@ -1405,5 +1405,32 @@
         500
       ]
     }
+  },
+  {
+    "code": "12.14.02",
+    "activity": "Servicio de recolección de basura",
+    "rates": {
+      "PEQUENO": "Residencial: B/. 3.00 a 5.00 / Jubilados: B/. 3.00",
+      "MEDIANO": "Gobierno: B/. 3.00 a 10.00",
+      "GRANDE": "Comercial: B/. 10.00 a 150.00"
+    }
+  },
+  {
+    "code": "12.42.21",
+    "activity": "Expedición de carnet",
+    "rates": {
+      "PEQUENO": "B/. 5.00 a 15.00",
+      "MEDIANO": "B/. 5.00 a 15.00",
+      "GRANDE": "B/. 5.00 a 15.00"
+    }
+  },
+  {
+    "code": "12.60.99",
+    "activity": "Actividades no clasificadas en el distrito (Impuesto según Tesorería)",
+    "rates": {
+      "PEQUENO": "B/. 5.00 a 1,000.00",
+      "MEDIANO": "B/. 5.00 a 1,000.00",
+      "GRANDE": "B/. 5.00 a 1,000.00"
+    }
   }
 ]
