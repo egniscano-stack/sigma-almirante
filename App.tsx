@@ -21,6 +21,8 @@ import { AlcaldeDashboard } from './pages/AlcaldeDashboard';
 import { SecretariaDashboard } from './pages/SecretariaDashboard';
 import { ContabilidadDashboard } from './pages/ContabilidadDashboard';
 import { PlanillaDashboard } from './pages/PlanillaDashboard';
+import { BudgetExecution } from './pages/BudgetExecution';
+import { PaymentArrangements } from './pages/PaymentArrangements';
 import { TaxConfig, Taxpayer, Transaction, User, MunicipalityInfo, TaxpayerType, CommercialCategory, TaxpayerStatus, AdminRequest, RequestStatus } from './types';
 import { Menu, ArrowLeft, ArrowRight, Wifi, WifiOff, RefreshCw, Bell, AlertCircle as AlertIcon, CheckCircle, XCircle, LogOut, Download, Archive, Edit, X, Shield, Clock, Trash2, ShieldAlert, FileText } from 'lucide-react';
 import { db, mapTaxpayerFromDB, mapTransactionFromDB } from './services/db';
@@ -271,7 +273,7 @@ function App() {
     const tp = taxpayersRef.current.find(t => t.id === taxpayerId);
     if (tp) {
       setSelectedDebtTaxpayer(tp);
-      setCurrentPage('caja');
+      setCurrentPage(user?.username.toLowerCase().includes('placa') ? 'taxpayers' : 'caja');
     }
   };
 
@@ -355,7 +357,12 @@ function App() {
   const handleLogin = (loggedInUser: User) => {
     setUser(loggedInUser);
     if (loggedInUser.role === 'CAJERO') {
-      setCurrentPage('caja');
+      const uname = loggedInUser.username.toLowerCase();
+      if (uname.includes('placa')) {
+        setCurrentPage('taxpayers');
+      } else {
+        setCurrentPage('caja');
+      }
     } else if (loggedInUser.role === 'CONTABILIDAD') {
       setCurrentPage('contabilidad');
     } else if (loggedInUser.role === 'PLANILLA') {
@@ -480,7 +487,7 @@ function App() {
 
   const handleGoToPay = (taxpayer: Taxpayer) => {
     setSelectedDebtTaxpayer(taxpayer);
-    setCurrentPage('caja');
+    setCurrentPage(user?.username.toLowerCase().includes('placa') ? 'taxpayers' : 'caja');
   };
 
   const handlePayment = async (paymentData: any) => {
@@ -507,20 +514,84 @@ function App() {
       if (targetTaxpayer) {
         let newBalance = targetTaxpayer.balance || 0;
         let newPrevDebt = targetTaxpayer.previousYearsDebt || 0;
+        let updatedArrangement = targetTaxpayer.paymentArrangement ? { ...targetTaxpayer.paymentArrangement } : undefined;
+        let shouldUpdateTaxpayer = false;
+
+        // 1. Explicit metadata checks (single-item payment)
+        if (paymentData.metadata?.isArrangementAbono && updatedArrangement) {
+          updatedArrangement.abonoPagado = true;
+          shouldUpdateTaxpayer = true;
+        } else if (paymentData.metadata?.isArrangementInstallment && updatedArrangement) {
+          updatedArrangement.cuotasPagadas = (updatedArrangement.cuotasPagadas || 0) + 1;
+          if (updatedArrangement.cuotasPagadas >= updatedArrangement.cuotasTotales) {
+            updatedArrangement.estado = 'COMPLETADO';
+          }
+          shouldUpdateTaxpayer = true;
+        }
+
+        // 2. Consolidated checks (when paying all debts at once)
+        if (paymentData.metadata?.isConsolidated && paymentData.metadata?.originalItems && updatedArrangement) {
+          const originalItems = paymentData.metadata.originalItems;
+          const hasAbonoItem = originalItems.some((item: any) => 
+            item.label?.includes("Abono Inicial")
+          );
+          const hasInstallmentItem = originalItems.some((item: any) => 
+            item.label?.includes("Cuota Arreglo")
+          );
+
+          if (hasAbonoItem) {
+            updatedArrangement.abonoPagado = true;
+            shouldUpdateTaxpayer = true;
+          }
+          if (hasInstallmentItem) {
+            updatedArrangement.cuotasPagadas = (updatedArrangement.cuotasPagadas || 0) + 1;
+            if (updatedArrangement.cuotasPagadas >= updatedArrangement.cuotasTotales) {
+              updatedArrangement.estado = 'COMPLETADO';
+            }
+            shouldUpdateTaxpayer = true;
+          }
+        }
+
+        // 3. Fallbacks based on description text matching
+        if (paymentData.description?.includes("Abono Inicial") && updatedArrangement) {
+          updatedArrangement.abonoPagado = true;
+          shouldUpdateTaxpayer = true;
+        } else if (paymentData.description?.includes("Cuota Arreglo") && updatedArrangement) {
+          updatedArrangement.cuotasPagadas = (updatedArrangement.cuotasPagadas || 0) + 1;
+          if (updatedArrangement.cuotasPagadas >= updatedArrangement.cuotasTotales) {
+            updatedArrangement.estado = 'COMPLETADO';
+          }
+          shouldUpdateTaxpayer = true;
+        }
 
         if (paymentData.description.includes("Deuda Acumulada") || paymentData.description.includes("Anteriores")) {
           newPrevDebt = Math.max(0, newPrevDebt - paymentData.amount);
+          shouldUpdateTaxpayer = true;
         }
 
         if (paymentData.description.includes("Pago Total")) {
           newBalance = 0;
           newPrevDebt = 0;
+          shouldUpdateTaxpayer = true;
+
+          // If paying in full, complete any active payment arrangements as well
+          if (updatedArrangement && updatedArrangement.estado === 'ACTIVO') {
+            updatedArrangement.estado = 'COMPLETADO';
+            updatedArrangement.cuotasPagadas = updatedArrangement.cuotasTotales;
+            updatedArrangement.abonoPagado = true;
+          }
         } else if (paymentData.description.includes("Saldo Pendiente")) {
           newBalance = Math.max(0, newBalance - paymentData.amount);
+          shouldUpdateTaxpayer = true;
         }
         
-        if (newBalance !== targetTaxpayer.balance || newPrevDebt !== targetTaxpayer.previousYearsDebt) {
-          const updatedTp = { ...targetTaxpayer, balance: newBalance, previousYearsDebt: newPrevDebt };
+        if (shouldUpdateTaxpayer || newBalance !== targetTaxpayer.balance || newPrevDebt !== targetTaxpayer.previousYearsDebt) {
+          const updatedTp = { 
+            ...targetTaxpayer, 
+            balance: newBalance, 
+            previousYearsDebt: newPrevDebt,
+            paymentArrangement: updatedArrangement
+          };
           await db.updateTaxpayer(updatedTp);
           setTaxpayers(prev => prev.map(tp => tp.id === updatedTp.id ? updatedTp : tp));
           window.dispatchEvent(new CustomEvent('sigma_data_updated'));
@@ -887,7 +958,7 @@ function App() {
                   const targetTp = taxpayers.find(tp => tp.id === req.taxpayerId);
                   if (targetTp) {
                     setSelectedDebtTaxpayer(targetTp);
-                    setCurrentPage('caja');
+                    setCurrentPage(user?.username.toLowerCase().includes('placa') ? 'taxpayers' : 'caja');
                   }
                 }
                 
@@ -926,6 +997,25 @@ function App() {
             taxpayers={filteredTaxpayers} 
             config={config} 
             onRefresh={() => fetchData(true)}
+            onNavigate={setCurrentPage}
+          />
+        ) : null;
+      case 'presupuesto':
+        return user?.role === 'CONTABILIDAD' ? (
+          <BudgetExecution 
+            transactions={filteredTransactions} 
+            taxpayers={filteredTaxpayers} 
+            config={config} 
+            onRefresh={() => fetchData(true)}
+          />
+        ) : null;
+      case 'arreglos':
+        return user?.role === 'ADMIN' ? (
+          <PaymentArrangements
+            taxpayers={filteredTaxpayers}
+            transactions={filteredTransactions}
+            config={config}
+            onUpdateTaxpayer={handleUpdateTaxpayer}
           />
         ) : null;
       case 'planilla':
@@ -1190,7 +1280,7 @@ function App() {
             if (tp) {
               setSelectedDebtTaxpayer(tp);
               setShowRequestsModal(false);
-              setCurrentPage('caja');
+              setCurrentPage(user?.username.toLowerCase().includes('placa') ? 'taxpayers' : 'caja');
             }
           }}
         />
@@ -1227,13 +1317,13 @@ function App() {
                   const tp = taxpayers.find(t => t.id === notificationToast.taxpayerId);
                   if (tp) {
                     setSelectedDebtTaxpayer(tp);
-                    setCurrentPage('caja');
+                    setCurrentPage(user?.username.toLowerCase().includes('placa') ? 'taxpayers' : 'caja');
                     setNotificationToast(null);
                   }
                 }}
                 className="mt-3 bg-white text-slate-900 px-4 py-1.5 rounded-lg text-xs font-bold shadow-lg hover:bg-emerald-50 transition-all active:scale-95 flex items-center gap-2"
               >
-                Ir a Caja <ArrowRight size={14} />
+                {user?.username.toLowerCase().includes('placa') ? 'Ver Contribuyente' : 'Ir a Caja'} <ArrowRight size={14} />
               </button>
             )}
           </div>

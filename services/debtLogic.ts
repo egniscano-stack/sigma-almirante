@@ -33,8 +33,19 @@ export const calculateTaxpayerDebt = (
     }
   }
 
+  // Parse arrangement if active to prevent double-billing consolidated debts
+  let arrYear = 0;
+  let arrMonth = 0;
+  if (t.paymentArrangement && t.paymentArrangement.estado === 'ACTIVO') {
+    const arrDateParts = t.paymentArrangement.fechaCreacion.split('-');
+    if (arrDateParts.length >= 2) {
+      arrYear = parseInt(arrDateParts[0]) || 0;
+      arrMonth = parseInt(arrDateParts[1]) || 0;
+    }
+  }
+
   // 1. Accumulated Debt (Previous Years / Manual Arrears)
-  if ((t.previousYearsDebt || 0) > 0) {
+  if ((t.previousYearsDebt || 0) > 0 && arrYear === 0) {
     debts.push({
       id: 'previous-years',
       type: 'DEUDA_ARRAS',
@@ -93,9 +104,12 @@ export const calculateTaxpayerDebt = (
             });
           };
 
+          // Check if consolidated by active arrangement
+          const isConsolidated = arrYear > 0 && arrMonth > 0 && (year < arrYear || (year === arrYear && m <= arrMonth));
+
           // Commercial Debt
           const hasCommFlag = t.hasCommercialActivity || (t.selectedTaxCodes && t.selectedTaxCodes.length > 0);
-          if (hasCommFlag && t.status !== 'BLOQUEADO' && !isPaid(TaxType.COMERCIO)) {
+          if (!isConsolidated && hasCommFlag && t.status !== 'BLOQUEADO' && !isPaid(TaxType.COMERCIO)) {
             let commercialAmount = 0;
             let hasAssignment = false;
 
@@ -145,7 +159,7 @@ export const calculateTaxpayerDebt = (
           }
 
           // Garbage Debt
-          if (t.hasGarbageService && t.status !== 'BLOQUEADO' && !isPaid(TaxType.BASURA)) {
+          if (!isConsolidated && t.hasGarbageService && t.status !== 'BLOQUEADO' && !isPaid(TaxType.BASURA)) {
             const garbageRate = t.garbageAmount || 0;
             if (garbageRate > 0) {
               debts.push({
@@ -181,7 +195,9 @@ export const calculateTaxpayerDebt = (
           return tx.metadata?.year === year || tx.description.includes(labelSuffix);
         });
 
-        if (!isPaid) {
+        const isVehConsolidated = arrYear > 0 && year <= arrYear;
+
+        if (!isVehConsolidated && !isPaid) {
           const amount = t.yearlyAmount || config?.plateCost || 0;
           if (amount > 0) {
             const plateNum = t.vehicles?.[0]?.plate || '';
@@ -224,7 +240,9 @@ export const calculateTaxpayerDebt = (
                  new Date(tx.date).getFullYear() === currentYear;
         });
 
-        if (!hasPaid) {
+        const isVehRenewalConsolidated = arrYear > 0 && (currentYear < arrYear || (currentYear === arrYear && renewalMonth <= arrMonth));
+
+        if (!isVehRenewalConsolidated && !hasPaid) {
           const amount = config?.plateCost || 0;
           if (amount > 0) {
             debts.push({
@@ -239,6 +257,32 @@ export const calculateTaxpayerDebt = (
         }
       }
     });
+  }
+
+  // 4. Payment Arrangement Installment
+  if (t.paymentArrangement && t.paymentArrangement.estado === 'ACTIVO') {
+    if (t.paymentArrangement.abono > 0 && !t.paymentArrangement.abonoPagado) {
+      debts.push({
+        id: `arr-abono-${t.paymentArrangement.id}`,
+        type: 'DEUDA_ARRAS',
+        label: `Abono Inicial - Arreglo de Pago`,
+        amount: t.paymentArrangement.abono,
+        description: `Abono inicial pactado para activar el convenio de pago`,
+        isPriority: true,
+        metadata: { isArrangementAbono: true, arrangementId: t.paymentArrangement.id }
+      });
+    } else {
+      const cuotaN = t.paymentArrangement.cuotasPagadas + 1;
+      debts.push({
+        id: `arr-installment-${t.paymentArrangement.id}`,
+        type: 'DEUDA_ARRAS',
+        label: `Cuota Arreglo de Pago (${cuotaN} de ${t.paymentArrangement.cuotasTotales})`,
+        amount: t.paymentArrangement.montoCuota,
+        description: `Cuota mensual de arreglo de pago. Saldo de morosidad consolidada`,
+        isPriority: true,
+        metadata: { isArrangementInstallment: true, arrangementId: t.paymentArrangement.id, cuotaNumero: cuotaN }
+      });
+    }
   }
 
   return {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, Receipt, ScanLine, Settings, LogOut, FileText, X, AlertCircle, Banknote, MessageCircle, Globe, Building2 } from 'lucide-react';
+import { LayoutDashboard, Users, Receipt, ScanLine, Settings, LogOut, FileText, X, AlertCircle, Banknote, MessageCircle, Globe, Building2, TrendingUp } from 'lucide-react';
 import { UserRole } from '../types';
 import { getSession } from '../services/security';
 
@@ -20,8 +20,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavig
     { id: 'contabilidad', label: 'Contabilidad', icon: FileText, roles: ['CONTABILIDAD'] },
     { id: 'planilla', label: 'Planilla y RRHH', icon: Users, roles: ['PLANILLA'] },
     { id: 'taxpayers', label: 'Contribuyentes', icon: Users, roles: ['ADMIN', 'CAJERO', 'AUDITOR', 'REGISTRO', 'CONTABILIDAD'] },
+    { id: 'presupuesto', label: 'Ejecución Presupuestaria', icon: TrendingUp, roles: ['CONTABILIDAD'] },
+    { id: 'arreglos', label: 'Arreglos de Pago', icon: Receipt, roles: ['ADMIN'] },
     // Split into Caja and Cobros
-    { id: 'caja', label: 'Caja', icon: Banknote, roles: ['ADMIN', 'CAJERO'] },
+    { id: 'caja', label: 'Caja', icon: Banknote, roles: ['CAJERO'] },
     { id: 'construction', label: 'Cobro de Construcción', icon: Building2, roles: ['ADMIN', 'CAJERO'] },
     { id: 'cobros', label: 'Gestión de Cobros', icon: AlertCircle, roles: ['ADMIN', 'CAJERO', 'AUDITOR'] },
     { id: 'scanner', label: 'Digitalizador IA', icon: ScanLine, roles: ['ADMIN', 'CAJERO', 'REGISTRO'] },
@@ -41,6 +43,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavig
     // Special case for Construction: Only Caja 1 and Admin
     if (item.id === 'construction') {
       return isAdmin || isCaja1;
+    }
+
+    // Plate dashboard (uname includes 'placa') should not have Caja option
+    if (item.id === 'caja' && uname.includes('placa')) {
+      return false;
     }
 
     // Basic role check for other items

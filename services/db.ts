@@ -38,7 +38,8 @@ export const mapTaxpayerFromDB = (data: any): Taxpayer => ({
     yearlyAmount: Number(data.yearly_amount) || 0,
     lastPaymentMonth: data.documents?.lastPaymentMonth || '',
     createdBy: data.created_by || data.documents?.createdBy,
-    lastEditedBy: data.last_edited_by || data.documents?.lastEditedBy
+    lastEditedBy: data.last_edited_by || data.documents?.lastEditedBy,
+    paymentArrangement: data.documents?.paymentArrangement || undefined
 });
 
 const mapTaxpayerToDB = (data: Taxpayer) => ({
@@ -67,7 +68,8 @@ const mapTaxpayerToDB = (data: Taxpayer) => ({
       previousYearsDebt: data.previousYearsDebt || 0,
       lastPaymentMonth: data.lastPaymentMonth || null,
       createdBy: data.createdBy || (data.documents as any)?.createdBy || null,
-      lastEditedBy: data.lastEditedBy || (data.documents as any)?.lastEditedBy || null
+      lastEditedBy: data.lastEditedBy || (data.documents as any)?.lastEditedBy || null,
+      paymentArrangement: data.paymentArrangement || null
     },
     magnitude: data.magnitude,
     selected_tax_codes: data.selectedTaxCodes || [],

@@ -16,6 +16,7 @@ interface ContabilidadDashboardProps {
   taxpayers: Taxpayer[];
   config: TaxConfig;
   onRefresh?: () => void;
+  onNavigate?: (page: string) => void;
 }
 
 const SHADES = ['#0d9488', '#2563eb', '#db2777', '#ca8a04', '#7c3aed', '#ea580c'];
@@ -24,7 +25,8 @@ export const ContabilidadDashboard: React.FC<ContabilidadDashboardProps> = ({
   transactions,
   taxpayers,
   config,
-  onRefresh
+  onRefresh,
+  onNavigate
 }) => {
   const [activeTab, setActiveTab] = useState<'INGRESOS' | 'CONCILIACION' | 'PRESUPUESTO'>('INGRESOS');
   const [reconciledList, setReconciledList] = useState<Record<string, boolean>>({});
@@ -209,7 +211,13 @@ export const ContabilidadDashboard: React.FC<ContabilidadDashboardProps> = ({
         {(['INGRESOS', 'CONCILIACION', 'PRESUPUESTO'] as const).map(tab => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => {
+              if (tab === 'PRESUPUESTO' && onNavigate) {
+                onNavigate('presupuesto');
+              } else {
+                setActiveTab(tab);
+              }
+            }}
             className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
               activeTab === tab
                 ? 'bg-teal-600 text-white shadow-md'

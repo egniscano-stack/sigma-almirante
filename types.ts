@@ -67,11 +67,25 @@ export enum Corregimiento {
   MIRAFLORES = 'Miraflores',
 }
 
+export interface PaymentArrangement {
+  id: string;
+  totalDebt: number;
+  abono: number;
+  balanceRestante: number;
+  cuotasTotales: number;
+  cuotasPagadas: number;
+  montoCuota: number;
+  fechaCreacion: string;
+  estado: 'ACTIVO' | 'COMPLETADO' | 'CANCELADO';
+  abonoPagado?: boolean;
+}
+
 export interface Taxpayer {
   id: string;
   taxpayerNumber: string; // Unique Auto-Generated Number (e.g., 2024-0001)
   type: TaxpayerType;
   status: TaxpayerStatus; // ACTIVO, SUSPENDIDO, BLOQUEADO
+  paymentArrangement?: PaymentArrangement;
 
   // Identification
   docId: string; // Cédula or RUC
