@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Taxpayer, TaxConfig, TaxType, CommercialCategory, PaymentMethod, Transaction, User, MunicipalityInfo, AdminRequest, RequestType, RequestStatus } from '../types';
-import { Car, Building2, Trash2, Store, CreditCard, Search, Banknote, Printer, CheckCircle, XCircle, X, ArrowLeft, Save, User as UserIcon, MapPin, Download, AlertCircle, Lock, History, RefreshCw, Bell } from 'lucide-react';
+import { Car, Building2, Trash2, Store, CreditCard, Search, Banknote, Printer, CheckCircle, XCircle, X, ArrowLeft, Save, User as UserIcon, MapPin, Download, AlertCircle, Lock, History, RefreshCw, Bell, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { QRCodeSVG } from 'qrcode.react';
@@ -64,6 +64,19 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
   const [closingTransactions, setClosingTransactions] = useState<Transaction[]>([]);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
+  // Preview Modal States
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [draftPaymentData, setDraftPaymentData] = useState<any>(null);
+
+  const updateDraftField = (field: string, value: any) => {
+    setDraftPaymentData((prev: any) => ({ ...prev, [field]: value }));
+  };
+
+  const triggerPaymentPreview = (paymentData: any) => {
+    setDraftPaymentData(paymentData);
+    setShowPreviewModal(true);
+  };
+
   const getPaymentMethodLabel = (method: string) => {
     if (!method) return 'Efectivo';
     const m = method.toUpperCase();
@@ -102,7 +115,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
   const [directManualAddress, setDirectManualAddress] = useState('');
   const [directManualPhone, setDirectManualPhone] = useState('');
   const [directChargeType, setDirectChargeType] = useState<'COMERCIO' | 'EVENTO'>('COMERCIO');
-  const [directEventDays, setDirectEventDays] = useState<number>(1);
+  const [directEventDays, setDirectEventDays] = useState<number | ''>('');
   const [directTaxCode, setDirectTaxCode] = useState('');
   const [directTaxActivityName, setDirectTaxActivityName] = useState('');
   const [directAmount, setDirectAmount] = useState('');
@@ -115,6 +128,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
   // Autocomplete code search in modal
   const [directCodeSearchTerm, setDirectCodeSearchTerm] = useState('');
   const [directCodeShowDropdown, setDirectCodeShowDropdown] = useState(false);
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
 
   const directSearchContainerRef = useRef<HTMLDivElement>(null);
   const directCodeContainerRef = useRef<HTMLDivElement>(null);
@@ -189,12 +203,17 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
     if (directChargeType === 'COMERCIO') {
       chargeTypeLabel = 'ACTIVIDAD COMERCIAL';
     } else {
-      chargeTypeLabel = `EVENTO ESPECIAL (${directEventDays} DÍA${directEventDays > 1 ? 'S' : ''}${directEventDays === 90 ? ' - RENOVABLE' : ''})`;
+      const daysNum = parseInt(String(directEventDays));
+      if (isNaN(daysNum) || daysNum < 1 || daysNum > 90) {
+        alert("Por favor, ingrese la duración del evento en días (1 a 90).");
+        return;
+      }
+      chargeTypeLabel = `EVENTO ESPECIAL (${daysNum} DÍA${daysNum > 1 ? 'S' : ''}${daysNum === 90 ? ' - RENOVABLE' : ''})`;
     }
 
     const description = `COBRO DIRECTO - ${chargeTypeLabel} (CÓD: ${directTaxCode.trim()}${directTaxActivityName ? ` - ${directTaxActivityName}` : ''})`;
 
-    const tx = await onPayment({
+    triggerPaymentPreview({
       taxType: TaxType.COMERCIO,
       taxpayerId: isManualPayer ? undefined : directSelectedTaxpayerId,
       amount: amountNum,
@@ -203,7 +222,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
       metadata: {
         isDirectCharge: true,
         chargeType: directChargeType,
-        eventDays: directChargeType === 'EVENTO' ? directEventDays : undefined,
+        eventDays: directChargeType === 'EVENTO' ? parseInt(String(directEventDays)) : undefined,
         taxCode: directTaxCode.trim(),
         taxActivity: directTaxActivityName,
         manualPayer: isManualPayer ? payerName : undefined,
@@ -220,9 +239,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
       }
     });
 
-    setLastTransaction(tx);
     setShowDirectChargeModal(false);
-    setShowInvoice(true);
 
     // Reset Form
     setIsManualPayer(false);
@@ -255,7 +272,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
   }, [activeTaxpayer, transactions, config]);
 
   const handlePayDebtItem = (debt: any) => {
-    const tx = onPayment({
+    triggerPaymentPreview({
       taxType: (debt.type === 'DEUDA_HISTORICA' || debt.type === 'DEUDA_ARRAS') ? TaxType.COMERCIO : debt.type, // Fallback tax type
       taxpayerId: selectedTaxpayerId,
       amount: debt.amount,
@@ -263,8 +280,6 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
       description: debt.description,
       metadata: debt.metadata
     });
-    setLastTransaction(tx);
-    setShowInvoice(true);
   };
 
   const handlePayAllDebts = () => {
@@ -273,7 +288,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
     const totalAmount = taxpayerDebts.reduce((acc, d) => acc + (d.amount || 0), 0);
     const summaryDesc = `Pago Total de Deudas Pendientes (${taxpayerDebts.length} conceptos)`;
 
-    const tx = onPayment({
+    triggerPaymentPreview({
       taxType: TaxType.COMERCIO, // Use a general type for consolidated
       taxpayerId: selectedTaxpayerId,
       amount: totalAmount,
@@ -285,9 +300,6 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
         originalItems: taxpayerDebts.map(d => ({ label: d.label, amount: d.amount }))
       }
     });
-
-    setLastTransaction(tx);
-    setShowInvoice(true);
   };
 
   const filteredTaxpayers = searchTerm.length > 0
@@ -416,6 +428,191 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-24">
+
+      {/* --- PREVIEW INVOICE MODAL (VISTA PREVIA ANTES DE CONFIRMAR) --- */}
+      {showPreviewModal && draftPaymentData && (
+        (() => {
+          const payerName = draftPaymentData.metadata?.manualPayer 
+            || draftPaymentData.metadata?.registeredPayer?.name 
+            || taxpayers.find(tp => tp.id === draftPaymentData.taxpayerId)?.name 
+            || activeTaxpayer?.name 
+            || 'Pagador Eventual';
+
+          const payerDocId = draftPaymentData.metadata?.manualPayerDoc 
+            || draftPaymentData.metadata?.registeredPayer?.docId 
+            || taxpayers.find(tp => tp.id === draftPaymentData.taxpayerId)?.docId 
+            || activeTaxpayer?.docId 
+            || 'N/A';
+
+          return (
+            <div className="fixed inset-0 bg-slate-955/80 flex items-center justify-center z-[110] p-4 backdrop-blur-sm overflow-y-auto">
+              <div className="bg-white shadow-2xl w-full max-w-[340px] rounded-2xl overflow-hidden flex flex-col relative border border-slate-200 my-8 animate-scale-up">
+                
+                {/* Draft Badge Banner */}
+                <div className="bg-gradient-to-r from-orange-500 to-amber-500 text-white text-center py-2.5 px-4 font-black uppercase text-[10px] tracking-widest shadow-sm flex items-center justify-center gap-1.5">
+                  <ShieldAlert size={14} className="animate-pulse" />
+                  <span>Vista Previa: Borrador</span>
+                </div>
+
+                <div className="p-4 text-center">
+                  <p className="text-[10px] text-amber-600 font-extrabold uppercase bg-amber-50 rounded-lg py-1.5 px-3 border border-amber-100 mb-4 tracking-wider leading-relaxed">
+                    Revise la información y corrija cualquier error antes de confirmar el cobro oficial.
+                  </p>
+
+                  {/* Centered Logo */}
+                  <div className="flex justify-center mb-1.5">
+                    <img
+                      src={`${import.meta.env.BASE_URL}logo-municipio.png`}
+                      alt="Escudo Municipal"
+                      className="h-16 object-contain grayscale opacity-60"
+                    />
+                  </div>
+
+                  <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider text-center">Municipio de Almirante</h3>
+                  <p className="text-[8px] text-slate-400 font-bold uppercase border-b border-dashed border-slate-200 pb-2 mb-3 text-center">Tesorería Municipal</p>
+
+                  {/* Taxpayer Card */}
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-left mb-4 space-y-1">
+                    <p className="text-[8px] font-bold text-slate-400 uppercase">Contribuyente:</p>
+                    <p className="font-extrabold text-[11px] text-slate-900 leading-tight uppercase">{payerName}</p>
+                    <p className="text-[9px] font-mono font-bold text-slate-600">CÉDULA/RUC: {payerDocId}</p>
+                    {(() => {
+                      const resolvedTp = taxpayers.find(tp => tp.id === draftPaymentData.taxpayerId)
+                        || (draftPaymentData.metadata?.registeredPayer ? taxpayers.find(tp => tp.id === draftPaymentData.metadata.registeredPayer.id) : null)
+                        || activeTaxpayer;
+                      return resolvedTp?.taxpayerNumber ? (
+                        <p className="text-[9px] font-mono font-bold text-indigo-600">Nº CONTRIBUYENTE: {resolvedTp.taxpayerNumber}</p>
+                      ) : null;
+                    })()}
+
+                    {/* Direct Charge Details in Preview */}
+                    {draftPaymentData.metadata?.isDirectCharge && (
+                      <div className="mt-2 pt-2 border-t border-slate-200 text-[8px] text-slate-600 space-y-0.5 font-mono">
+                        <p className="font-bold text-[8px] text-emerald-700 uppercase tracking-wider">Detalles de Cobro Directo:</p>
+                        <p><span className="font-bold">Tipo:</span> {
+                          draftPaymentData.metadata.chargeType === 'COMERCIO' ? 'ACTIVIDAD COMERCIAL' :
+                          draftPaymentData.metadata.chargeType === 'EVENTO' ? `EVENTO ESPECIAL (${draftPaymentData.metadata.eventDays || 1} DÍA${(draftPaymentData.metadata.eventDays || 1) > 1 ? 'S' : ''}${draftPaymentData.metadata.eventDays === 90 ? ' - RENOVABLE' : ''})` : 'OTRO'
+                        }</p>
+                        <p><span className="font-bold">Código:</span> {draftPaymentData.metadata.taxCode}</p>
+                        {draftPaymentData.metadata.taxActivity && <p><span className="font-bold">Actividad:</span> {draftPaymentData.metadata.taxActivity}</p>}
+                      </div>
+                    )}
+
+                    {/* Detalles de Códigos Tributarios para Contribuyentes Registrados (Preview) */}
+                    {(() => {
+                      const resolvedTp = taxpayers.find(tp => tp.id === draftPaymentData.taxpayerId)
+                        || (draftPaymentData.metadata?.registeredPayer ? taxpayers.find(tp => tp.id === draftPaymentData.metadata.registeredPayer.id) : null)
+                        || activeTaxpayer;
+                      if (!draftPaymentData.metadata?.isDirectCharge && draftPaymentData.taxType === 'COMERCIO' && resolvedTp && resolvedTp.selectedTaxCodes && resolvedTp.selectedTaxCodes.length > 0) {
+                        return (
+                          <div className="mt-2 pt-2 border-t border-slate-200 text-[8px] text-slate-600 space-y-0.5 font-mono">
+                            <p className="font-bold text-[8px] text-indigo-700 uppercase tracking-wider">Actividades / Códigos Comerciales:</p>
+                            {resolvedTp.selectedTaxCodes.map((code: any, idx: number) => {
+                              const struct = (taxStructure as any[]).find(s => s.code === code);
+                              const rate = resolvedTp.selectedRates?.[code] || 0;
+                              return (
+                                <div key={idx} className="bg-white p-1 rounded border border-slate-100 mt-1">
+                                  <p className="font-bold text-slate-900 leading-snug">{code} — {struct?.activity || 'Actividad Comercial'}</p>
+                                  <p className="text-[7px]">Tarifa Mensual: B/. {formatCurrency(rate)}</p>
+                                </div>
+                              );
+                            })}
+                            {(resolvedTp.rotuloAmount || 0) > 0 && (
+                              <p className="text-slate-600"><span className="font-bold">Impuesto Rótulo:</span> B/. {formatCurrency(resolvedTp.rotuloAmount)}</p>
+                            )}
+                            {(resolvedTp.garbageAmount || 0) > 0 && (
+                              <p className="text-slate-600"><span className="font-bold">Tasa Aseo:</span> B/. {formatCurrency(resolvedTp.garbageAmount)}</p>
+                            )}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+
+                  {/* EDITABLE FIELDS */}
+                  <div className="text-left space-y-3.5 bg-slate-50/50 p-3 rounded-xl border border-slate-100 mb-4">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider -mb-1">Datos Editables del Cobro:</p>
+                    
+                    {/* 1. Payment Method Dropdown */}
+                    <div>
+                      <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Método de Pago</label>
+                      <div className="relative">
+                        <select
+                          value={draftPaymentData.paymentMethod}
+                          onChange={(e) => updateDraftField('paymentMethod', e.target.value)}
+                          className="w-full bg-white text-xs font-bold text-slate-800 p-2.5 rounded-lg border-2 border-slate-200 focus:border-orange-500 outline-none transition-colors"
+                        >
+                          <option value="EFECTIVO">Efectivo</option>
+                          <option value="TARJETA">Tarjeta</option>
+                          <option value="ONLINE">Online (Yappy/ACH)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* 2. Editable Description */}
+                    <div>
+                      <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Concepto / Descripción</label>
+                      <textarea
+                        rows={2}
+                        value={draftPaymentData.description}
+                        onChange={(e) => updateDraftField('description', e.target.value.toUpperCase())}
+                        className="w-full bg-white text-xs font-bold text-slate-800 p-2.5 rounded-lg border-2 border-slate-200 focus:border-orange-500 outline-none transition-colors leading-tight resize-none"
+                      />
+                    </div>
+
+                    {/* 3. Editable Amount */}
+                    <div>
+                      <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Monto del Cobro (B/.)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        inputMode="decimal"
+                        value={draftPaymentData.amount || ''}
+                        onChange={(e) => updateDraftField('amount', parseFloat(e.target.value) || 0)}
+                        className="w-full bg-white text-sm font-black text-orange-600 p-2.5 rounded-lg border-2 border-slate-200 focus:border-orange-500 outline-none transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Summary Box */}
+                  <div className="bg-orange-50/50 border border-orange-100 rounded-xl p-3 flex justify-between items-center mb-5">
+                    <span className="text-[10px] font-black text-orange-800 uppercase">Monto Final a Cobrar:</span>
+                    <span className="text-base font-black text-orange-700">B/. {formatCurrency(draftPaymentData.amount)}</span>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const tx = await onPayment(draftPaymentData);
+                          setLastTransaction(tx);
+                          setShowPreviewModal(false);
+                          setShowInvoice(true);
+                        } catch (e) {
+                          alert("Error al procesar el pago.");
+                        }
+                      }}
+                      disabled={draftPaymentData.amount <= 0}
+                      className="w-full bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black py-3 rounded-xl text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                    >
+                      <CheckCircle size={15} /> Confirmar y Procesar Cobro
+                    </button>
+                    <button
+                      onClick={() => setShowPreviewModal(false)}
+                      className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all transform active:scale-95"
+                    >
+                      Cancelar / Regresar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()
+      )}
 
       {/* --- PAZ Y SALVO MODAL --- */}
       {showPazSalvo && activeTaxpayer && (
@@ -686,6 +883,37 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                               ))}
                             </div>
                           )}
+                          {t.metadata?.isDirectCharge && (
+                            <div className="mt-1 mb-1 border-l-2 border-emerald-200 pl-3 py-1 space-y-0.5 bg-slate-50/50 rounded-r-lg text-[9px] font-mono text-slate-600">
+                              <p className="font-bold text-[8px] text-emerald-700 uppercase tracking-wider">Detalles de Cobro Directo:</p>
+                              <p><span className="font-bold">Tipo:</span> {
+                                t.metadata.chargeType === 'COMERCIO' ? 'ACTIVIDAD COMERCIAL' :
+                                t.metadata.chargeType === 'EVENTO' ? `EVENTO ESPECIAL (${t.metadata.eventDays || 1} DÍA${(t.metadata.eventDays || 1) > 1 ? 'S' : ''}${t.metadata.eventDays === 90 ? ' - RENOVABLE' : ''})` : 'OTRO'
+                              }</p>
+                              <p><span className="font-bold">Código:</span> {t.metadata.taxCode}</p>
+                              {t.metadata.taxActivity && <p><span className="font-bold">Actividad:</span> {t.metadata.taxActivity}</p>}
+                            </div>
+                          )}
+                          {(() => {
+                            const tp = taxpayers.find(tp => tp.id === t.taxpayerId);
+                            if (!t.metadata?.isDirectCharge && t.taxType === 'COMERCIO' && tp && tp.selectedTaxCodes && tp.selectedTaxCodes.length > 0) {
+                              return (
+                                <div className="mt-1 mb-1 border-l-2 border-indigo-200 pl-3 py-1 space-y-0.5 bg-slate-50/50 rounded-r-lg text-[9px] font-mono text-slate-600">
+                                  <p className="font-bold text-[8px] text-indigo-700 uppercase tracking-wider">Actividades / Códigos Comerciales:</p>
+                                  {tp.selectedTaxCodes.map((code: any, idx: number) => {
+                                    const struct = (taxStructure as any[]).find(s => s.code === code);
+                                    const rate = tp.selectedRates?.[code] || 0;
+                                    return (
+                                      <p key={idx}>
+                                        <span className="font-bold">{code}</span> — {struct?.activity || 'Actividad'} (B/. {formatCurrency(rate)})
+                                      </p>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                           <span className="text-[10px] font-bold text-slate-400 mt-0.5">PAGO EN: {getPaymentMethodLabel(t.paymentMethod).toUpperCase()}</span>
                         </div>
                       </td>
@@ -883,7 +1111,10 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                   <div className="bg-slate-50 p-2 rounded mb-3 border border-slate-100 text-left">
                     <p className="text-[8px] font-bold text-slate-400 uppercase">Contribuyente:</p>
                     <p className="font-bold text-[11px] text-slate-900 leading-tight uppercase">{payerName}</p>
-                    <p className="text-[9px] font-mono text-slate-600">DOC: {payerDocId}</p>
+                    <p className="text-[9px] font-mono text-slate-600 font-medium">CÉDULA/RUC: {payerDocId}</p>
+                    {resolvedTaxpayer?.taxpayerNumber && (
+                      <p className="text-[9px] font-mono text-indigo-700 font-extrabold">Nº CONTRIBUYENTE: {resolvedTaxpayer.taxpayerNumber}</p>
+                    )}
                     {payerAddress !== 'N/A' && <p className="text-[9px] text-slate-500 font-medium leading-tight mt-0.5">DIR: {payerAddress}</p>}
                     {payerPhone !== 'N/A' && <p className="text-[9px] text-slate-500 font-medium leading-tight mt-0.5">TEL: {payerPhone}</p>}
 
@@ -897,6 +1128,29 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                         }</p>
                         <p><span className="font-bold">Código:</span> {lastTransaction.metadata.taxCode}</p>
                         {lastTransaction.metadata.taxActivity && <p><span className="font-bold">Actividad:</span> {lastTransaction.metadata.taxActivity}</p>}
+                      </div>
+                    )}
+
+                    {/* Detalles de Códigos Tributarios para Contribuyentes Registrados */}
+                    {!lastTransaction.metadata?.isDirectCharge && lastTransaction.taxType === 'COMERCIO' && resolvedTaxpayer && resolvedTaxpayer.selectedTaxCodes && resolvedTaxpayer.selectedTaxCodes.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-slate-200 text-[8px] text-slate-600 space-y-0.5 font-mono">
+                        <p className="font-bold text-[8px] text-indigo-700 uppercase tracking-wider">Actividades / Códigos Comerciales:</p>
+                        {resolvedTaxpayer.selectedTaxCodes.map((code: any, idx: number) => {
+                          const struct = (taxStructure as any[]).find(s => s.code === code);
+                          const rate = resolvedTaxpayer.selectedRates?.[code] || 0;
+                          return (
+                            <div key={idx} className="bg-white p-1 rounded border border-slate-100 mt-1">
+                              <p className="font-bold text-slate-900 leading-snug">{code} — {struct?.activity || 'Actividad Comercial'}</p>
+                              <p className="text-[7px]">Tarifa Mensual: B/. {formatCurrency(rate)}</p>
+                            </div>
+                          );
+                        })}
+                        {(resolvedTaxpayer.rotuloAmount || 0) > 0 && (
+                          <p className="text-slate-600"><span className="font-bold">Impuesto Rótulo:</span> B/. {formatCurrency(resolvedTaxpayer.rotuloAmount)}</p>
+                        )}
+                        {(resolvedTaxpayer.garbageAmount || 0) > 0 && (
+                          <p className="text-slate-600"><span className="font-bold">Tasa Aseo:</span> B/. {formatCurrency(resolvedTaxpayer.garbageAmount)}</p>
+                        )}
                       </div>
                     )}
 
@@ -1211,11 +1465,17 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
         {/* --- DEBT SUMMARY AND ALERTS (PAZ Y SALVO BLOCK) --- */}
         {activeTaxpayer && (
           <div className="mt-4 mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className={`p-4 rounded-xl border ${taxpayerDebts.length > 0 ? 'bg-red-50 border-red-200 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+            <div className={`p-4 rounded-xl border ${taxpayerDebts.filter(d => d.isPastDue !== false).length > 0 ? 'bg-red-50 border-red-200 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
               <p className="text-xs uppercase font-bold opacity-70 mb-1">Estado de Cuenta</p>
               <div className="flex items-center gap-2">
-                {taxpayerDebts.length > 0 ? <AlertCircle size={20} /> : <CheckCircle size={20} />}
-                <span className="font-bold text-lg">{taxpayerDebts.length > 0 ? `${taxpayerDebts.length} Deuda(s) Pendiente(s)` : 'Paz y Salvo'}</span>
+                {taxpayerDebts.filter(d => d.isPastDue !== false).length > 0 ? <AlertCircle size={20} /> : <CheckCircle size={20} />}
+                <span className="font-bold text-lg">
+                  {activeTaxpayer.paymentArrangement && activeTaxpayer.paymentArrangement.estado === 'ACTIVO' ? (
+                    taxpayerDebts.filter(d => d.isPastDue !== false).length > 0 ? 'Convenio Atrasado' : 'Convenio Al Día'
+                  ) : (
+                    taxpayerDebts.length > 0 ? `${taxpayerDebts.length} Deuda(s) Pendiente(s)` : 'Paz y Salvo'
+                  )}
+                </span>
               </div>
             </div>
 
@@ -1226,10 +1486,10 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
               >
                 Solicitar Autorización
               </button>
-              {taxpayerDebts.length === 0 ? (
+              {taxpayerDebts.filter(d => d.isPastDue !== false).length === 0 ? (
                 <button
                   onClick={() => {
-                    const tx = onPayment({
+                    triggerPaymentPreview({
                       taxType: TaxType.COMERCIO,
                       taxpayerId: activeTaxpayer.id,
                       amount: 3.00,
@@ -1237,9 +1497,6 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                       description: 'TRAMITE: CERTIFICADO PAZ Y SALVO MUNICIPAL',
                       metadata: { isPazSalvo: true }
                     });
-                    setLastTransaction(tx);
-                    alert("Cobro de B/. 3.00 realizado. Generando certificado...");
-                    setShowInvoice(true);
                   }}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold shadow-lg shadow-emerald-200 flex items-center gap-2 transition-transform active:scale-95"
                 >
@@ -1248,7 +1505,11 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
               ) : (
                 <div className="flex items-center gap-2 text-red-500 bg-white px-4 py-2 rounded-lg border border-red-100 shadow-sm">
                   <Lock size={16} />
-                  <span className="font-bold text-sm">Paz y Salvo Bloqueado: Contribuyente Moroso</span>
+                  <span className="font-bold text-sm">
+                    {activeTaxpayer.paymentArrangement && activeTaxpayer.paymentArrangement.estado === 'ACTIVO' 
+                      ? 'Paz y Salvo Bloqueado: Debe cuota del convenio o impuestos actuales'
+                      : 'Paz y Salvo Bloqueado: Contribuyente Moroso'}
+                  </span>
                 </div>
               )}
             </div>
@@ -1503,97 +1764,152 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
       {/* --- CASHIER NOTIFICATIONS / REQUEST STATUS --- */}
 
       {/* --- RECENT TRANSACTIONS (FOR VOID/REFERENCE) --- */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6">
-        <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <h3 className="font-bold text-slate-800 flex items-center gap-2">
-            <History size={18} /> Transacciones {historyFilterDate === new Date().toLocaleDateString('en-CA') ? '(Hoy)' : `(${historyFilterDate})`}
-          </h3>
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6 transition-all duration-300">
+        <div 
+          onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
+          className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 cursor-pointer select-none hover:bg-slate-100/70 transition-colors"
+        >
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Ver Fecha:</span>
-            <input 
-              type="date" 
-              value={historyFilterDate}
-              onChange={(e) => setHistoryFilterDate(e.target.value)}
-              className="text-xs border rounded-lg px-2 py-1 focus:ring-2 focus:ring-emerald-500 outline-none"
-            />
+            <History size={18} className="text-slate-500" />
+            <h3 className="font-bold text-slate-800 flex items-center gap-1.5">
+              <span>Transacciones {historyFilterDate === new Date().toLocaleDateString('en-CA') ? '(Hoy)' : `(${historyFilterDate})`}</span>
+              <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-black tracking-wider uppercase">
+                {(transactions || []).filter(t => t.tellerName === currentUser?.name && t.date === historyFilterDate && !t.id.startsWith('VOID-')).length} Cobros
+              </span>
+            </h3>
+          </div>
+          <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-bold whitespace-nowrap uppercase tracking-widest text-[9px]">Ver Fecha:</span>
+              <input 
+                type="date" 
+                value={historyFilterDate}
+                onChange={(e) => setHistoryFilterDate(e.target.value)}
+                className="text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-700 bg-white"
+              />
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsHistoryExpanded(!isHistoryExpanded);
+              }}
+              className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-lg transition-all"
+              aria-label={isHistoryExpanded ? 'Collapse' : 'Expand'}
+            >
+              {isHistoryExpanded ? <ChevronUp size={20} className="text-slate-600" /> : <ChevronDown size={20} className="text-slate-600" />}
+            </button>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50/50 text-slate-500 font-bold uppercase text-[10px]">
-              <tr>
-                <th className="px-6 py-3">Hora</th>
-                <th className="px-6 py-3">Contribuyente</th>
-                <th className="px-6 py-3">Concepto</th>
-                <th className="px-6 py-3 text-center">Estado</th>
-                <th className="px-6 py-3 text-right">Monto</th>
-                <th className="px-6 py-3 text-right">Acción</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(transactions || [])
-                .filter(t => t.tellerName === currentUser?.name && t.date === historyFilterDate && !t.id.startsWith('VOID-'))
-                .sort((a, b) => b.time.localeCompare(a.time)) // Newest first
-                .slice(0, 15)
-                .map(tx => (
-                  <tr key={tx.id} className={`hover:bg-slate-50 transition-colors ${tx.status === 'ANULADO' ? 'bg-red-50/30 opacity-80' : ''}`}>
-                    <td className="px-6 py-4 font-mono text-xs">{tx.time}</td>
-                    <td className="px-6 py-4 font-bold text-slate-700">
-                      {taxpayers.find(tp => tp.id === tx.taxpayerId)?.name || tx.metadata?.manualPayer || 'Desconocido'}
-                    </td>
-                    <td className="px-6 py-4 text-slate-600">
-                      <div className="flex flex-col max-w-[300px]">
-                        <span className="font-bold text-slate-800 uppercase text-xs">{tx.description}</span>
-                        {tx.metadata?.isConsolidated && tx.metadata?.originalItems && (
-                          <div className="mt-2 border-l-2 border-indigo-200 pl-3 py-1 space-y-1 bg-indigo-50/30 rounded-r-lg">
-                            {tx.metadata.originalItems.map((item: any, idx: number) => (
-                              <div key={idx} className="flex justify-between text-[10px] text-slate-600">
-                                <span className="uppercase truncate pr-2">{item.label}</span>
-                                <span className="font-black whitespace-nowrap">B/. {formatCurrency(item.amount)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <span className="text-[9px] font-bold text-slate-400 mt-1">MÉTODO: {getPaymentMethodLabel(tx.paymentMethod).toUpperCase()}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-tight border-2 shadow-sm ${
-                        tx.status === 'ANULADO' 
-                          ? 'bg-red-50 text-red-600 border-red-200' 
-                          : 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                      }`}>
-                        {tx.status === 'ANULADO' ? 'ANULADO' : 'PAGADO'}
-                      </span>
-                    </td>
-                    <td className={`px-6 py-4 text-right font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-                      B/. {formatCurrency(tx.amount)}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {tx.status !== 'ANULADO' && (
-                        <button
-                          onClick={() => {
-                            setRequestTargetId(tx.id);
-                            setNewRequestType('VOID_TRANSACTION');
-                            setNewRequestDesc(`Solicito anulación del recibo ${tx.id} por error en el cobro.`);
-                            setShowRequestModal(true);
-                          }}
-                          className="text-red-600 hover:text-red-700 font-bold text-xs bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-all"
-                        >
-                          Anular
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              {(transactions || []).filter(t => t.tellerName === currentUser?.name && t.date === historyFilterDate).length === 0 && (
+
+        {isHistoryExpanded && (
+          <div className="overflow-x-auto animate-in fade-in slide-in-from-top-2 duration-200">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50/50 text-slate-500 font-bold uppercase text-[10px]">
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-slate-400 italic">No se encontraron transacciones para esta fecha.</td>
+                  <th className="px-6 py-3">Hora</th>
+                  <th className="px-6 py-3">Contribuyente</th>
+                  <th className="px-6 py-3">Concepto</th>
+                  <th className="px-6 py-3 text-center">Estado</th>
+                  <th className="px-6 py-3 text-right">Monto</th>
+                  <th className="px-6 py-3 text-right">Acción</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(transactions || [])
+                  .filter(t => t.tellerName === currentUser?.name && t.date === historyFilterDate && !t.id.startsWith('VOID-'))
+                  .sort((a, b) => b.time.localeCompare(a.time)) // Newest first
+                  .slice(0, 15)
+                  .map(tx => (
+                    <tr key={tx.id} className={`hover:bg-slate-50 transition-colors ${tx.status === 'ANULADO' ? 'bg-red-50/30 opacity-80' : ''}`}>
+                      <td className="px-6 py-4 font-mono text-xs">{tx.time}</td>
+                      <td className="px-6 py-4 font-bold text-slate-700">
+                        {taxpayers.find(tp => tp.id === tx.taxpayerId)?.name || tx.metadata?.manualPayer || 'Desconocido'}
+                      </td>
+                      <td className="px-6 py-4 text-slate-600">
+                        <div className="flex flex-col max-w-[300px]">
+                          <span className="font-bold text-slate-800 uppercase text-xs">{tx.description}</span>
+                          {tx.metadata?.isConsolidated && tx.metadata?.originalItems && (
+                            <div className="mt-2 border-l-2 border-indigo-200 pl-3 py-1 space-y-1 bg-indigo-50/30 rounded-r-lg">
+                              {tx.metadata.originalItems.map((item: any, idx: number) => (
+                                <div key={idx} className="flex justify-between text-[10px] text-slate-600">
+                                  <span className="uppercase truncate pr-2">{item.label}</span>
+                                  <span className="font-black whitespace-nowrap">B/. {formatCurrency(item.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {tx.metadata?.isDirectCharge && (
+                            <div className="mt-2 border-l-2 border-emerald-200 pl-3 py-1 space-y-0.5 bg-emerald-50/30 rounded-r-lg text-[10px] font-mono text-slate-600">
+                              <p className="font-bold text-[9px] text-emerald-700 uppercase tracking-wider">Detalles de Cobro Directo:</p>
+                              <p><span className="font-bold">Tipo:</span> {
+                                tx.metadata.chargeType === 'COMERCIO' ? 'ACTIVIDAD COMERCIAL' :
+                                tx.metadata.chargeType === 'EVENTO' ? `EVENTO ESPECIAL (${tx.metadata.eventDays || 1} DÍA${(tx.metadata.eventDays || 1) > 1 ? 'S' : ''}${tx.metadata.eventDays === 90 ? ' - RENOVABLE' : ''})` : 'OTRO'
+                              }</p>
+                              <p><span className="font-bold">Código:</span> {tx.metadata.taxCode}</p>
+                              {tx.metadata.taxActivity && <p><span className="font-bold">Actividad:</span> {tx.metadata.taxActivity}</p>}
+                            </div>
+                          )}
+                          {(() => {
+                            const tp = taxpayers.find(tp => tp.id === tx.taxpayerId);
+                            if (!tx.metadata?.isDirectCharge && tx.taxType === 'COMERCIO' && tp && tp.selectedTaxCodes && tp.selectedTaxCodes.length > 0) {
+                              return (
+                                <div className="mt-2 border-l-2 border-indigo-200 pl-3 py-1 space-y-0.5 bg-indigo-50/30 rounded-r-lg text-[10px] font-mono text-slate-600">
+                                  <p className="font-bold text-[9px] text-indigo-700 uppercase tracking-wider">Actividades / Códigos Comerciales:</p>
+                                  {tp.selectedTaxCodes.map((code: any, idx: number) => {
+                                    const struct = (taxStructure as any[]).find(s => s.code === code);
+                                    const rate = tp.selectedRates?.[code] || 0;
+                                    return (
+                                      <p key={idx}>
+                                        <span className="font-bold">{code}</span> — {struct?.activity || 'Actividad'} (B/. {formatCurrency(rate)})
+                                      </p>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+                          <span className="text-[9px] font-bold text-slate-400 mt-1">MÉTODO: {getPaymentMethodLabel(tx.paymentMethod).toUpperCase()}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-tight border-2 shadow-sm ${
+                          tx.status === 'ANULADO' 
+                            ? 'bg-red-50 text-red-600 border-red-200' 
+                            : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                        }`}>
+                          {tx.status === 'ANULADO' ? 'ANULADO' : 'PAGADO'}
+                        </span>
+                      </td>
+                      <td className={`px-6 py-4 text-right font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                        B/. {formatCurrency(tx.amount)}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {tx.status !== 'ANULADO' && (
+                          <button
+                            onClick={() => {
+                              setRequestTargetId(tx.id);
+                              setNewRequestType('VOID_TRANSACTION');
+                              setNewRequestDesc(`Solicito anulación del recibo ${tx.id} por error en el cobro.`);
+                              setShowRequestModal(true);
+                            }}
+                            className="text-red-600 hover:text-red-700 font-bold text-xs bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-all"
+                          >
+                            Anular
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                {(transactions || []).filter(t => t.tellerName === currentUser?.name && t.date === historyFilterDate).length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-10 text-center text-slate-400 italic">No se encontraron transacciones para esta fecha.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* --- DIRECT CHARGE MODAL --- */}
@@ -1813,16 +2129,26 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                         type="number"
                         min="1"
                         max="90"
+                        placeholder="Ej. 5"
                         className="w-24 p-2.5 border border-amber-300 rounded-lg font-black text-sm text-center focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all bg-white text-slate-900 shadow-sm"
                         value={directEventDays}
                         onChange={(e) => {
-                          let val = parseInt(e.target.value) || 1;
+                          const valStr = e.target.value;
+                          if (valStr === '') {
+                            setDirectEventDays('');
+                            return;
+                          }
+                          let val = parseInt(valStr);
+                          if (isNaN(val)) {
+                            setDirectEventDays('');
+                            return;
+                          }
                           if (val < 1) val = 1;
                           if (val > 90) val = 90;
                           setDirectEventDays(val);
                         }}
                       />
-                      <span className="text-xs font-bold text-amber-700">día{directEventDays > 1 ? 's' : ''}</span>
+                      <span className="text-xs font-bold text-amber-700">día{(directEventDays || 0) > 1 ? 's' : ''}</span>
                       {directEventDays === 90 && (
                         <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-1 rounded-full">Renovable</span>
                       )}

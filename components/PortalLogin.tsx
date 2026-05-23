@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { Taxpayer, User } from '../types';
-import { User as UserIcon, ShieldCheck, ArrowRight } from 'lucide-react';
+import { User as UserIcon, ShieldCheck, ArrowRight, Shield } from 'lucide-react';
 
 interface PortalLoginProps {
     onLogin: (user: User) => void;
     taxpayers: Taxpayer[];
+    isTestMode?: boolean;
+    onToggleTestMode?: () => void;
 }
 
-export const PortalLogin: React.FC<PortalLoginProps> = ({ onLogin, taxpayers }) => {
+export const PortalLogin: React.FC<PortalLoginProps> = ({ onLogin, taxpayers, isTestMode = false, onToggleTestMode }) => {
     const [docId, setDocId] = useState('');
     const [taxpayerNum, setTaxpayerNum] = useState('');
     const [error, setError] = useState('');
@@ -112,6 +114,36 @@ export const PortalLogin: React.FC<PortalLoginProps> = ({ onLogin, taxpayers }) 
                         >
                             INGRESAR AL PORTAL <ArrowRight className="ml-2 group-hover:translate-x-2 transition-transform" size={18} />
                         </button>
+
+                        {/* Pre-login Test Mode Switch */}
+                        {onToggleTestMode && (
+                            <div className="border-t border-white/10 pt-4 flex flex-col items-center">
+                                <button
+                                    type="button"
+                                    onClick={onToggleTestMode}
+                                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-xs font-bold ${
+                                        isTestMode 
+                                            ? 'bg-amber-500/10 border-amber-500/40 text-amber-300 shadow-md shadow-amber-500/5' 
+                                            : 'bg-slate-800/60 border-slate-700/80 text-slate-400 hover:text-slate-200 hover:border-slate-600'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <Shield size={14} className={isTestMode ? 'text-amber-400 animate-pulse' : 'text-slate-500'} />
+                                        <span className="tracking-wider uppercase">🔧 MODO DE PRUEBA (DEMO)</span>
+                                    </div>
+                                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-black tracking-widest ${
+                                        isTestMode ? 'bg-amber-500 text-slate-950 animate-bounce' : 'bg-slate-700 text-slate-550'
+                                    }`}>
+                                        {isTestMode ? 'Activo' : 'Inactivo'}
+                                    </span>
+                                </button>
+                                <p className="text-[10px] text-slate-400 text-center leading-normal mt-2 font-medium opacity-80">
+                                    {isTestMode 
+                                        ? 'La plataforma operará simulando datos locales sin modificar la base de datos real.' 
+                                        : 'Haga clic para simular el portal tributario sin alterar producción.'}
+                                </p>
+                            </div>
+                        )}
                     </form>
                 </div>
 

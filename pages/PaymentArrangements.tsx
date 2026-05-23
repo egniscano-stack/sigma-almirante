@@ -2,23 +2,27 @@ import React, { useState, useMemo } from 'react';
 import { 
   Search, User, MapPin, DollarSign, Calendar, AlertCircle, 
   CheckCircle, ArrowRight, TrendingUp, Receipt, ShieldCheck, 
-  Clock, Sparkles, Scale, RefreshCw, XCircle
+  Clock, Sparkles, Scale, RefreshCw, XCircle, Printer, Download, X
 } from 'lucide-react';
 import { Taxpayer, Transaction, TaxConfig, PaymentArrangement } from '../types';
 import { calculateTaxpayerDebt } from '../services/debtLogic';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 interface PaymentArrangementsProps {
   taxpayers: Taxpayer[];
   transactions: Transaction[];
   config: TaxConfig;
   onUpdateTaxpayer: (taxpayer: Taxpayer) => Promise<Taxpayer>;
+  initialTaxpayer?: Taxpayer | null;
 }
 
 export const PaymentArrangements: React.FC<PaymentArrangementsProps> = ({
   taxpayers,
   transactions,
   config,
-  onUpdateTaxpayer
+  onUpdateTaxpayer,
+  initialTaxpayer
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTaxpayerId, setSelectedTaxpayerId] = useState<string | null>(null);
@@ -27,6 +31,16 @@ export const PaymentArrangements: React.FC<PaymentArrangementsProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showAgreementModal, setShowAgreementModal] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  // Pre-fill from props if available
+  React.useEffect(() => {
+    if (initialTaxpayer) {
+      setSelectedTaxpayerId(initialTaxpayer.id);
+      setSearchQuery('');
+    }
+  }, [initialTaxpayer]);
 
   // 1. FILTER TAXPAYERS BY SEARCH QUERY
   const filteredTaxpayers = useMemo(() => {
@@ -111,6 +125,7 @@ export const PaymentArrangements: React.FC<PaymentArrangementsProps> = ({
       await onUpdateTaxpayer(updatedTaxpayer);
 
       setSuccessMessage(`Arreglo de Pago generado exitosamente para ${selectedTaxpayer.name}.`);
+      setShowAgreementModal(true); // Open the agreement printable document automatically
       setAbonoInput('0');
       setCuotasInput(12);
     } catch (err: any) {
@@ -387,14 +402,23 @@ export const PaymentArrangements: React.FC<PaymentArrangementsProps> = ({
                   <p className="text-xs font-medium text-slate-400">
                     Las cuotas del arreglo se suman automáticamente al cobro en caja del contribuyente.
                   </p>
-                  <button
-                    onClick={handleCancelArrangement}
-                    disabled={isSaving}
-                    className="group bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all duration-300 shadow-md shadow-red-500/10 flex items-center gap-2 active:scale-95 disabled:opacity-50"
-                  >
-                    <XCircle size={16} />
-                    <span>Rescindir Convenio</span>
-                  </button>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={() => setShowAgreementModal(true)}
+                      className="group bg-indigo-650 hover:bg-indigo-700 text-white px-5 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all duration-300 shadow-md shadow-indigo-500/10 flex items-center gap-2 active:scale-95"
+                    >
+                      <Printer size={16} />
+                      <span>Imprimir Convenio</span>
+                    </button>
+                    <button
+                      onClick={handleCancelArrangement}
+                      disabled={isSaving}
+                      className="group bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all duration-300 shadow-md shadow-red-500/10 flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                    >
+                      <XCircle size={16} />
+                      <span>Rescindir Convenio</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -554,6 +578,267 @@ export const PaymentArrangements: React.FC<PaymentArrangementsProps> = ({
           )}
         </div>
       </div>
+
+      {/* --- OFICIAL AGREEMENT PRINTABLE MODAL --- */}
+      {showAgreementModal && selectedTaxpayer && selectedTaxpayer.paymentArrangement && (
+        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto pt-10 no-print animate-fade-in">
+          <style>
+            {`
+              @media print {
+                @page { size: legal portrait; margin: 0; }
+                body { visibility: hidden; background: white !important; }
+                #agreement-document-content, #agreement-document-content * { visibility: visible !important; }
+                #agreement-document-content { 
+                    position: absolute !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 215.9mm !important;
+                    height: 355.6mm !important;
+                    margin: 0 !important;
+                    padding: 24mm 20mm !important;
+                    box-shadow: none !important;
+                    border: none !important;
+                    background: white !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                }
+                .no-print { display: none !important; visibility: hidden !important; }
+              }
+            `}
+          </style>
+          
+          <div className="flex flex-col items-center gap-6 max-w-[215.9mm] w-full">
+            {/* Agreement Document Container */}
+            <div id="agreement-document-content" className="bg-white w-[215.9mm] h-[355.6mm] p-16 shadow-2xl relative text-slate-900 font-serif mx-auto origin-top flex flex-col justify-between shrink-0 no-print:rounded-3xl">
+                {/* Watermark - Municipal Logo */}
+                <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none overflow-hidden">
+                  <img src={`${import.meta.env.BASE_URL}logo-municipio.png`} alt="Watermark" className="w-[120%] object-contain" />
+                </div>
+                
+                {/* Header */}
+                <div className="w-full flex flex-col items-center border-b-2 border-slate-900 pb-4 mb-4 relative z-20">
+                  <img 
+                    src={`${import.meta.env.BASE_URL}logo-municipio.png`} 
+                    alt="Logo Municipio Almirante" 
+                    className="h-28 w-auto mb-2 relative z-30" 
+                  />
+                  <div className="text-center">
+                    <h1 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-900 leading-none mb-1">República de Panamá</h1>
+                    <h2 className="text-[15px] font-bold text-slate-800 uppercase tracking-widest leading-tight">Municipio de Almirante</h2>
+                    <p className="text-[9px] font-bold text-slate-500 mt-1 uppercase tracking-[0.05em]">
+                      Provincia de Bocas del Toro • Tesorería Municipal
+                    </p>
+                  </div>
+                </div>
+
+                {/* Body Content */}
+                <div className="relative z-10 flex-1 flex flex-col items-center">
+                  <h2 className="text-lg font-black uppercase mb-6 tracking-[0.25em] text-slate-900 border-b-2 border-indigo-600 pb-1">
+                    Convenio de Arreglo de Pago Municipal
+                  </h2>
+                  <p className="text-[9px] font-mono text-slate-500 mb-6 uppercase tracking-wider">
+                    REGISTRO CONVENIO: Nº CONV-{selectedTaxpayer.paymentArrangement.id.slice(-8).toUpperCase()}
+                  </p>
+                  
+                  <div className="w-full text-justify leading-relaxed px-6 space-y-3.5 text-xs">
+                    <p>
+                      Reunidos por una parte la <strong>TESORERÍA MUNICIPAL DE ALMIRANTE</strong>, representada en este acto por la Tesorera Municipal, en adelante denominada <strong>LA TESORERÍA</strong>, y por la otra parte el contribuyente cuyos datos se detallan a continuación, en adelante denominado <strong>EL CONTRIBUYENTE</strong>, convienen en suscribir el presente <strong>CONVENIO DE ARREGLO DE PAGO</strong> bajo las siguientes cláusulas y condiciones:
+                    </p>
+
+                    {/* Section 1: Parties */}
+                    <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl shadow-inner">
+                      <h4 className="text-[9px] font-black text-indigo-700 uppercase tracking-wider mb-2">1. Datos del Contribuyente</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase">Nombre / Razón Social</p>
+                          <p className="font-extrabold text-[11px] text-slate-900 uppercase">{selectedTaxpayer.name}</p>
+                        </div>
+                        <div>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase">Cédula / RUC</p>
+                          <p className="font-mono font-extrabold text-[11px] text-slate-900">{selectedTaxpayer.docId}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 mt-2 pt-2 border-t border-slate-200">
+                        <div>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase">Número Contribuyente</p>
+                          <p className="font-extrabold text-[11px] text-slate-900 font-mono">#{selectedTaxpayer.taxpayerNumber || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase">Fecha de Suscripción</p>
+                          <p className="font-extrabold text-[11px] text-indigo-700 font-mono">{selectedTaxpayer.paymentArrangement.fechaCreacion}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 2: Object and debt consolidations */}
+                    <p>
+                      <strong>SEGUNDA (De la Deuda Consolidada):</strong> EL CONTRIBUYENTE declara y reconoce expresamente adeudar al Tesoro Municipal de Almirante la suma líquida, consolidada y exigible de <strong>B/. {selectedTaxpayer.paymentArrangement.totalDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>, acumulada por los siguientes conceptos tributarios y tasas municipales hasta el periodo actual:
+                    </p>
+
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-[10px]">
+                        <thead className="bg-slate-800 text-white text-[8px] font-black uppercase tracking-wider">
+                          <tr>
+                            <th className="p-2">Concepto Refinanciado</th>
+                            <th className="p-2 text-right">Monto</th>
+                          </tr>
+                        </thead>
+                        <tbody className="font-medium divide-y divide-slate-200">
+                          {liveDebt.items.length > 0 ? (
+                            liveDebt.items.map((item) => (
+                              <tr key={item.id}>
+                                <td className="p-2 text-slate-700 uppercase">{item.label}</td>
+                                <td className="p-2 text-right font-black text-slate-900">B/. {item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td className="p-2 text-slate-700 uppercase">Saldo Refinanciado Consolidado</td>
+                              <td className="p-2 text-right font-black text-slate-900">B/. {selectedTaxpayer.paymentArrangement.totalDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Section 3: Terms of payment */}
+                    <p>
+                      <strong>TERCERA (De la Financiación y Forma de Pago):</strong> Para la amortización de la morosidad consolidada, las partes pactan las siguientes condiciones de pago:
+                    </p>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center">
+                        <span className="block text-slate-400 font-bold uppercase text-[7px] tracking-wider mb-0.5">Abono Inicial (Recibido)</span>
+                        <span className="font-extrabold text-slate-800 text-[11px] font-mono">B/. {selectedTaxpayer.paymentArrangement.abono.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center">
+                        <span className="block text-slate-400 font-bold uppercase text-[7px] tracking-wider mb-0.5">Cantidad de Cuotas</span>
+                        <span className="font-extrabold text-slate-800 text-[11px] font-mono">{selectedTaxpayer.paymentArrangement.cuotasTotales} Meses</span>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center bg-indigo-50 border-indigo-100">
+                        <span className="block text-indigo-700 font-black uppercase text-[7px] tracking-wider mb-0.5">Cuota Mensual</span>
+                        <span className="font-black text-indigo-800 text-[11px] font-mono">B/. {selectedTaxpayer.paymentArrangement.montoCuota.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+
+                    <p>
+                      <strong>CUARTA (Compromiso del Contribuyente):</strong> EL CONTRIBUYENTE se compromete formalmente a pagar la cuota mensual de <strong>B/. {selectedTaxpayer.paymentArrangement.montoCuota.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>, la cual se adicionará a sus impuestos mensuales recurrentes. Las cuotas deben ser pagadas a más tardar el décimo (10) día de cada mes calendario.
+                    </p>
+
+                    {/* Section 4: Clauses of breach */}
+                    <p className="bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-[10px] text-amber-900 leading-snug">
+                      <strong>QUINTA (Del Incumplimiento y Sanciones):</strong> Las partes acuerdan que el incumplimiento en el pago de una (1) sola cuota mensual del convenio de pago o de la tasa mensual corriente facultará a <strong>LA TESORERÍA</strong> a dar por rescindido el presente acuerdo, exigir por la vía coactiva la morosidad total acumulada original, e <strong>inhabilitar de forma inmediata la expedición de todo Paz y Salvo Municipal</strong> hasta la regularización total de los saldos vencidos.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Footer / Signatures */}
+                <div className="w-full mt-4 pt-6 border-t-2 border-slate-200 relative z-10 flex justify-between items-end px-4">
+                  {/* Contribuyente */}
+                  <div className="text-center w-56">
+                    <div className="h-12 flex items-end justify-center mb-1">
+                      {/* Placeholder for Signature */}
+                    </div>
+                    <div className="border-t border-slate-900 w-full mb-1"></div>
+                    <p className="font-black text-[9px] uppercase tracking-wider text-slate-800">{selectedTaxpayer.name}</p>
+                    <p className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">EL CONTRIBUYENTE</p>
+                  </div>
+
+                  {/* Sello Municipal */}
+                  <div className="text-center flex-1 px-4 flex flex-col items-center justify-center">
+                    <div className="border border-dashed border-slate-300 h-16 w-16 rounded-full flex items-center justify-center text-[7px] text-slate-300 font-bold uppercase tracking-widest leading-none mb-1 text-center">
+                      SELLO<br/>MUNICIPAL
+                    </div>
+                    <p className="text-[7px] font-mono text-slate-300 uppercase tracking-widest">SIGMA CONVENIOS</p>
+                  </div>
+
+                  {/* Tesorero Municipal */}
+                  <div className="text-center w-56">
+                    <div className="h-12 flex items-end justify-center mb-1">
+                      <span className="font-script text-2xl text-blue-900 opacity-60 rotate-[-8deg] select-none leading-none mb-1">Tesorera Municipal</span>
+                    </div>
+                    <div className="border-t border-slate-900 w-full mb-1"></div>
+                    <p className="font-black text-[9px] uppercase tracking-wider text-slate-800">Tesorera Municipal</p>
+                    <p className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">LA TESORERÍA</p>
+                  </div>
+                </div>
+
+                <div className="absolute inset-0 border-8 border-slate-50 pointer-events-none rounded-3xl"></div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="bg-slate-800/90 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex flex-row gap-4 no-print w-full shadow-2xl mb-12">
+              <button
+                onClick={async () => {
+                  const element = document.getElementById('agreement-document-content');
+                  if (!element) return;
+                  setIsGeneratingPdf(true);
+                  try {
+                    const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new jsPDF('p', 'mm', 'legal');
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+                    pdf.save(`Convenio_Pago_${selectedTaxpayer.docId}.pdf`);
+                  } finally {
+                    setIsGeneratingPdf(false);
+                  }
+                }}
+                disabled={isGeneratingPdf}
+                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all"
+              >
+                <Download size={18} /> <span>{isGeneratingPdf ? 'Generando...' : 'Descargar PDF'}</span>
+              </button>
+              <button 
+                onClick={async () => {
+                  const element = document.getElementById('agreement-document-content');
+                  if (!element) return;
+                  setIsGeneratingPdf(true);
+                  try {
+                    const canvas = await html2canvas(element, { 
+                      scale: 3, 
+                      useCORS: true, 
+                      backgroundColor: '#ffffff'
+                    });
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const printWindow = window.open('', '_blank');
+                    if (printWindow) {
+                      printWindow.document.write(`
+                        <html>
+                          <head>
+                            <title>Imprimir Convenio Oficial</title>
+                            <style>
+                              @page { size: legal portrait; margin: 0; }
+                              body { margin: 0; display: flex; justify-content: center; background: white; }
+                              img { width: 215.9mm; height: 355.6mm; object-fit: contain; }
+                            </style>
+                          </head>
+                          <body onload="setTimeout(() => { window.print(); window.close(); }, 500)">
+                            <img src="${dataUrl}" />
+                          </body>
+                        </html>
+                      `);
+                      printWindow.document.close();
+                    }
+                  } finally {
+                    setIsGeneratingPdf(false);
+                  }
+                }} 
+                className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all"
+              >
+                <Printer size={18} /> <span>{isGeneratingPdf ? '...' : 'Imprimir'}</span>
+              </button>
+              <button 
+                onClick={() => setShowAgreementModal(false)} 
+                className="flex-1 flex items-center justify-center gap-2 bg-slate-600 hover:bg-slate-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all"
+              >
+                <X size={18} /> <span>Cerrar</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

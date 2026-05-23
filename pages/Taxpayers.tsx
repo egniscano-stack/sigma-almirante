@@ -1,8 +1,187 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Taxpayer, TaxpayerType, CommercialCategory, Transaction, VehicleInfo, TaxpayerStatus, UserRole, Corregimiento, AdminRequest, RequestStatus, TaxConfig } from '../types';
 import { db } from '../services/db';
-import { Search, UserPlus, Briefcase, User, MapPin, Store, History, X, FileText, Car, Hammer, Trash2, CheckSquare, Plus, AlertCircle, MoreVertical, ShieldAlert, Ban, CheckCircle, Edit, Upload, Image as ImageIcon, Shield, Calculator, Settings, ChevronDown, CreditCard, ChevronRight } from 'lucide-react';
+import { Search, UserPlus, Briefcase, User, MapPin, Store, History, X, FileText, Car, Hammer, Trash2, CheckSquare, Plus, AlertCircle, MoreVertical, ShieldAlert, Ban, CheckCircle, Edit, Upload, Image as ImageIcon, Shield, Calculator, Settings, ChevronDown, CreditCard, ChevronRight, Camera, VideoOff, SwitchCamera } from 'lucide-react';
+
+// ─── DocSlot: card de documento con captura de cámara integrada ─────────────
+interface DocSlotProps {
+  docKey: string;
+  label: string;
+  icon: React.ReactNode;
+  accept?: string;
+  captured?: boolean;
+  onFile: (key: string, file: File | null) => void;
+}
+
+const DocSlot: React.FC<DocSlotProps> = ({ docKey, label, icon, accept = 'image/*', captured, onFile }) => {
+  const [camOpen, setCamOpen]     = useState(false);
+  const [camErr, setCamErr]       = useState<string | null>(null);
+  const [facing, setFacing]       = useState<'environment' | 'user'>('environment');
+  const [preview, setPreview]     = useState<string | null>(null);
+  const [hasCamera, setHasCamera] = useState<boolean | null>(null);
+  const streamRef  = useRef<MediaStream | null>(null);
+  const videoRef   = useRef<HTMLVideoElement>(null);
+  const canvasRef  = useRef<HTMLCanvasElement>(null);
+  const fileRef    = useRef<HTMLInputElement>(null);
+
+  // Detect camera once
+  useEffect(() => {
+    navigator.mediaDevices?.enumerateDevices().then(devices => {
+      setHasCamera(devices.some(d => d.kind === 'videoinput'));
+    }).catch(() => setHasCamera(false));
+  }, []);
+
+  // Bind stream to video element
+  useEffect(() => {
+    if (videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  });
+
+  // Cleanup on unmount
+  useEffect(() => () => { streamRef.current?.getTracks().forEach(t => t.stop()); }, []);
+
+  const startCam = useCallback(async (fm: 'environment' | 'user' = facing) => {
+    setCamErr(null);
+    try {
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      const s = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: fm, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false
+      });
+      streamRef.current = s;
+      setCamOpen(true);
+    } catch (e: any) {
+      setCamErr(e.name === 'NotAllowedError' ? 'Permiso de cámara denegado' : `Error: ${e.message}`);
+    }
+  }, [facing]);
+
+  const stopCam = useCallback(() => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    setCamOpen(false);
+  }, []);
+
+  const flipCam = useCallback(async () => {
+    const next = facing === 'environment' ? 'user' : 'environment';
+    setFacing(next);
+    await startCam(next);
+  }, [facing, startCam]);
+
+  const capturePhoto = useCallback(() => {
+    const video  = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d')?.drawImage(video, 0, 0);
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const file = new File([blob], `${docKey}_cam.jpg`, { type: 'image/jpeg' });
+      const url  = URL.createObjectURL(blob);
+      setPreview(url);
+      onFile(docKey, file);
+      stopCam();
+    }, 'image/jpeg', 0.92);
+  }, [docKey, onFile, stopCam]);
+
+  return (
+    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+      {/* Label */}
+      <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+        {icon} {label}
+      </label>
+
+      {/* Preview thumbnail */}
+      {preview && !camOpen && (
+        <div className="relative">
+          <img src={preview} alt="captura" className="w-full h-28 object-cover rounded-lg border border-slate-200" />
+          <button
+            type="button"
+            onClick={() => { setPreview(null); onFile(docKey, null); }}
+            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
+      {/* Live camera viewfinder */}
+      {camOpen && (
+        <div className="relative rounded-xl overflow-hidden bg-black border-2 border-indigo-400">
+          <video ref={videoRef} autoPlay playsInline muted className="w-full h-40 object-cover" />
+          {/* corner guides */}
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute top-2 left-2  w-5 h-5 border-t-2 border-l-2 border-white/70 rounded-tl" />
+            <div className="absolute top-2 right-2 w-5 h-5 border-t-2 border-r-2 border-white/70 rounded-tr" />
+            <div className="absolute bottom-2 left-2  w-5 h-5 border-b-2 border-l-2 border-white/70 rounded-bl" />
+            <div className="absolute bottom-2 right-2 w-5 h-5 border-b-2 border-r-2 border-white/70 rounded-br" />
+          </div>
+          {/* controls */}
+          <div className="absolute bottom-2 left-0 right-0 flex justify-center items-center gap-3">
+            <button type="button" onClick={flipCam}
+              className="bg-white/20 backdrop-blur text-white p-2 rounded-full border border-white/30 hover:bg-white/30">
+              <SwitchCamera size={15} />
+            </button>
+            <button type="button" onClick={capturePhoto}
+              className="w-11 h-11 bg-white rounded-full border-4 border-indigo-500 flex items-center justify-center shadow-xl hover:scale-95 active:scale-90 transition-transform">
+              <div className="w-8 h-8 bg-indigo-600 rounded-full" />
+            </button>
+            <button type="button" onClick={stopCam}
+              className="bg-red-500/80 text-white p-2 rounded-full border border-red-400 hover:bg-red-600">
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* Error */}
+      {camErr && <p className="text-xs text-red-500 font-medium">{camErr}</p>}
+
+      {/* Action row */}
+      {!camOpen && (
+        <div className="flex gap-2">
+          {/* File pick */}
+          <label className="flex-1 cursor-pointer flex items-center justify-center gap-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 text-slate-600 py-2 rounded-lg hover:bg-slate-100 transition-colors">
+            <Upload size={13} /> Archivo
+            <input
+              type="file" ref={fileRef} className="hidden" accept={accept}
+              onChange={e => {
+                const f = e.target.files?.[0] || null;
+                if (f) setPreview(URL.createObjectURL(f));
+                onFile(docKey, f);
+                e.target.value = '';
+              }}
+            />
+          </label>
+          {/* Camera button */}
+          {hasCamera !== false ? (
+            <button
+              type="button"
+              onClick={() => startCam()}
+              className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-200"
+            >
+              <Camera size={13} /> Cámara
+            </button>
+          ) : (
+            <div className="flex-1 flex items-center justify-center gap-1 text-xs text-slate-400 bg-slate-50 border border-dashed border-slate-200 py-2 rounded-lg">
+              <VideoOff size={13} /> Sin cámara
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Status badge */}
+      {(captured || preview) && (
+        <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-bold">
+          <CheckCircle size={12} /> Documento listo
+        </span>
+      )}
+    </div>
+  );
+};
+// ────────────────────────────────────────────────────────────────────────────
 import { AntivirusScanner } from '../components/AntivirusScanner';
 import { FileScanResult } from '../services/antivirus';
 import { getSession } from '../services/security';
@@ -1331,45 +1510,24 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
               </>
             )}
           </div>
-        </div>
-      </div>
 
-      {/* Persistent Record Counter (Floating) */}
-      <div className="fixed bottom-8 right-8 z-[200] flex flex-col gap-2 pointer-events-none">
-        <div className="bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-4 animate-in slide-in-from-right duration-500 pointer-events-auto">
-          <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-2xl font-black">
-            {taxpayers.length}
-          </div>
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Total Cargado</div>
-            <div className="text-sm font-black uppercase tracking-widest text-indigo-400">Registros en Sistema</div>
-          </div>
-        </div>
-      </div>
-
-        {/* Search Results Overlay */}
-        {isSearching && (
-          <>
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[70]" onClick={() => {
-              setIsSearching(false);
-              setSearchTerm('');
-              setSelectedActivity('ALL');
-            }}></div>
-            <div className="fixed top-24 left-1/2 -translate-x-1/2 w-full max-w-4xl bg-white rounded-[2.5rem] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.5)] border border-white/20 overflow-hidden animate-in fade-in zoom-in-95 duration-300 z-[80] ring-1 ring-black/5">
-              <div className="bg-slate-900 px-10 py-8 flex items-center justify-between relative overflow-hidden">
+          {/* Autocomplete Dropdown Search Results */}
+          {isSearching && (
+            <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-[2rem] shadow-[0_30px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden z-50 flex flex-col max-h-[65vh] animate-in fade-in slide-in-from-top-4 duration-200">
+              <div className="bg-slate-900 px-8 py-5 flex items-center justify-between relative overflow-hidden flex-shrink-0">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>
-                <div className="relative z-10 flex items-center gap-6">
-                  <div className="w-16 h-16 bg-indigo-600 rounded-3xl flex items-center justify-center text-white shadow-2xl shadow-indigo-500/40 rotate-3">
-                    <Search size={32} />
+                <div className="relative z-10 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-500/40">
+                    <Search size={22} />
                   </div>
                   <div>
-                    <h3 className="text-white font-black text-2xl tracking-tight uppercase">Resultados del Catastro</h3>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="bg-indigo-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
+                    <h3 className="text-white font-black text-lg tracking-tight uppercase">Resultados del Catastro</h3>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <span className="bg-indigo-500 text-white px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest">
                         {searchResults.length} Registros
                       </span>
                       {selectedActivity !== 'ALL' && (
-                        <span className="bg-amber-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
+                        <span className="bg-amber-500 text-white px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest">
                           {selectedActivity}
                         </span>
                       )}
@@ -1382,13 +1540,13 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                     setSearchTerm('');
                     setSelectedActivity('ALL');
                   }}
-                  className="relative z-10 w-12 h-12 bg-white/10 hover:bg-white/20 text-white rounded-2xl flex items-center justify-center transition-all active:scale-90"
+                  className="relative z-10 w-8 h-8 bg-white/10 hover:bg-white/20 text-white rounded-xl flex items-center justify-center transition-all active:scale-90"
                 >
-                  <X size={24} />
+                  <X size={18} />
                 </button>
               </div>
 
-              <div className="max-h-[60vh] overflow-y-auto bg-slate-50/50">
+              <div className="overflow-y-auto bg-slate-50/50 flex-1">
                 {searchResults.length > 0 ? (
                   <div className="grid grid-cols-1 divide-y divide-slate-200/60">
                     {searchResults.map((tp, idx) => (
@@ -1401,33 +1559,33 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                           setIsSearching(false);
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }}
-                        className="group relative flex items-center justify-between p-8 hover:bg-white transition-all cursor-pointer border-l-8 border-transparent hover:border-indigo-600"
+                        className="group relative flex items-center justify-between p-6 hover:bg-white transition-all cursor-pointer border-l-8 border-transparent hover:border-indigo-600"
                       >
-                        <div className="flex items-center gap-6">
-                          <div className={`w-16 h-16 rounded-3xl flex items-center justify-center text-2xl font-black shadow-xl transition-transform group-hover:scale-110 ${
+                        <div className="flex items-center gap-4">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black shadow-lg transition-transform group-hover:scale-110 ${
                             tp.status === 'ACTIVO' ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-slate-200 text-slate-500'
                           }`}>
                             {tp.name.charAt(0)}
                           </div>
                           <div>
-                            <div className="font-black text-slate-900 text-xl group-hover:text-indigo-700 transition-colors uppercase tracking-tight leading-tight">{tp.name}</div>
-                            <div className="flex items-center gap-4 mt-2">
-                              <div className="flex items-center gap-2 text-slate-500 font-bold text-xs">
-                                <CreditCard size={14} className="text-slate-400" />
-                                <span className="bg-slate-100 px-2 py-0.5 rounded text-[10px]">{tp.docId}</span>
+                            <div className="font-black text-slate-900 text-base group-hover:text-indigo-700 transition-colors uppercase tracking-tight leading-tight">{tp.name}</div>
+                            <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                              <div className="flex items-center gap-1 text-slate-500 font-bold text-[10px]">
+                                <CreditCard size={12} className="text-slate-400" />
+                                <span className="bg-slate-100 px-1.5 py-0.5 rounded">{tp.docId}</span>
                               </div>
-                              <div className="flex items-center gap-2 text-slate-500 font-bold text-xs">
-                                <FileText size={14} className="text-slate-400" />
-                                <span className="bg-slate-100 px-2 py-0.5 rounded text-[10px]">{tp.taxpayerNumber}</span>
+                              <div className="flex items-center gap-1 text-slate-500 font-bold text-[10px]">
+                                <FileText size={12} className="text-slate-400" />
+                                <span className="bg-slate-100 px-1.5 py-0.5 rounded">{tp.taxpayerNumber}</span>
                               </div>
                               {tp.documents?.import_source && (
-                                <div className="flex items-center gap-2">
-                                  <span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-indigo-100">
+                                <div className="flex items-center">
+                                  <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border border-indigo-100">
                                     {tp.documents.import_source.replace('.xlsx', '')}
                                   </span>
                                 </div>
                               )}
-                              <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              <div className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
                                 tp.status === 'ACTIVO' ? 'bg-emerald-100 text-emerald-800' : 
                                 tp.status === 'SUSPENDIDO' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-800'
                               }`}>
@@ -1436,36 +1594,36 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                             </div>
                             
                             {/* Service Indicators (General) */}
-                            <div className="flex items-center gap-3 mt-3">
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
                               {tp.vehicles && tp.vehicles.length > 0 && (
-                                <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-100">
-                                  <Car size={10} className="stroke-[3]" />
-                                  <span className="text-[9px] font-black uppercase">Placas ({tp.vehicles.length})</span>
+                                <div className="flex items-center gap-1 bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100">
+                                  <Car size={8} className="stroke-[3]" />
+                                  <span className="text-[8px] font-black uppercase">Placas ({tp.vehicles.length})</span>
                                 </div>
                               )}
                               {tp.selectedTaxCodes && tp.selectedTaxCodes.length > 0 && (
-                                <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-100">
-                                  <Store size={10} className="stroke-[3]" />
-                                  <span className="text-[9px] font-black uppercase">Comercio</span>
+                                <div className="flex items-center gap-1 bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">
+                                  <Store size={8} className="stroke-[3]" />
+                                  <span className="text-[8px] font-black uppercase">Comercio</span>
                                 </div>
                               )}
                               {tp.hasGarbageService && (
-                                <div className="flex items-center gap-1.5 bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md border border-amber-100">
-                                  <Trash2 size={10} className="stroke-[3]" />
-                                  <span className="text-[9px] font-black uppercase">Aseo</span>
+                                <div className="flex items-center gap-1 bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-100">
+                                  <Trash2 size={8} className="stroke-[3]" />
+                                  <span className="text-[8px] font-black uppercase">Aseo</span>
                                 </div>
                               )}
                               {(isAdmin || isCaja1) && tp.hasConstruction && (
-                                <div className="flex items-center gap-1.5 bg-red-50 text-red-700 px-2 py-0.5 rounded-md border border-red-100">
-                                  <Hammer size={10} className="stroke-[3]" />
-                                  <span className="text-[9px] font-black uppercase">Construcción</span>
+                                <div className="flex items-center gap-1 bg-red-50 text-red-700 px-1.5 py-0.5 rounded border border-red-100">
+                                  <Hammer size={8} className="stroke-[3]" />
+                                  <span className="text-[8px] font-black uppercase">Construcción</span>
                                 </div>
                               )}
                             </div>
                           </div>
                         </div>
                         
-                        <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1475,10 +1633,10 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                               setIsSearching(false);
                               window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}
-                            className="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center hover:bg-amber-500 hover:text-white transition-all shadow-lg shadow-amber-500/10"
+                            className="w-9 h-9 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center hover:bg-amber-500 hover:text-white transition-all shadow-md shadow-amber-500/10"
                             title="Editar"
                           >
-                            <Edit size={20} />
+                            <Edit size={16} />
                           </button>
                           <button
                             onClick={(e) => {
@@ -1490,10 +1648,10 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                               setIsSearching(false);
                               window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}
-                            className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-lg shadow-indigo-500/10"
+                            className="w-9 h-9 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-md shadow-indigo-500/10"
                             title="Ver Ficha"
                           >
-                            <ChevronRight size={24} />
+                            <ChevronRight size={20} />
                           </button>
                           <button
                             onClick={(e) => {
@@ -1511,31 +1669,31 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                                 }
                               });
                             }}
-                            className="w-12 h-12 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-lg shadow-red-500/10"
+                            className="w-9 h-9 bg-red-100 text-red-600 rounded-xl flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-md shadow-red-500/10"
                             title="Eliminar"
                           >
-                            <Trash2 size={20} />
+                            <Trash2 size={16} />
                           </button>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="py-24 text-center">
-                    <div className="w-32 h-32 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                      <Search size={48} className="text-slate-300" />
+                  <div className="py-16 text-center">
+                    <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Search size={36} className="text-slate-300" />
                     </div>
-                    <h3 className="text-2xl font-black text-slate-900 uppercase">Sin resultados</h3>
-                    <p className="text-slate-500 font-bold mt-2 max-w-xs mx-auto">
+                    <h3 className="text-lg font-black text-slate-900 uppercase">Sin resultados</h3>
+                    <p className="text-slate-500 font-bold mt-1 text-sm max-w-xs mx-auto">
                       No encontramos registros con esos criterios en el Catastro 2026.
                     </p>
-                    <p className="text-slate-400 text-[10px] mt-4 font-black uppercase tracking-widest">
+                    <p className="text-slate-400 text-[9px] mt-3 font-black uppercase tracking-widest">
                       Total Registros Cargados: {taxpayers.length}
                     </p>
-                    <div className="flex flex-col gap-3 mt-8">
+                    <div className="flex flex-col gap-2 mt-6 max-w-xs mx-auto">
                       <button 
                         onClick={() => onRefresh ? onRefresh() : window.location.reload()}
-                        className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 transition-all active:scale-95"
+                        className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-600/30 hover:bg-indigo-700 transition-all active:scale-95"
                       >
                         Sincronizar Base de Datos
                       </button>
@@ -1544,7 +1702,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                           setSearchTerm('');
                           setSelectedActivity('ALL');
                         }}
-                        className="px-10 py-4 bg-white border-2 border-slate-200 text-slate-600 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-slate-50 transition-all active:scale-95"
+                        className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all active:scale-95"
                       >
                         Limpiar Filtros
                       </button>
@@ -1553,18 +1711,41 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
                 )}
               </div>
               
-              <div className="bg-white px-10 py-6 border-t border-slate-100 flex justify-between items-center">
-                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+              <div className="bg-white px-8 py-4 border-t border-slate-100 flex justify-between items-center flex-shrink-0">
+                <div className="flex items-center gap-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
                   Conexión Directa con Tesorería
                 </div>
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
                   SIGMA v0.0.8 - Almirante
                 </div>
               </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
+      </div>
+
+      {/* Transparent Click-away Backdrop for Dropdown Search */}
+      {isSearching && (
+        <div className="fixed inset-0 bg-slate-900/10 backdrop-blur-[1px] z-30 pointer-events-auto" onClick={() => {
+          setIsSearching(false);
+          setSearchTerm('');
+          setSelectedActivity('ALL');
+        }}></div>
+      )}
+
+      {/* Persistent Record Counter (Floating) */}
+      <div className="fixed bottom-8 right-8 z-[200] flex flex-col gap-2 pointer-events-none">
+        <div className="bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-4 animate-in slide-in-from-right duration-500 pointer-events-auto">
+          <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-2xl font-black">
+            {taxpayers.length}
+          </div>
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Total Cargado</div>
+            <div className="text-sm font-black uppercase tracking-widest text-indigo-400">Registros en Sistema</div>
+          </div>
+        </div>
+      </div>
 
       {/* --- MAIN CONTENT: NEW RECORD FORM --- */}
       <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
@@ -2185,137 +2366,78 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
               </h4>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Standard Photo */}
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                  <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                    <ImageIcon size={16} className="text-indigo-500" /> Foto de Contribuyente
-                  </label>
-                  <input type="file" accept="image/*" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                    onChange={e => handleFileChange('taxpayer_photo', e.target.files?.[0] || null)}
-                  />
-                  {newTp.documents?.['taxpayer_photo'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                </div>
 
-                {/* Standard ID */}
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                  <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                    <FileText size={16} className="text-indigo-500" /> Foto de Cédula
-                  </label>
-                  <input type="file" accept="image/*,.pdf" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                    onChange={e => handleFileChange('id_card', e.target.files?.[0] || null)}
-                  />
-                  {newTp.documents?.['id_card'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                </div>
+                {/* Foto de Contribuyente — siempre visible */}
+                <DocSlot docKey="taxpayer_photo" label="Foto de Contribuyente" accept="image/*"
+                  icon={<ImageIcon size={16} className="text-indigo-500" />}
+                  captured={!!newTp.documents?.['taxpayer_photo']}
+                  onFile={handleFileChange} />
 
-                {/* Residential Map (Natural 1 & 2) - Hidden for Placa Station if not Admin */}
+                {/* Foto de Cédula — siempre visible */}
+                <DocSlot docKey="id_card" label="Foto de Cédula" accept="image/*,.pdf"
+                  icon={<FileText size={16} className="text-indigo-500" />}
+                  captured={!!newTp.documents?.['id_card']}
+                  onFile={handleFileChange} />
+
+                {/* Residencial: croquis */}
                 {(isAdmin || !isPlacaStation) && (newTp.type === TaxpayerType.NATURAL_1 || newTp.type === TaxpayerType.NATURAL_2) && (
-                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                    <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                      <MapPin size={16} className="text-emerald-500" /> Croquis Dirección (Residencial)
-                    </label>
-                    <input type="file" accept="image/*,.pdf" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                      onChange={e => handleFileChange('residential_map', e.target.files?.[0] || null)}
-                    />
-                    {newTp.documents?.['residential_map'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                  </div>
+                  <DocSlot docKey="residential_map" label="Croquis Dirección" accept="image/*,.pdf"
+                    icon={<MapPin size={16} className="text-emerald-500" />}
+                    captured={!!newTp.documents?.['residential_map']}
+                    onFile={handleFileChange} />
                 )}
 
-                {/* Natural 2 / Commercial Specifics - Hidden for Placa Station */}
+                {/* Natural 2 / Comercio */}
                 {(isAdmin || !isPlacaStation) && newTp.type === TaxpayerType.NATURAL_2 && (
                   <>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        <FileText size={16} className="text-blue-500" /> Aviso de Operaciones
-                      </label>
-                      <input type="file" accept="image/*,.pdf" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                        onChange={e => handleFileChange('operation_permit', e.target.files?.[0] || null)}
-                      />
-                      {newTp.documents?.['operation_permit'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                    </div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        <ImageIcon size={16} className="text-blue-500" /> Foto Frontal Comercio
-                      </label>
-                      <input type="file" accept="image/*" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                        onChange={e => handleFileChange('shop_front_photo', e.target.files?.[0] || null)}
-                      />
-                      {newTp.documents?.['shop_front_photo'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                    </div>
+                    <DocSlot docKey="operation_permit" label="Aviso de Operaciones" accept="image/*,.pdf"
+                      icon={<FileText size={16} className="text-blue-500" />}
+                      captured={!!newTp.documents?.['operation_permit']}
+                      onFile={handleFileChange} />
+                    <DocSlot docKey="shop_front_photo" label="Foto Frontal Comercio" accept="image/*"
+                      icon={<ImageIcon size={16} className="text-blue-500" />}
+                      captured={!!newTp.documents?.['shop_front_photo']}
+                      onFile={handleFileChange} />
                   </>
                 )}
 
-                {/* Placa Specifics - Hidden for Normal Caja */}
+                {/* Placa */}
                 {(isAdmin || isPlacaStation) && newTp.type === TaxpayerType.PLACA && (
                   <>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        <Car size={16} className="text-amber-500" /> Registro Único Vehicular
-                      </label>
-                      <input type="file" accept="image/*,.pdf" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                        onChange={e => handleFileChange('vehicle_registry', e.target.files?.[0] || null)}
-                      />
-                      {newTp.documents?.['vehicle_registry'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                    </div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        <CheckSquare size={16} className="text-amber-500" /> Revisado Vehicular
-                      </label>
-                      <input type="file" accept="image/*,.pdf" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                        onChange={e => handleFileChange('vehicle_inspection', e.target.files?.[0] || null)}
-                      />
-                      {newTp.documents?.['vehicle_inspection'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                    </div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        <CreditCard size={16} className="text-amber-500" /> Tarjeta de Traspaso
-                      </label>
-                      <input type="file" accept="image/*,.pdf" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                        onChange={e => handleFileChange('transfer_card', e.target.files?.[0] || null)}
-                      />
-                      {newTp.documents?.['transfer_card'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                    </div>
+                    <DocSlot docKey="vehicle_registry" label="Registro Único Vehicular" accept="image/*,.pdf"
+                      icon={<Car size={16} className="text-amber-500" />}
+                      captured={!!newTp.documents?.['vehicle_registry']}
+                      onFile={handleFileChange} />
+                    <DocSlot docKey="vehicle_inspection" label="Revisado Vehicular" accept="image/*,.pdf"
+                      icon={<CheckSquare size={16} className="text-amber-500" />}
+                      captured={!!newTp.documents?.['vehicle_inspection']}
+                      onFile={handleFileChange} />
+                    <DocSlot docKey="transfer_card" label="Tarjeta de Traspaso" accept="image/*,.pdf"
+                      icon={<CreditCard size={16} className="text-amber-500" />}
+                      captured={!!newTp.documents?.['transfer_card']}
+                      onFile={handleFileChange} />
                   </>
                 )}
 
-                {/* Jurídica Specifics */}
+                {/* Jurídica */}
                 {newTp.type === TaxpayerType.JURIDICA && (
                   <>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        <FileText size={16} className="text-indigo-500" /> Registro Público (S.A.)
-                      </label>
-                      <input type="file" accept=".pdf,image/*" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                        onChange={e => handleFileChange('public_registry', e.target.files?.[0] || null)}
-                      />
-                      {newTp.documents?.['public_registry'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                    </div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        <MapPin size={16} className="text-emerald-500" /> Croquis Dirección (Residencial)
-                      </label>
-                      <input type="file" accept="image/*,.pdf" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                        onChange={e => handleFileChange('residential_map', e.target.files?.[0] || null)}
-                      />
-                      {newTp.documents?.['residential_map'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                    </div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        <ImageIcon size={16} className="text-blue-500" /> Foto Frontal Comercio
-                      </label>
-                      <input type="file" accept="image/*" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                        onChange={e => handleFileChange('shop_front_photo', e.target.files?.[0] || null)}
-                      />
-                      {newTp.documents?.['shop_front_photo'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                    </div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        <FileText size={16} className="text-indigo-500" /> Aviso de Operaciones
-                      </label>
-                      <input type="file" accept="image/*,.pdf" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                        onChange={e => handleFileChange('operation_permit', e.target.files?.[0] || null)}
-                      />
-                      {newTp.documents?.['operation_permit'] && <span className="text-xs text-green-600 font-bold mt-1 block">✔ Ya cargado</span>}
-                    </div>
+                    <DocSlot docKey="public_registry" label="Registro Público (S.A.)" accept=".pdf,image/*"
+                      icon={<FileText size={16} className="text-indigo-500" />}
+                      captured={!!newTp.documents?.['public_registry']}
+                      onFile={handleFileChange} />
+                    <DocSlot docKey="residential_map" label="Croquis Dirección" accept="image/*,.pdf"
+                      icon={<MapPin size={16} className="text-emerald-500" />}
+                      captured={!!newTp.documents?.['residential_map']}
+                      onFile={handleFileChange} />
+                    <DocSlot docKey="shop_front_photo" label="Foto Frontal Comercio" accept="image/*"
+                      icon={<ImageIcon size={16} className="text-blue-500" />}
+                      captured={!!newTp.documents?.['shop_front_photo']}
+                      onFile={handleFileChange} />
+                    <DocSlot docKey="operation_permit" label="Aviso de Operaciones" accept="image/*,.pdf"
+                      icon={<FileText size={16} className="text-indigo-500" />}
+                      captured={!!newTp.documents?.['operation_permit']}
+                      onFile={handleFileChange} />
                   </>
                 )}
               </div>

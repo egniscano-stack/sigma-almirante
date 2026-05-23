@@ -8,6 +8,7 @@ import { Download, FileText, TrendingUp, Calendar, Filter, User as UserIcon, Pri
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import taxStructure from '../data/taxStructure.json';
 
 // Helper to format currency with thousands separator (1,000.00)
 const formatCurrency = (amount: number) => {
@@ -103,14 +104,32 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
     const avgTicket = totalRevenue / (workingSet.filter(t => t.status === 'PAGADO').length || 1);
     const paidTransactions = workingSet.filter(t => t.status === 'PAGADO').length;
 
-    // Group by Tax Type
-    const byTypeMap = new Map<string, number>();
+    // Group by Tax Type (COMERCIOS, PLACAS, CONSTRUCCIÓN, EVENTOS ESPECIALES)
+    let comercios = 0;
+    let placas = 0;
+    let construccion = 0;
+    let eventos = 0;
+
     workingSet.forEach(t => {
-      const current = byTypeMap.get(t.taxType) || 0;
-      byTypeMap.set(t.taxType, current + t.amount);
+      if (t.status !== 'PAGADO') return;
+      const amount = t.amount;
+      if (t.metadata?.chargeType === 'EVENTO' || t.description?.includes('EVENTO ESPECIAL')) {
+        eventos += amount;
+      } else if (t.taxType === 'VEHICULO') {
+        placas += amount;
+      } else if (t.taxType === 'CONSTRUCCION') {
+        construccion += amount;
+      } else {
+        comercios += amount;
+      }
     });
 
-    const byTypeData = Array.from(byTypeMap.entries()).map(([name, value]) => ({ name, value })).filter(v => v.value > 0); 
+    const byTypeData = [
+      { name: 'COMERCIOS', value: comercios },
+      { name: 'PLACAS', value: placas },
+      { name: 'CONSTRUCCIÓN', value: construccion },
+      { name: 'EVENTOS ESPECIALES', value: eventos }
+    ].filter(v => v.value > 0); 
 
     // Group by Date 
     const byDateMap = new Map<string, number>();
@@ -569,7 +588,7 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
                   <td className="px-10 py-8 border-b border-slate-50">
                     <div className="flex flex-col">
                       <span className="font-black text-slate-900 text-base mb-1 tracking-tight">
-                        {taxpayers.find(tp => tp.id === t.taxpayerId)?.name || 'Contribuyente Gral.'}
+                        {taxpayers.find(tp => tp.id === t.taxpayerId)?.name || t.metadata?.manualPayer || 'Contribuyente Gral.'}
                       </span>
                       <span className="text-xs font-medium text-slate-500 italic opacity-80">{t.description}</span>
                       {t.metadata?.isConsolidated && t.metadata?.originalItems && (
@@ -582,17 +601,68 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
                           ))}
                         </div>
                       )}
+                      {t.metadata?.isDirectCharge && (
+                        <div className="mt-2 border-l-2 border-emerald-200/50 pl-3 py-1 bg-emerald-50/30 rounded-r-xl text-[10px] font-mono text-slate-600 space-y-0.5 max-w-sm">
+                          <p className="font-bold text-[9px] text-emerald-700 uppercase tracking-wider">Detalles de Cobro Directo:</p>
+                          <p><span className="font-bold">Tipo:</span> {
+                            t.metadata.chargeType === 'COMERCIO' ? 'ACTIVIDAD COMERCIAL' :
+                            t.metadata.chargeType === 'EVENTO' ? `EVENTO ESPECIAL (${t.metadata.eventDays || 1} DÍA${(t.metadata.eventDays || 1) > 1 ? 'S' : ''}${t.metadata.eventDays === 90 ? ' - RENOVABLE' : ''})` : 'OTRO'
+                          }</p>
+                          <p><span className="font-bold">Código:</span> {t.metadata.taxCode}</p>
+                          {t.metadata.taxActivity && <p><span className="font-bold">Actividad:</span> {t.metadata.taxActivity}</p>}
+                        </div>
+                      )}
+                      {(() => {
+                        const tp = taxpayers.find(tp => tp.id === t.taxpayerId);
+                        if (!t.metadata?.isDirectCharge && t.taxType === 'COMERCIO' && tp && tp.selectedTaxCodes && tp.selectedTaxCodes.length > 0) {
+                          return (
+                            <div className="mt-2 border-l-2 border-indigo-200/50 pl-3 py-1 bg-indigo-50/30 rounded-r-xl text-[10px] font-mono text-slate-600 space-y-0.5 max-w-sm">
+                              <p className="font-bold text-[9px] text-indigo-700 uppercase tracking-wider">Actividades / Códigos Comerciales:</p>
+                              {tp.selectedTaxCodes.map((code: any, idx: number) => {
+                                const struct = (taxStructure as any[]).find(s => s.code === code);
+                                const rate = tp.selectedRates?.[code] || 0;
+                                return (
+                                  <p key={idx}>
+                                    <span className="font-bold">{code}</span> — {struct?.activity || 'Actividad'} (B/. {formatCurrency(rate)})
+                                  </p>
+                                );
+                              })}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   </td>
-                  <td className="px-10 py-8 border-b border-slate-50">
+                   <td className="px-10 py-8 border-b border-slate-50">
                     <div className="flex flex-col">
-                      <span className={`text-[10px] font-black uppercase tracking-widest mb-2 px-3 py-1 rounded-lg w-fit ${
-                        t.taxType === TaxType.COMERCIO ? 'bg-blue-50 text-blue-600 border border-blue-100' :
-                        t.taxType === TaxType.VEHICULO ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                        'bg-slate-100 text-slate-600 border border-slate-200'
-                      }`}>
-                        {t.taxType}
-                      </span>
+                      {(() => {
+                        let label = 'COMERCIO';
+                        let styleClass = 'bg-blue-50 text-blue-600 border border-blue-100';
+                        
+                        if (t.taxType === TaxType.VEHICULO) {
+                          label = 'PLACA';
+                          styleClass = 'bg-emerald-50 text-emerald-600 border border-emerald-100';
+                        } else if (t.taxType === TaxType.CONSTRUCCION) {
+                          label = 'CONSTRUCCIÓN';
+                          styleClass = 'bg-amber-50 text-amber-600 border border-amber-100';
+                        } else if (t.metadata?.chargeType === 'EVENTO' || t.description?.includes('EVENTO ESPECIAL')) {
+                          label = 'EVENTO ESPECIAL';
+                          styleClass = 'bg-purple-50 text-purple-600 border border-purple-100';
+                        } else if (t.taxType === TaxType.BASURA) {
+                          label = 'COMERCIO (ASEO)';
+                          styleClass = 'bg-blue-50 text-blue-600 border border-blue-100';
+                        } else if (t.taxType === TaxType.PAZ_Y_SALVO) {
+                          label = 'PAZ Y SALVO';
+                          styleClass = 'bg-indigo-50 text-indigo-600 border border-indigo-100';
+                        }
+
+                        return (
+                          <span className={`text-[10px] font-black uppercase tracking-widest mb-2 px-3 py-1 rounded-lg w-fit ${styleClass}`}>
+                            {label}
+                          </span>
+                        );
+                      })()}
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                         <Calendar size={12} /> {t.date}
                       </span>
@@ -700,7 +770,8 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
                         <tr key={t.id} className="border-b border-slate-200">
                           <td className="p-3 border border-slate-200 font-mono text-[9px]">#{t.id.slice(-8).toUpperCase()}</td>
                           <td className="p-3 border border-slate-200">
-                            <p className="font-bold">{taxpayers.find(tp => tp.id === t.taxpayerId)?.name || 'C. Gral.'}</p>
+                            <p className="font-bold">{taxpayers.find(tp => tp.id === t.taxpayerId)?.name || t.metadata?.manualPayer || 'C. Gral.'}</p>
+                            <p className="text-[9px] text-slate-500 italic mt-0.5">{t.description}</p>
                             {t.metadata?.isConsolidated && t.metadata?.originalItems && (
                               <div className="mt-1 border-t border-slate-100 pt-1">
                                 {t.metadata.originalItems.map((item: any, idx: number) => (
@@ -711,6 +782,37 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
                                 ))}
                               </div>
                             )}
+                            {t.metadata?.isDirectCharge && (
+                              <div className="mt-1 border-t border-slate-100 pt-1 text-[8px] text-slate-600 font-mono space-y-0.5">
+                                <p className="font-bold text-emerald-700 uppercase">Detalles de Cobro Directo:</p>
+                                <p><span className="font-bold">Tipo:</span> {
+                                  t.metadata.chargeType === 'COMERCIO' ? 'ACTIVIDAD COMERCIAL' :
+                                  t.metadata.chargeType === 'EVENTO' ? `EVENTO ESPECIAL (${t.metadata.eventDays || 1} DÍA${(t.metadata.eventDays || 1) > 1 ? 'S' : ''}${t.metadata.eventDays === 90 ? ' - RENOVABLE' : ''})` : 'OTRO'
+                                }</p>
+                                <p><span className="font-bold">Código:</span> {t.metadata.taxCode}</p>
+                                {t.metadata.taxActivity && <p><span className="font-bold">Actividad:</span> {t.metadata.taxActivity}</p>}
+                              </div>
+                            )}
+                            {(() => {
+                              const tp = taxpayers.find(tp => tp.id === t.taxpayerId);
+                              if (!t.metadata?.isDirectCharge && t.taxType === 'COMERCIO' && tp && tp.selectedTaxCodes && tp.selectedTaxCodes.length > 0) {
+                                return (
+                                  <div className="mt-1 border-t border-slate-100 pt-1 text-[8px] text-slate-600 font-mono space-y-0.5">
+                                    <p className="font-bold text-indigo-700 uppercase">Actividades / Códigos Comerciales:</p>
+                                    {tp.selectedTaxCodes.map((code: any, idx: number) => {
+                                      const struct = (taxStructure as any[]).find(s => s.code === code);
+                                      const rate = tp.selectedRates?.[code] || 0;
+                                      return (
+                                        <p key={idx}>
+                                          <span className="font-bold">{code}</span> — {struct?.activity || 'Actividad'} (B/. {formatCurrency(rate)})
+                                        </p>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
                           </td>
                           <td className="p-3 border border-slate-200 text-[9px] uppercase">{t.taxType}</td>
                           <td className="p-3 border border-slate-200 text-center font-bold text-[9px] uppercase">{t.paymentMethod || 'Efectivo'}</td>

@@ -8,8 +8,9 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-# dist
+dist
 dist-ssr
+assets
 *.local
 
 # SECURITY: Environment variables - NEVER commit these

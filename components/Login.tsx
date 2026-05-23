@@ -13,9 +13,11 @@ import {
 interface LoginProps {
   onLogin: (user: User) => void;
   validUsers: User[]; // Receive list of valid users
+  isTestMode?: boolean;
+  onToggleTestMode?: () => void;
 }
 
-export const Login: React.FC<LoginProps> = ({ onLogin, validUsers }) => {
+export const Login: React.FC<LoginProps> = ({ onLogin, validUsers, isTestMode = false, onToggleTestMode }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -272,6 +274,36 @@ export const Login: React.FC<LoginProps> = ({ onLogin, validUsers }) => {
               El uso no autorizado está prohibido y será reportado.
             </p>
           </div>
+
+          {/* Pre-login Test Mode Switch */}
+          {onToggleTestMode && (
+            <div className="border-t border-slate-700 pt-4 flex flex-col items-center">
+              <button
+                type="button"
+                onClick={onToggleTestMode}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-xs font-bold ${
+                  isTestMode 
+                    ? 'bg-amber-500/10 border-amber-500/40 text-amber-300 shadow-md shadow-amber-500/5' 
+                    : 'bg-slate-900 border-slate-750 text-slate-400 hover:text-slate-200 hover:border-slate-650'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Shield size={14} className={isTestMode ? 'text-amber-400 animate-pulse' : 'text-slate-555'} />
+                  <span className="tracking-wider uppercase">🔧 MODO DE PRUEBA (DEMO)</span>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-black tracking-widest ${
+                  isTestMode ? 'bg-amber-500 text-slate-950 animate-bounce' : 'bg-slate-800 text-slate-500'
+                }`}>
+                  {isTestMode ? 'Activo' : 'Inactivo'}
+                </span>
+              </button>
+              <p className="text-[10px] text-slate-500 text-center leading-normal mt-2 font-medium">
+                {isTestMode 
+                  ? 'La aplicación operará simulando datos locales sin modificar la base de datos real.' 
+                  : 'Haga clic para simular cobros y registros de prueba sin alterar producción.'}
+              </p>
+            </div>
+          )}
         </form>
       </div>
 

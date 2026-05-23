@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MessageCircle, X, Send, Paperclip, Image as ImageIcon, FileText, MoreVertical, Download, Search, ChevronLeft, Check, CheckCheck, User as UserIcon } from 'lucide-react';
 import { User, ChatMessage } from '../types';
 import { db } from '../services/db';
+import { localStore } from '../services/localStore';
 
 interface InternalChatProps {
     currentUser: User;
@@ -86,6 +87,11 @@ export const InternalChat: React.FC<InternalChatProps> = ({ currentUser, isOpen,
             }
         };
         loadData();
+
+        window.addEventListener('sigma_chat_updated', loadData);
+        return () => {
+            window.removeEventListener('sigma_chat_updated', loadData);
+        };
     }, [currentUser.username]);
 
     // Subscription
@@ -134,19 +140,58 @@ export const InternalChat: React.FC<InternalChatProps> = ({ currentUser, isOpen,
 
     const handleSend = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
-        if (!newMessage.trim() && !selectedFile) return;
+        const textToSend = newMessage.trim();
+        const fileToSend = selectedFile;
+        if (!textToSend && !fileToSend) return;
+
+        const recipientUsername = selectedRecipient; // Keep reference for timeout
 
         try {
             await db.sendMessage({
                 sender_username: currentUser.username,
                 sender_name: currentUser.name,
-                content: newMessage,
-                recipient_username: selectedRecipient,
-                attachment_url: selectedFile?.data,
-                attachment_type: selectedFile?.type
+                content: textToSend,
+                recipient_username: recipientUsername,
+                attachment_url: fileToSend?.data,
+                attachment_type: fileToSend?.type
             });
             setNewMessage('');
             setSelectedFile(null);
+
+            if (localStore.isTestMode()) {
+                // Simulate an automated response after 2 seconds
+                setTimeout(async () => {
+                    const senderUsername = recipientUsername ? recipientUsername : 'tesorera';
+                    const senderName = recipientUsername 
+                        ? (availableUsers.find(u => u.username === recipientUsername)?.name || 'Administrador')
+                        : 'Tesorera Municipal';
+                    
+                    const responses = [
+                        "Recibido. Estoy validando la información en el sistema.",
+                        "¡Excelente! Quedo a la espera de la confirmación.",
+                        "Entendido, procederé con la revisión correspondiente.",
+                        "¿Me confirmas si ya se registró el pago en caja?",
+                        "Perfecto, estaré al pendiente de la actualización."
+                    ];
+                    const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+
+                    await db.sendMessage({
+                        sender_username: senderUsername,
+                        sender_name: senderName,
+                        content: `${randomResponse} (Simulación de Modo Prueba)`,
+                        recipient_username: recipientUsername ? currentUser.username : null,
+                        attachment_url: undefined,
+                        attachment_type: undefined
+                    });
+
+                    // Trigger browser notification sound and toast
+                    new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3').play().catch(() => {});
+                    onShowToast({
+                        title: `Mensaje de ${senderName}`,
+                        message: `${randomResponse} (Simulación de Modo Prueba)`
+                    });
+                }, 2000);
+            }
         } catch (e) {
             alert("Error al enviar");
         }

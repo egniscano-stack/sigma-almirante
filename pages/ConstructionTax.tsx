@@ -5,7 +5,7 @@ import { jsPDF } from 'jspdf';
 import {
     Building2, FileText, User, MapPin,
     CheckCircle, Printer, Download, ArrowLeft, X, Check,
-    Banknote, BadgeCheck, Shield, Receipt
+    Banknote, BadgeCheck, Shield, Receipt, ShieldAlert
 } from 'lucide-react';
 import { MunicipalityInfo, TaxType } from '../types';
 
@@ -45,7 +45,7 @@ const formatCurrency = (amount: number) => {
 };
 
 export const ConstructionTax: React.FC<ConstructionTaxProps> = ({ currentUserName, municipalityInfo, onBack, onPayment }) => {
-    const [step, setStep] = useState<'form' | 'invoice'>('form');
+    const [step, setStep] = useState<'form' | 'preview' | 'invoice'>('form');
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
     const [invoice, setInvoice] = useState<ConstructionInvoice | null>(null);
     
@@ -97,9 +97,12 @@ export const ConstructionTax: React.FC<ConstructionTaxProps> = ({ currentUserNam
         return Object.keys(errs).length === 0;
     };
 
-    const handleGenerate = () => {
+    const handlePreview = () => {
         if (!validate()) return;
+        setStep('preview');
+    };
 
+    const handleConfirmPayment = () => {
         const verificationCode = `CONST-${Date.now().toString(36).toUpperCase()}-${formData.docId.slice(-4).toUpperCase()}`;
         const invoiceId = `CT-${Date.now()}`;
         const qrUrl = `https://almirante.gob.pa/verify/construction/${invoiceId}?code=${verificationCode}`;
@@ -161,6 +164,112 @@ export const ConstructionTax: React.FC<ConstructionTaxProps> = ({ currentUserNam
             setIsGeneratingPdf(false);
         }
     };
+
+    if (step === 'preview') {
+        const previewDate = new Date();
+        const formattedDate = previewDate.toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+        const formattedTime = previewDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+        return (
+            <div className="min-h-screen bg-slate-900 flex flex-col items-center py-2 px-4 animate-scale-up">
+                <div className="w-full max-w-2xl flex flex-col sm:flex-row justify-between items-center mb-4 gap-3">
+                    <h2 className="text-white font-bold text-lg flex items-center gap-2">
+                        <ShieldAlert className="text-amber-500 animate-pulse" />
+                        Vista Previa: Borrador de Impuesto de Construcción
+                    </h2>
+                    <div className="flex gap-3 w-full sm:w-auto">
+                        <button onClick={handleConfirmPayment} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-5 py-3 rounded-xl font-bold text-sm transition-all shadow-lg active:scale-95">
+                            <Check size={16} /> Confirmar y Cobrar
+                        </button>
+                        <button onClick={() => setStep('form')} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-5 py-3 rounded-xl font-bold text-sm transition-all active:scale-95">
+                            <ArrowLeft size={16} /> Corregir Datos
+                        </button>
+                    </div>
+                </div>
+
+                {/* Draft Warning Alert */}
+                <div className="w-full max-w-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-xs py-3 px-5 rounded-2xl mb-6 text-center leading-relaxed">
+                    ⚠️ <strong>ESTADO: BORRADOR PRELIMINAR.</strong> Por favor, verifique detalladamente todos los campos del contribuyente e importe a cobrar. Al hacer clic en "Confirmar y Cobrar" se registrará de forma oficial en el sistema.
+                </div>
+
+                {/* Visual Draft Certificate */}
+                <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden mt-0 opacity-90 border-4 border-dashed border-amber-500/40 relative">
+                    <div className="absolute inset-0 bg-amber-500/[0.02] pointer-events-none" />
+                    <div className="h-2 bg-gradient-to-r from-amber-500 to-orange-500" />
+                    
+                    <div className="px-4 pt-2 pb-3 border-b-2 border-slate-200 bg-slate-50/50">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <img src={`${import.meta.env.BASE_URL}logo-municipio.png`} className="h-40 w-auto object-contain -ml-4 grayscale opacity-60" alt="Logo" />
+                                <div>
+                                    <h1 className="font-extrabold text-slate-800 text-base uppercase leading-none tracking-tight">Municipio de Almirante</h1>
+                                    <p className="text-[9px] font-bold text-slate-500 mt-1 uppercase tracking-widest">Ingeniería Municipal • RUC: 1-22-333 DV 44</p>
+                                    <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-100 border border-amber-200 text-amber-800 text-[10px] font-black px-2.5 py-0.5 rounded-lg uppercase tracking-wider">
+                                        VISTA PREVIA
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <div className="inline-block bg-slate-800 text-white px-3 py-1.5 rounded-xl">
+                                    <p className="text-[9px] uppercase font-bold text-slate-400 tracking-widest leading-none">Nº RECIBO</p>
+                                    <p className="font-mono font-extrabold text-amber-400 text-xs tracking-wider mt-1">CT-BORRADOR</p>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-2">{formattedDate}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-gradient-to-r from-amber-600 to-orange-700 px-8 py-3 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <Building2 className="text-white animate-pulse" size={24} />
+                            <div>
+                                <h2 className="text-white font-extrabold text-lg uppercase tracking-wide">Impuesto de Construcción</h2>
+                                <p className="text-amber-100 text-[10px] font-medium uppercase tracking-widest">Borrador de Liquidación</p>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-amber-100 text-xs font-bold">TOTAL A PAGAR</p>
+                            <p className="text-white font-extrabold text-3xl">B/. {formatCurrency(formData.amount)}</p>
+                        </div>
+                    </div>
+
+                    <div className="px-8 py-6 grid grid-cols-2 gap-x-8 gap-y-6">
+                        <div className="col-span-2">
+                            <h3 className="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-3 border-b border-slate-100 pb-1">Datos del Contribuyente</h3>
+                        </div>
+                        <div className="col-span-2">
+                            <p className="text-[9px] uppercase text-slate-400 font-bold mb-0.5">Nombre Completo / Razón Social</p>
+                            <p className="font-extrabold text-slate-900 text-lg uppercase">{formData.fullName || 'NO ESPECIFICADO'}</p>
+                        </div>
+                        <div>
+                            <p className="text-[9px] uppercase text-slate-400 font-bold mb-0.5">Identificación (Cédula / RUC)</p>
+                            <p className="font-mono font-bold text-slate-700 text-base">{formData.docId || 'NO ESPECIFICADO'}</p>
+                        </div>
+                        <div>
+                            <p className="text-[9px] uppercase text-slate-400 font-bold mb-0.5">Tipo de Proyecto</p>
+                            <p className="font-bold text-slate-700 text-base">{formData.projectType}</p>
+                        </div>
+                        <div className="col-span-2">
+                            <p className="text-[9px] uppercase text-slate-400 font-bold mb-0.5">Ubicación de la Obra</p>
+                            <p className="text-slate-700 text-sm font-medium flex items-center gap-1"><MapPin size={12} className="text-amber-600" /> {formData.address || 'NO ESPECIFICADA'}</p>
+                        </div>
+                        <div className="col-span-2">
+                            <p className="text-[9px] uppercase text-slate-400 font-bold mb-0.5">Descripción de los Trabajos</p>
+                            <p className="text-slate-700 text-sm bg-slate-50 p-3 rounded-lg border border-slate-100">{formData.description || 'No especificada'}</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-50 px-8 py-5 border-t border-slate-100 flex justify-between items-center">
+                        <div>
+                            <p className="text-[9px] uppercase text-slate-400 font-bold mb-0.5">Cajero / Recaudador</p>
+                            <p className="text-slate-700 font-bold text-xs">{currentUserName}</p>
+                        </div>
+                        <p className="text-[8px] text-slate-400 text-right">Vista previa de liquidación • SIGMA Digital</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     if (step === 'invoice' && invoice) {
         const issuedDate = new Date(invoice.issuedAt);
@@ -358,8 +467,8 @@ export const ConstructionTax: React.FC<ConstructionTaxProps> = ({ currentUserNam
                         </div>
                     </div>
 
-                    <button onClick={handleGenerate} className="w-full bg-slate-900 hover:bg-emerald-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-3 transition-all transform active:scale-95 shadow-xl shadow-slate-200">
-                        <Receipt size={24} /> GENERAR FACTURA Y REGISTRAR COBRO
+                    <button onClick={handlePreview} className="w-full bg-slate-900 hover:bg-emerald-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-3 transition-all transform active:scale-95 shadow-xl shadow-slate-200">
+                        <Receipt size={24} /> VER VISTA PREVIA Y CONFIRMAR COBRO
                     </button>
                 </div>
             </div>

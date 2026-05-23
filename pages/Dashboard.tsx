@@ -85,12 +85,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, taxpayers, c
     }));
   }, [filteredTransactions]);
 
-  const pieData = [
-    { name: 'Comercio', value: filteredTransactions.filter(t => t.taxType === TaxType.COMERCIO).reduce((a, b) => a + b.amount, 0) },
-    { name: 'Vehículos', value: filteredTransactions.filter(t => t.taxType === TaxType.VEHICULO).reduce((a, b) => a + b.amount, 0) },
-    { name: 'Basura', value: filteredTransactions.filter(t => t.taxType === TaxType.BASURA).reduce((a, b) => a + b.amount, 0) },
-    { name: 'Obras', value: filteredTransactions.filter(t => t.taxType === TaxType.CONSTRUCCION).reduce((a, b) => a + b.amount, 0) },
-  ].filter(i => i.value > 0);
+  const pieData = useMemo(() => {
+    let comercios = 0;
+    let placas = 0;
+    let construccion = 0;
+    let eventos = 0;
+
+    filteredTransactions.forEach(t => {
+      if (t.status !== 'PAGADO') return;
+      const amount = t.amount;
+      if (t.metadata?.chargeType === 'EVENTO' || t.description?.includes('EVENTO ESPECIAL')) {
+        eventos += amount;
+      } else if (t.taxType === TaxType.VEHICULO) {
+        placas += amount;
+      } else if (t.taxType === TaxType.CONSTRUCCION) {
+        construccion += amount;
+      } else {
+        comercios += amount;
+      }
+    });
+
+    return [
+      { name: 'COMERCIOS', value: comercios },
+      { name: 'PLACAS', value: placas },
+      { name: 'CONSTRUCCIÓN', value: construccion },
+      { name: 'EVENTOS ESPECIALES', value: eventos }
+    ].filter(i => i.value > 0);
+  }, [filteredTransactions]);
 
   const StatCard = ({ title, value, subtext, icon: Icon, color, trend }: any) => (
     <div className="group relative bg-white bg-opacity-80 backdrop-blur-md p-6 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/40 flex flex-col justify-between hover:shadow-[0_20px_50px_rgba(8,_112,_184,_0.08)] hover:-translate-y-1 transition-all duration-300 overflow-hidden h-full">

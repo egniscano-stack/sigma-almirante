@@ -580,28 +580,68 @@ export const db = {
     },
 
     getMessages: async (): Promise<ChatMessage[]> => {
+        if (localStore.isTestMode()) {
+            const local = await localStore.loadData();
+            return local.chatMessages || [];
+        }
         const { data, error } = await supabase.from('chat_messages').select('*').order('created_at', { ascending: true }).limit(100);
         if (error) return [];
         return data as ChatMessage[];
     },
 
     sendMessage: async (msg: Omit<ChatMessage, 'id' | 'created_at' | 'is_read'>) => {
+        if (localStore.isTestMode()) {
+            const local = await localStore.loadData();
+            if (!local.chatMessages) local.chatMessages = [];
+            const newMsg = {
+                ...msg,
+                id: crypto.randomUUID(),
+                created_at: new Date().toISOString(),
+                is_read: false
+            };
+            local.chatMessages.push(newMsg);
+            await localStore.saveData(local);
+            // Dispatch a custom event to notify components that chat has changed locally
+            window.dispatchEvent(new CustomEvent('sigma_chat_updated'));
+            return newMsg as ChatMessage;
+        }
         const { data, error } = await supabase.from('chat_messages').insert(msg).select().single();
         if (error) throw error;
         return data as ChatMessage;
     },
 
     markMessagesAsRead: async (currentUserKv: string, senderKv: string | null) => {
+        if (localStore.isTestMode()) {
+            const local = await localStore.loadData();
+            if (local.chatMessages && senderKv) {
+                local.chatMessages = local.chatMessages.map(m => 
+                    m.recipient_username === currentUserKv && m.sender_username === senderKv
+                        ? { ...m, is_read: true }
+                        : m
+                );
+                await localStore.saveData(local);
+                window.dispatchEvent(new CustomEvent('sigma_chat_updated'));
+            }
+            return;
+        }
         if (senderKv) {
             await supabase.from('chat_messages').update({ is_read: true }).eq('recipient_username', currentUserKv).eq('sender_username', senderKv).eq('is_read', false);
         }
     },
 
     markGeneralChatRead: async (username: string) => {
+        if (localStore.isTestMode()) {
+            return; // Test mode doesn't track this remotely
+        }
         await supabase.from('app_users').update({ last_read_general_chat: new Date().toISOString() }).eq('username', username);
     },
 
     subscribeToChanges: (onTaxpayerChange: any, onTransactionChange: any, onAgendaChange?: any, onAdminRequestChange?: any, onChatChange?: any) => {
+        if (localStore.isTestMode()) {
+            console.log("[db] Bypassing Supabase Realtime subscriptions because Test Mode is active.");
+            return () => {};
+        }
+        
         const taxpayersSubscription = supabase.channel('public:taxpayers').on('postgres_changes', { event: '*', schema: 'public', table: 'taxpayers' }, onTaxpayerChange).subscribe();
         const transactionsSubscription = supabase.channel('public:transactions').on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, onTransactionChange).subscribe();
         let agendaSubscription: any = null;

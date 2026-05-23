@@ -52,6 +52,14 @@ const INITIAL_MUNICIPALITY_INFO: MunicipalityInfo = {
   address: 'Calle Principal, Almirante'
 };
 
+// Detect localhost / developer environment
+const IS_DEV = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+   window.location.hostname === '127.0.0.1' ||
+   window.location.hostname.startsWith('192.168.') ||
+   window.location.port === '3000' ||
+   window.location.port === '5173');
+
 function App() {
   // Authentication State
   const [user, setUser] = useState<User | null>(null);
@@ -73,6 +81,9 @@ function App() {
 
   // Loading State
   const [isLoading, setIsLoading] = useState(true);
+
+  // Test Mode State
+  const [isTestMode, setIsTestMode] = useState(localStore.isTestMode());
 
   // Offline Logic State
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -265,7 +276,7 @@ function App() {
       window.removeEventListener('offline', handleOffline);
       unsubscribe();
     };
-  }, [fetchData]);
+  }, [fetchData, isTestMode]);
 
   const [selectedDebtTaxpayer, setSelectedDebtTaxpayer] = useState<Taxpayer | null>(null);
 
@@ -439,6 +450,28 @@ function App() {
     try {
       const updated = await db.updateTaxpayer(updatedTp);
       setTaxpayers(prev => prev.map(tp => tp.id === updated.id ? { ...updated } : tp));
+      
+      // Auto-approve pending payment arrangement requests for this taxpayer if an arrangement was just activated
+      if (updatedTp.paymentArrangement && updatedTp.paymentArrangement.estado === 'ACTIVO') {
+        const pendingArrangementReqs = adminRequests.filter(r => r.taxpayerId === updatedTp.id && r.type === 'PAYMENT_ARRANGEMENT' && r.status === 'PENDING');
+        for (const req of pendingArrangementReqs) {
+          try {
+            const approvedReq = {
+              ...req,
+              status: 'APPROVED' as RequestStatus,
+              approvedAmount: updatedTp.paymentArrangement.abono,
+              approvedTotalDebt: updatedTp.paymentArrangement.totalDebt,
+              installments: updatedTp.paymentArrangement.cuotasTotales,
+              responseNote: 'Convenio de Pago Creado en el Panel de Arreglos'
+            };
+            await db.updateAdminRequest(approvedReq);
+            setAdminRequests(prev => prev.map(r => r.id === req.id ? approvedReq : r));
+          } catch (err) {
+            console.error("Error auto-approving payment arrangement request", err);
+          }
+        }
+      }
+
       window.dispatchEvent(new CustomEvent('sigma_data_updated'));
     } catch (e: any) {
       console.error("Error updating taxpayer", e);
@@ -782,24 +815,29 @@ function App() {
         (t.selectedTaxCodes || []).some(c => c.includes('PLACA')) ||
         t.commercialCategory === 'PLACA'
       );
-    } else if (uname.includes('caja')) {
-      // Caja 1, 2, 3: Todo EXCEPTO placas
-      return taxpayers.filter(t => 
-        (t.vehicles?.length || 0) === 0 && 
-        !(t.selectedTaxCodes || []).some(c => c.includes('PLACA')) &&
-        t.commercialCategory !== 'PLACA'
-      );
     }
     
+    // Cajeros 1, 2, 3 and other roles can see ALL taxpayers (including those with plates)
     return taxpayers;
   }, [taxpayers, user]);
 
   const filteredTransactions = useMemo(() => {
-    if (!user || user.role === 'ADMIN' || user.role === 'ALCALDE') return transactions;
+    if (!user) return [];
+    // Admins, Alcaldes, Auditors and Accounting bypass the transaction filters to see all transactions
+    if (user.role === 'ADMIN' || user.role === 'ALCALDE' || user.role === 'AUDITOR' || user.role === 'CONTABILIDAD') {
+      return transactions;
+    }
     
-    // For transactions, we filter by the taxpayers that the user can see
+    // For other roles (e.g. Cashiers), we filter by the taxpayers they can see,
+    // but we ALWAYS include manual/direct transactions (where taxpayerId is null or undefined)
+    // and transactions they processed themselves as tellers.
     const allowedTaxpayerIds = new Set(filteredTaxpayers.map(t => t.id));
-    return transactions.filter(tx => allowedTaxpayerIds.has(tx.taxpayerId));
+    return transactions.filter(tx => 
+      tx.taxpayerId === null || 
+      tx.taxpayerId === undefined || 
+      allowedTaxpayerIds.has(tx.taxpayerId) ||
+      tx.tellerName.trim().toLowerCase() === user.name.trim().toLowerCase()
+    );
   }, [transactions, filteredTaxpayers, user]);
 
   const renderContent = () => {
@@ -1016,6 +1054,7 @@ function App() {
             transactions={filteredTransactions}
             config={config}
             onUpdateTaxpayer={handleUpdateTaxpayer}
+            initialTaxpayer={selectedDebtTaxpayer}
           />
         ) : null;
       case 'planilla':
@@ -1072,11 +1111,27 @@ function App() {
     );
 
     // Stage 3: Mode Specific Login
+    const handleToggleTestMode = async () => {
+      const newMode = !isTestMode;
+      setIsLoading(true);
+      await localStore.setTestMode(newMode);
+      setIsTestMode(newMode);
+      await fetchData(false);
+      setIsLoading(false);
+      
+      setNotificationToast({
+        title: newMode ? 'Modo Prueba Activado' : 'Modo Producción Activado',
+        message: newMode 
+          ? 'Operando con base de datos simulada y aislada de Supabase.' 
+          : 'Operando con base de datos en tiempo real de Supabase.'
+      });
+    };
+
     if (appMode === 'PORTAL') {
       return (
         <div className="relative">
           <BackButton />
-          <PortalLogin onLogin={handleLogin} taxpayers={taxpayers} />
+          <PortalLogin onLogin={handleLogin} taxpayers={taxpayers} isTestMode={IS_DEV && isTestMode} onToggleTestMode={IS_DEV ? handleToggleTestMode : undefined} />
         </div>
       );
     }
@@ -1084,7 +1139,7 @@ function App() {
     // Default to ADMIN login
     return (
       <div className="relative">
-        <Login onLogin={handleLogin} validUsers={registeredUsers} />
+        <Login onLogin={handleLogin} validUsers={registeredUsers} isTestMode={IS_DEV && isTestMode} onToggleTestMode={IS_DEV ? handleToggleTestMode : undefined} />
       </div>
     );
   }
@@ -1131,6 +1186,21 @@ function App() {
         onClose={() => setIsSidebarOpen(false)}
         onToggleChat={() => setIsChatOpen(!isChatOpen)}
         chatUnreadCount={chatUnreadCount}
+        isTestMode={IS_DEV && isTestMode}
+        onToggleTestMode={IS_DEV ? async () => {
+          const newMode = !isTestMode;
+          setIsLoading(true);
+          await localStore.setTestMode(newMode);
+          setIsTestMode(newMode);
+          await fetchData(false);
+          setIsLoading(false);
+          setNotificationToast({
+            title: newMode ? 'Modo Prueba Activado' : 'Modo Producción Activado',
+            message: newMode
+              ? 'Operando con base de datos simulada y aislada de Supabase.'
+              : 'Operando con base de datos en tiempo real de Supabase.'
+          });
+        } : undefined}
       />
 
       <main className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'overflow-hidden' : ''} md:ml-64 print:ml-0 print:w-full`}>
@@ -1211,6 +1281,35 @@ function App() {
 
             {/* Status Indicator & Sync Button */}
             <div className="flex items-center mr-2 gap-3">
+              {/* Test Mode Toggle — solo visible en localhost (desarrollo) */}
+              {IS_DEV && (
+                <button
+                  onClick={async () => {
+                    const newMode = !isTestMode;
+                    setIsLoading(true);
+                    await localStore.setTestMode(newMode);
+                    setIsTestMode(newMode);
+                    await fetchData(false);
+                    setIsLoading(false);
+                    setNotificationToast({
+                      title: newMode ? 'Modo Prueba Activado' : 'Modo Producción Activado',
+                      message: newMode
+                        ? 'Operando con base de datos simulada y aislada de Supabase.'
+                        : 'Operando con base de datos en tiempo real de Supabase.'
+                    });
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-sm ${
+                    isTestMode
+                      ? 'bg-amber-500 text-white hover:bg-amber-600 border border-amber-600'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
+                  }`}
+                  title={isTestMode ? 'Haga clic para cambiar a Modo Producción' : 'Haga clic para cambiar a Modo Prueba'}
+                >
+                  <ShieldAlert size={14} className={isTestMode ? 'animate-bounce' : ''} />
+                  <span>{isTestMode ? 'Modo Prueba' : 'Activar Prueba'}</span>
+                </button>
+              )}
+
               {isOnline ? (
                 <div className="hidden md:flex items-center gap-1 bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-xs font-semibold border border-emerald-100">
                   <Wifi size={14} />
@@ -1258,6 +1357,33 @@ function App() {
           </div>
         </header>
 
+        {IS_DEV && isTestMode && (
+          <div className="bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold text-xs py-2.5 px-4 md:px-8 flex flex-col sm:flex-row gap-3 sm:gap-2 items-center justify-between shadow-inner print:hidden border-b border-orange-700 animate-fade-in relative z-10">
+            <div className="flex items-center gap-2">
+              <ShieldAlert size={16} className="animate-bounce shrink-0" />
+              <span className="text-left leading-normal">
+                <strong>MODO PRUEBA ACTIVO:</strong> Todos los cobros, facturas, registros y modificaciones son SIMULADOS localmente. Ningún cambio afectará a la base de datos de producción (Supabase).
+              </span>
+            </div>
+            <button
+              onClick={async () => {
+                setIsLoading(true);
+                await localStore.setTestMode(false);
+                setIsTestMode(false);
+                await fetchData(false);
+                setIsLoading(false);
+                setNotificationToast({
+                  title: 'Modo Producción Activado',
+                  message: 'Operando con base de datos en tiempo real de Supabase.'
+                });
+              }}
+              className="bg-white text-orange-700 hover:bg-orange-50 font-black text-[10px] px-4 py-1.5 rounded-lg uppercase tracking-wider shadow transition-all transform active:scale-95 whitespace-nowrap"
+            >
+              Salir de Prueba
+            </button>
+          </div>
+        )}
+
         <div className="flex-1 p-4 md:p-8 overflow-x-hidden animate-fade-in print:p-0">
           <div className="max-w-7xl mx-auto">
             {renderContent()}
@@ -1281,6 +1407,14 @@ function App() {
               setSelectedDebtTaxpayer(tp);
               setShowRequestsModal(false);
               setCurrentPage(user?.username.toLowerCase().includes('placa') ? 'taxpayers' : 'caja');
+            }
+          }}
+          onRedirectToArreglos={(taxpayerId) => {
+            const tp = taxpayers.find(t => t.id === taxpayerId);
+            if (tp) {
+              setSelectedDebtTaxpayer(tp);
+              setShowRequestsModal(false);
+              setCurrentPage('arreglos');
             }
           }}
         />
@@ -1386,7 +1520,7 @@ function App() {
 }
 
 // Sub-component for Admin Modal to handle internal state cleanly
-const AdminRequestModal = ({ requests, updateRequests, onClose, allTransactions, updateTransactions, allTaxpayers, onUpdateTaxpayer, onRedirectToCashier }: {
+const AdminRequestModal = ({ requests, updateRequests, onClose, allTransactions, updateTransactions, allTaxpayers, onUpdateTaxpayer, onRedirectToCashier, onRedirectToArreglos }: {
   requests: AdminRequest[],
   updateRequests: React.Dispatch<React.SetStateAction<AdminRequest[]>>,
   onClose: () => void,
@@ -1394,7 +1528,8 @@ const AdminRequestModal = ({ requests, updateRequests, onClose, allTransactions,
   updateTransactions: React.Dispatch<React.SetStateAction<Transaction[]>>,
   allTaxpayers: Taxpayer[],
   onUpdateTaxpayer: (tp: Taxpayer) => void,
-  onRedirectToCashier: (taxpayerId: string) => void
+  onRedirectToCashier: (taxpayerId: string) => void,
+  onRedirectToArreglos: (taxpayerId: string) => void
 }) => {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -1679,40 +1814,21 @@ const AdminRequestModal = ({ requests, updateRequests, onClose, allTransactions,
                       // Normal Action Buttons
                       <>
                         {req.type === 'PAYMENT_ARRANGEMENT' ? (
-                          <div className="space-y-3">
-                            <p className="text-xs font-bold text-slate-500 uppercase">Configurar Acuerdo</p>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className="text-xs text-slate-500">Abono Inicial (B/.)</label>
-                                <input type="number" inputMode="decimal" className="w-full border rounded p-1" placeholder="0.00"
-                                  id={`approve-initial-${req.id}`}
-                                />
-                              </div>
-                              <div>
-                                <label className="text-xs text-slate-500">Letras / Cuotas</label>
-                                <input type="number" inputMode="decimal" className="w-full border rounded p-1" placeholder="Ej. 12"
-                                  id={`approve-installments-${req.id}`}
-                                />
-                              </div>
-                            </div>
-                            <div className="flex gap-2 mt-2">
-                              <button
-                                onClick={() => {
-                                  const initial = parseFloat((document.getElementById(`approve - initial - ${req.id} `) as HTMLInputElement).value) || 0;
-                                  const installments = parseInt((document.getElementById(`approve - installments - ${req.id} `) as HTMLInputElement).value) || 12;
-                                  handleApprove(req, initial, installments);
-                                }}
-                                className="flex-1 bg-emerald-600 text-white py-2 rounded font-bold text-xs hover:bg-emerald-700 flex items-center justify-center"
-                              >
-                                <CheckCircle size={14} className="mr-1" /> Aprobar
-                              </button>
-                              <button
-                                onClick={() => setRejectingId(req.id)}
-                                className="flex-1 bg-slate-100 text-slate-600 py-2 rounded font-bold text-xs hover:bg-slate-200 border border-slate-200 flex items-center justify-center"
-                              >
-                                <XCircle size={14} className="mr-1" /> Rechazar
-                              </button>
-                            </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                onRedirectToArreglos(req.taxpayerId);
+                              }}
+                              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-lg shadow-indigo-500/10 active:scale-95"
+                            >
+                              <ArrowRight size={14} /> Gestionar Convenio (Arreglo de Pago)
+                            </button>
+                            <button
+                              onClick={() => setRejectingId(req.id)}
+                              className="bg-slate-100 text-slate-600 px-4 py-3 rounded-xl font-bold text-xs hover:bg-slate-200 border border-slate-200 flex items-center justify-center gap-1 active:scale-95"
+                            >
+                              <XCircle size={14} /> Rechazar
+                            </button>
                           </div>
                         ) : req.type === 'VOID_TRANSACTION' ? (
                           // VOID Logic

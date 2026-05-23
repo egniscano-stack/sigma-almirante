@@ -6,7 +6,7 @@
   "main": "electron.cjs",
   "scripts": {
     "dev": "cp index.dev.html index.html && vite",
-    "build": "vite build && cp -r dist/* . && cp index.dev.html index.html",
+    "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",

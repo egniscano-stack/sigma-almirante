@@ -10,6 +10,7 @@ export interface DebtItem {
   description: string;
   metadata?: any;
   isPriority?: boolean;
+  isPastDue?: boolean;
 }
 
 export const calculateTaxpayerDebt = (
@@ -269,10 +270,21 @@ export const calculateTaxpayerDebt = (
         amount: t.paymentArrangement.abono,
         description: `Abono inicial pactado para activar el convenio de pago`,
         isPriority: true,
+        isPastDue: true,
         metadata: { isArrangementAbono: true, arrangementId: t.paymentArrangement.id }
       });
     } else {
       const cuotaN = t.paymentArrangement.cuotasPagadas + 1;
+      
+      // Calculate if the installment is past due based on months since creation
+      const arrDateParts = t.paymentArrangement.fechaCreacion.split('-');
+      const startYear = parseInt(arrDateParts[0]) || currentYear;
+      const startMonth = parseInt(arrDateParts[1]) || currentMonth;
+      const monthsSinceCreation = (currentYear - startYear) * 12 + (currentMonth - startMonth);
+      
+      // It is past due if the months passed since creation is greater than the cuotas paid
+      const isPastDue = t.paymentArrangement.cuotasPagadas < monthsSinceCreation;
+
       debts.push({
         id: `arr-installment-${t.paymentArrangement.id}`,
         type: 'DEUDA_ARRAS',
@@ -280,7 +292,8 @@ export const calculateTaxpayerDebt = (
         amount: t.paymentArrangement.montoCuota,
         description: `Cuota mensual de arreglo de pago. Saldo de morosidad consolidada`,
         isPriority: true,
-        metadata: { isArrangementInstallment: true, arrangementId: t.paymentArrangement.id, cuotaNumero: cuotaN }
+        isPastDue: isPastDue,
+        metadata: { isArrangementInstallment: true, arrangementId: t.paymentArrangement.id, cuotaNumero: cuotaN, isPastDue }
       });
     }
   }

@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { TaxConfig, MunicipalityInfo, User, UserRole, Taxpayer, Transaction, TaxpayerStatus } from '../types';
-import { Save, Shield, DollarSign, Building, UserPlus, X, Database, Globe, Download, Upload, Server, FileSpreadsheet, RefreshCw, Power, Trash2 } from 'lucide-react';
+import { Save, Shield, DollarSign, Building, UserPlus, X, Database, Globe, Download, Upload, Server, FileSpreadsheet, RefreshCw, Power, Trash2, BookOpen } from 'lucide-react';
 import { GovScraper } from './GovScraper';
+import { TaxStructureAdmin } from '../components/TaxStructureAdmin';
 
 interface SettingsProps {
   config: TaxConfig;
@@ -331,6 +332,18 @@ export const Settings: React.FC<SettingsProps> = ({
               </div>
             </div>
           </div>
+        </div>
+
+        {/* --- ESTRUCTURA TRIBUTARIA ADMIN PANEL --- */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 lg:col-span-2">
+          <div className="flex items-center mb-6 border-b pb-3">
+            <BookOpen className="mr-2 text-indigo-600" size={20} />
+            <div>
+              <h3 className="text-lg font-bold text-slate-800">Administración de Estructura Tributaria</h3>
+              <p className="text-xs text-slate-500">Edite, agregue o elimine códigos, actividades y tarifas (Pequeño / Mediano / Grande)</p>
+            </div>
+          </div>
+          <TaxStructureAdmin />
         </div>
 
         {/* --- PANAMA EMPRENDE FULL SCRAPER PANEL --- */}

@@ -1,5 +1,4 @@
-import React from 'react';
-import { LayoutDashboard, Users, Receipt, ScanLine, Settings, LogOut, FileText, X, AlertCircle, Banknote, MessageCircle, Globe, Building2, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, Users, Receipt, ScanLine, Settings, LogOut, FileText, X, AlertCircle, Banknote, MessageCircle, Globe, Building2, TrendingUp, ShieldAlert } from 'lucide-react';
 import { UserRole } from '../types';
 import { getSession } from '../services/security';
 
@@ -12,9 +11,11 @@ interface SidebarProps {
   onClose: () => void;
   onToggleChat?: () => void;
   chatUnreadCount?: number;
+  isTestMode?: boolean;
+  onToggleTestMode?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavigate, onLogout, isOpen, onClose, onToggleChat, chatUnreadCount = 0 }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavigate, onLogout, isOpen, onClose, onToggleChat, chatUnreadCount = 0, isTestMode = false, onToggleTestMode }) => {
   const allMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'AUDITOR'] },
     { id: 'contabilidad', label: 'Contabilidad', icon: FileText, roles: ['CONTABILIDAD'] },
@@ -130,6 +131,37 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavig
           </ul>
         </nav>
         <div className="p-4 border-t border-slate-800 bg-slate-950">
+          {/* Test Mode Sidebar Toggle */}
+          {onToggleTestMode && (
+            <div className="mb-4 bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col gap-1.5 transition-all">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert size={16} className={isTestMode ? 'text-amber-500 animate-pulse' : 'text-slate-500'} />
+                  <span className="text-xs font-black text-slate-300 uppercase tracking-wider">Modo Prueba</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={onToggleTestMode}
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    isTestMode ? 'bg-amber-500 shadow-lg shadow-amber-500/20' : 'bg-slate-700'
+                  }`}
+                  aria-label="Toggle Test Mode"
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      isTestMode ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 leading-normal font-medium">
+                {isTestMode 
+                  ? 'Base de datos simulada y aislada de Supabase activa.' 
+                  : 'Operando con base de datos en tiempo real.'}
+              </p>
+            </div>
+          )}
+
           <button
             onClick={onLogout}
             className="flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-600/20 hover:border-red-600/50 transition-all w-full px-4 py-3 text-sm bg-slate-900 rounded-lg border border-slate-800 active:scale-95"

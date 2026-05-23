@@ -109,6 +109,30 @@ class SyncService {
         console.log("Starting synchronization...");
 
         try {
+            if (localStore.isTestMode()) {
+                console.log("[SyncService] Test Mode is active. Simulating synchronization...");
+                // 1. Emulate network latency (1.5 seconds)
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                const queueSize = this.queue.length;
+                
+                // 2. Clear simulated sync queue
+                this.queue = [];
+                await localStore.saveSyncQueue([]);
+                
+                console.log("[SyncService] Simulated synchronization completed successfully.");
+                
+                // ONLY notify if there were pending changes
+                if (queueSize > 0) {
+                    window.dispatchEvent(new CustomEvent('sigma_sync_success'));
+                }
+                
+                // Trigger a custom event to notify components of simulated data update
+                const localData = await localStore.loadData();
+                window.dispatchEvent(new CustomEvent('sigma_data_updated', { detail: localData }));
+                return;
+            }
+
             // 1. Push pending changes
             const itemsProcessed = await this.flushQueue();
 
