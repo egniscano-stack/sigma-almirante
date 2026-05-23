@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>SIGMA Almirante — Sistema de Gestión Municipal</title>
+
+  <!-- ============================================================ -->
+  <!-- SECURITY HEADERS (via meta tags for client-side app)         -->
+  <!-- NOTE: For production, configure these in the web server too  -->
+  <!-- ============================================================ -->
+
+  <!-- Content Security Policy: Controls which resources can be loaded -->
+  <!-- This prevents XSS attacks by whitelisting trusted sources only  -->
+  <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://maps.googleapis.com;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com;
+      font-src 'self' https://fonts.gstatic.com;
+      img-src 'self' data: blob: https://*.supabase.co https://lh3.googleusercontent.com;
+      connect-src 'self' http://localhost:* ws://localhost:* ws://127.0.0.1:* https://*.supabase.co wss://*.supabase.co https://generativelanguage.googleapis.com https://maps.googleapis.com https://assets.mixkit.co;
+      media-src 'self' https://assets.mixkit.co;
+      frame-src 'none';
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+    " />
+
+  <!-- Prevent clickjacking attacks -->
+  <meta http-equiv="X-Frame-Options" content="DENY" />
+
+  <!-- Prevent MIME type sniffing -->
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+
+  <!-- Prevent caching of sensitive financial data in browser -->
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, private" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <!-- Referrer Policy: Don't leak URL in referrer headers -->
+  <meta name="referrer" content="no-referrer" />
+
+  <!-- Prevent search engine indexing (government internal system) -->
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+
+  <!-- SEO Meta -->
+  <meta name="description"
+    content="SIGMA Almirante — Sistema Integral de Gestión Municipal. Municipio de Almirante, Bocas del Toro, República de Panamá." />
+  <meta name="author" content="Municipio de Almirante" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="./assets/CgQ4rxqN.png">
+  <link rel="apple-touch-icon" href="./assets/CgQ4rxqN.png">
+  <link rel="manifest" href="./assets/BeQMIL1v.json">
+
+  <style>
+    :root {
+      --primary-color: #059669;
+      /* emerald-600 */
+      --secondary-color: #4f46e5;
+      /* indigo-600 */
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f8fafc;
+      /* slate-50 */
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Modern Reset & Base */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    /* Smooth transitions for key interactive properties */
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    .transition-all {
+      transition-property: all;
+      transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+      transition-duration: 200ms;
+    }
+
+    /* Windows 11 Style Scrollbar (Global) */
+    ::-webkit-scrollbar {
+      width: 14px;
+      height: 14px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background-color: rgba(0, 0, 0, 0.2);
+      border-radius: 10px;
+      border: 4px solid transparent;
+      background-clip: padding-box;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background-color: rgba(0, 0, 0, 0.4);
+      border: 3px solid transparent;
+    }
+
+    /* Keyframe Animations */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes slideInFromRight {
+      from {
+        opacity: 0;
+        transform: translateX(20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes slideInFromLeft {
+      from {
+        opacity: 0;
+        transform: translateX(-20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes scaleIn {
+      from {
+        opacity: 0;
+        transform: scale(0.95);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Animation Classes */
+    .animate-fade-in {
+      animation: fadeIn 0.4s ease-out forwards;
+    }
+
+    .animate-slide-right {
+      animation: slideInFromRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .animate-slide-left {
+      animation: slideInFromLeft 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .animate-scale-in {
+      animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .animate-slide-down {
+      animation: slideDown 0.3s ease-out forwards;
+    }
+
+    /* Staggered Children Animations (Utility) */
+    .stagger-children>* {
+      opacity: 0;
+      animation: fadeIn 0.4s ease-out forwards;
+    }
+
+    .stagger-children>*:nth-child(1) {
+      animation-delay: 0.05s;
+    }
+
+    .stagger-children>*:nth-child(2) {
+      animation-delay: 0.1s;
+    }
+
+    .stagger-children>*:nth-child(3) {
+      animation-delay: 0.15s;
+    }
+
+    .stagger-children>*:nth-child(4) {
+      animation-delay: 0.2s;
+    }
+
+    .stagger-children>*:nth-child(5) {
+      animation-delay: 0.25s;
+    }
+
+    /* Utilities */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    /* Mobile optimizations */
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+      /* Prevents iOS zoom */
+    }
+
+    @media print {
+      .no-print {
+        display: none !important;
+      }
+
+      .print-only {
+        display: block !important;
+      }
+
+      body {
+        background-color: white;
+      }
+
+      ::-webkit-scrollbar {
+        display: none;
+      }
+    }
+
+    /* Hide number input arrows (spinners) */
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    input[type=number] {
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+  </style>
+  <script type="module" crossorigin src="./assets/DMHN5CJ4.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/DE0RYTEb.js">
+  <link rel="modulepreload" crossorigin href="./assets/Dmkey_AY.js">
+  <link rel="modulepreload" crossorigin href="./assets/DW5aOgg_.js">
+</head>
+
+<body>
+  <div id="root"></div>
+</body>
+
+</html>
