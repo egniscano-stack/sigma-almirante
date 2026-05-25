@@ -1292,7 +1292,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                         <img 
                           src={`${import.meta.env.BASE_URL}firma-cajera-caja1.png`} 
                           alt="Firma" 
-                          className="h-14 w-auto object-contain -mb-3 relative z-10 select-none pointer-events-none" 
+                          className="h-14 w-auto object-contain -mb-5 relative z-10 select-none pointer-events-none" 
                         />
                       )}
                       <div className="border-b border-slate-300 w-24 mb-1 relative z-0"></div>

@@ -565,7 +565,7 @@ export const PassportTax: React.FC<PassportTaxProps> = ({ currentUserName, munic
                                         <img 
                                             src={`${import.meta.env.BASE_URL}firma-cajera-caja1.png`} 
                                             alt="Firma Cajera" 
-                                            className="absolute -top-6 left-2 h-20 w-auto object-contain opacity-90 select-none pointer-events-none z-10" 
+                                            className="absolute -bottom-5 left-4 h-22 w-auto object-contain opacity-95 select-none pointer-events-none z-10" 
                                         />
                                     )}
                                 </div>

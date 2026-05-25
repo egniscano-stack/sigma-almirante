@@ -915,6 +915,7 @@ function App() {
             <ConstructionTax
               currentUserName={user?.name || user?.username || 'Cajero'}
               municipalityInfo={municipalityInfo}
+              adminRequests={adminRequests}
               onBack={() => setCurrentPage('taxpayers')}
               onPayment={handlePayment}
             />
