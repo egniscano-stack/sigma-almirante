@@ -182,7 +182,7 @@ export interface ExtractedInvoiceData {
 }
 
 // Authentication Types
-export type UserRole = 'ADMIN' | 'CAJERO' | 'CONTRIBUYENTE' | 'AUDITOR' | 'REGISTRO' | 'ALCALDE' | 'SECRETARIA' | 'CONTABILIDAD' | 'PLANILLA';
+export type UserRole = 'ADMIN' | 'CAJERO' | 'CONTRIBUYENTE' | 'AUDITOR' | 'REGISTRO' | 'ALCALDE' | 'SECRETARIA' | 'CONTABILIDAD' | 'PLANILLA' | 'INGENIERIA';
 
 export interface User {
   username: string;
@@ -194,7 +194,7 @@ export interface User {
 }
 
 // --- ADMIN REQUESTS (For Void / Arrangement / Taxpayer Edit) ---
-export type RequestType = 'VOID_TRANSACTION' | 'PAYMENT_ARRANGEMENT' | 'UPDATE_TAXPAYER';
+export type RequestType = 'VOID_TRANSACTION' | 'PAYMENT_ARRANGEMENT' | 'UPDATE_TAXPAYER' | 'INGENIERIA_COBRO';
 export type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED';
 
 export interface AdminRequest {

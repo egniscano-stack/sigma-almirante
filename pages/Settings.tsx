@@ -383,7 +383,8 @@ export const Settings: React.FC<SettingsProps> = ({
                     u.status === 'SUSPENDIDO' ? 'bg-slate-400' :
                     u.role === 'ADMIN' ? 'bg-indigo-600' :
                     u.role === 'CONTABILIDAD' ? 'bg-teal-600' :
-                    u.role === 'PLANILLA' ? 'bg-violet-600' : 'bg-emerald-600'
+                    u.role === 'PLANILLA' ? 'bg-violet-600' :
+                    u.role === 'INGENIERIA' ? 'bg-sky-650 bg-sky-600' : 'bg-emerald-600'
                     }`}>
                     {u.username.substring(0, 2).toUpperCase()}
                   </div>
@@ -401,7 +402,8 @@ export const Settings: React.FC<SettingsProps> = ({
                     <p className="text-xs text-slate-500 mt-0.5">Usuario: {u.username} • <span className={
                       u.role === 'ADMIN' ? 'text-indigo-600 font-medium' :
                       u.role === 'CONTABILIDAD' ? 'text-teal-600 font-medium' :
-                      u.role === 'PLANILLA' ? 'text-violet-600 font-medium' : 'text-emerald-600 font-medium'
+                      u.role === 'PLANILLA' ? 'text-violet-600 font-medium' :
+                      u.role === 'INGENIERIA' ? 'text-sky-600 font-bold' : 'text-emerald-600 font-medium'
                     }>{u.role}</span></p>
                   </div>
                 </div>
@@ -505,6 +507,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   <option value="CONTRIBUYENTE">Contribuyente (Acceso Portal)</option>
                   <option value="CONTABILIDAD">Contabilidad (Dashboard Contable)</option>
                   <option value="PLANILLA">Planilla y RRHH (Dashboard Nómina)</option>
+                  <option value="INGENIERIA">Ingeniería Municipal</option>
                 </select>
               </div>
 

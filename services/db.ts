@@ -332,6 +332,9 @@ export const remoteDb = {
         } else if (user.name && user.name.endsWith(' [PLANILLA]')) {
             user.name = user.name.replace(' [PLANILLA]', '');
             user.role = 'PLANILLA';
+        } else if (user.name && user.name.endsWith(' [INGENIERIA]')) {
+            user.name = user.name.replace(' [INGENIERIA]', '');
+            user.role = 'INGENIERIA';
         } else if (user.username.toLowerCase() === 'contabilidad') {
             user.role = 'CONTABILIDAD';
         } else if (user.username.toLowerCase() === 'planilla') {
@@ -350,6 +353,9 @@ export const remoteDb = {
         } else if (dbUser.role === 'PLANILLA') {
             dbUser.name = `${dbUser.name} [PLANILLA]`;
             dbUser.role = 'SECRETARIA';
+        } else if (dbUser.role === 'INGENIERIA') {
+            dbUser.name = `${dbUser.name} [INGENIERIA]`;
+            dbUser.role = 'REGISTRO';
         }
         
         // Handle status mapping

@@ -18,6 +18,21 @@ const formatCurrency = (amount: number) => {
   }).format(amount || 0);
 };
 
+const isCaja1User = (name: string) => {
+    if (!name) return false;
+    const lower = name.toLowerCase().trim();
+    return lower === 'caja 1' || lower === 'caja1' || lower === 'danuris sanchez';
+};
+
+const resolveTellerName = (name: string) => {
+    if (!name) return '';
+    const lower = name.toLowerCase().trim();
+    if (lower === 'caja 1' || lower === 'caja1') {
+        return 'Danuris Sanchez';
+    }
+    return name;
+};
+
 interface PassportTaxProps {
     currentUserName: string;
     municipalityInfo: MunicipalityInfo;
@@ -543,10 +558,20 @@ export const PassportTax: React.FC<PassportTaxProps> = ({ currentUserName, munic
                     {/* Footer */}
                     <div className="bg-slate-50 px-8 py-6 border-t border-slate-100">
                         <div className="flex justify-between items-end">
-                            <div>
+                            <div className="relative flex flex-col justify-end min-h-[90px]">
                                 <p className="text-[9px] uppercase text-slate-400 font-bold mb-1">Cajero / Recaudador</p>
-                                <p className="text-slate-700 font-bold text-sm flex items-center gap-1.5">
-                                    <User size={12} className="text-slate-400" /> {invoice.tellerName}
+                                <div className="relative h-20 flex items-center">
+                                    {isCaja1User(invoice.tellerName) && (
+                                        <img 
+                                            src={`${import.meta.env.BASE_URL}firma-cajera-caja1.png`} 
+                                            alt="Firma Cajera" 
+                                            className="absolute -top-6 left-2 h-20 w-auto object-contain opacity-90 select-none pointer-events-none z-10" 
+                                        />
+                                    )}
+                                </div>
+                                <div className="border-b border-slate-200 w-48 mb-1"></div>
+                                <p className="text-slate-700 font-bold text-sm flex items-center gap-1.5 relative z-0">
+                                    <User size={12} className="text-slate-400" /> {resolveTellerName(invoice.tellerName)}
                                 </p>
                                 <p className="text-[9px] text-amber-700 font-bold uppercase tracking-wider mt-3">
                                     ⚠ Documento oficial — Conserve durante toda su estadía

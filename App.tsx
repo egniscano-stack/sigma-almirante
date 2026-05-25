@@ -23,6 +23,7 @@ import { ContabilidadDashboard } from './pages/ContabilidadDashboard';
 import { PlanillaDashboard } from './pages/PlanillaDashboard';
 import { BudgetExecution } from './pages/BudgetExecution';
 import { PaymentArrangements } from './pages/PaymentArrangements';
+import { IngenieriaDashboard } from './pages/IngenieriaDashboard';
 import { TaxConfig, Taxpayer, Transaction, User, MunicipalityInfo, TaxpayerType, CommercialCategory, TaxpayerStatus, AdminRequest, RequestStatus } from './types';
 import { Menu, ArrowLeft, ArrowRight, Wifi, WifiOff, RefreshCw, Bell, AlertCircle as AlertIcon, CheckCircle, XCircle, LogOut, Download, Archive, Edit, X, Shield, Clock, Trash2, ShieldAlert, FileText } from 'lucide-react';
 import { db, mapTaxpayerFromDB, mapTransactionFromDB } from './services/db';
@@ -212,6 +213,42 @@ function App() {
 
     window.addEventListener('sigma_data_updated', handleDataUpdate);
     
+    // Listen for storage changes across tabs in Test Mode
+    const handleStorageChange = (e: StorageEvent) => {
+      if (localStore.isTestMode() && e.key === 'sigma_data') {
+        fetchData();
+        // If it's a new admin request of type INGENIERIA_COBRO, show notification toast!
+        try {
+          const oldData = e.oldValue ? JSON.parse(e.oldValue) : {};
+          const newData = e.newValue ? JSON.parse(e.newValue) : {};
+          const oldReqs = oldData.adminRequests || [];
+          const newReqs = newData.adminRequests || [];
+          
+          // Check if a new request was added
+          if (newReqs.length > oldReqs.length) {
+            const addedReq = newReqs[0] as AdminRequest;
+            const currentUser = userRef.current;
+            
+            if (addedReq.type === 'INGENIERIA_COBRO' && currentUser?.role === 'CAJERO' && addedReq.status === 'PENDING') {
+              setNotificationToast({
+                title: 'Cobro de Ingeniería Listo (Modo Prueba)',
+                message: `Se ha enviado un cobro de Ingeniería Municipal para: ${addedReq.taxpayerName} por B/. ${addedReq.totalDebt?.toFixed(2)}`
+              });
+              
+              // Play quick sound
+              const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+              audio.volume = 0.3;
+              audio.play().catch(() => {});
+            }
+          }
+        } catch (err) {
+          console.error("Error parsing storage change", err);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
     // Connectivity listeners
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -257,6 +294,11 @@ function App() {
                       title: 'Nueva Solicitud',
                       message: `${req.requesterName} solicita: ${req.type}`
                   });
+              } else if (payload.eventType === 'INSERT' && req.type === 'INGENIERIA_COBRO' && currentUser?.role === 'CAJERO') {
+                  setNotificationToast({
+                      title: 'Cobro de Ingeniería Listo',
+                      message: `Se ha enviado un cobro de Ingeniería Municipal para: ${req.taxpayerName} por B/. ${req.totalDebt?.toFixed(2)}`
+                  });
               } else if (payload.eventType === 'UPDATE' && (currentUser?.role === 'REGISTRO' || currentUser?.role === 'CAJERO')) {
                   if (req.requesterName === currentUser.name && (req.status === 'APPROVED' || req.status === 'REJECTED')) {
                       setNotificationToast({
@@ -274,6 +316,7 @@ function App() {
       window.removeEventListener('sigma_data_updated', handleDataUpdate);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('storage', handleStorageChange);
       unsubscribe();
     };
   }, [fetchData, isTestMode]);
@@ -378,6 +421,8 @@ function App() {
       setCurrentPage('contabilidad');
     } else if (loggedInUser.role === 'PLANILLA') {
       setCurrentPage('planilla');
+    } else if (loggedInUser.role === 'INGENIERIA') {
+      setCurrentPage('ingenieria');
     } else {
       setCurrentPage('dashboard');
     }
@@ -541,6 +586,21 @@ function App() {
     try {
       const savedTx = await db.createTransaction(newTransaction);
       setTransactions(prev => [savedTx, ...prev]);
+
+      // If payment is linked to an engineering charge, mark the request as approved/completed in Supabase!
+      if (paymentData.metadata?.engineeringRequestId) {
+        const reqId = paymentData.metadata.engineeringRequestId;
+        const req = adminRequests.find(r => r.id === reqId);
+        if (req) {
+          const approvedReq = {
+            ...req,
+            status: 'APPROVED' as RequestStatus,
+            responseNote: `Cobrado por el cajero ${user?.name || 'Sistema'} en fecha ${new Date().toLocaleDateString()}`
+          };
+          await db.updateAdminRequest(approvedReq);
+          setAdminRequests(prev => prev.map(r => r.id === reqId ? approvedReq : r));
+        }
+      }
 
       // Update Taxpayer Balance locally if needed
       const targetTaxpayer = paymentData.taxpayerId ? taxpayers.find(tp => tp.id === paymentData.taxpayerId) : null;
@@ -861,6 +921,19 @@ function App() {
           );
         }
         return null;
+      case 'ingenieria':
+        if (user && (user.role === 'ADMIN' || user.role === 'INGENIERIA')) {
+          return (
+            <IngenieriaDashboard
+              currentUser={user}
+              taxpayers={filteredTaxpayers}
+              adminRequests={adminRequests}
+              onCreateRequest={handleCreateRequest}
+              onRefresh={() => fetchData(true)}
+            />
+          );
+        }
+        return null;
       case 'taxpayers':
         return (
           <Taxpayers
@@ -1039,7 +1112,7 @@ function App() {
           />
         ) : null;
       case 'presupuesto':
-        return user?.role === 'CONTABILIDAD' ? (
+        return (user?.role === 'CONTABILIDAD' || user?.role === 'ADMIN') ? (
           <BudgetExecution 
             transactions={filteredTransactions} 
             taxpayers={filteredTaxpayers} 

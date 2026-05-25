@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Taxpayer, TaxConfig, TaxType, CommercialCategory, PaymentMethod, Transaction, User, MunicipalityInfo, AdminRequest, RequestType, RequestStatus } from '../types';
-import { Car, Building2, Trash2, Store, CreditCard, Search, Banknote, Printer, CheckCircle, XCircle, X, ArrowLeft, Save, User as UserIcon, MapPin, Download, AlertCircle, Lock, History, RefreshCw, Bell, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react';
+import { Car, Building2, Trash2, Store, CreditCard, Search, Banknote, Printer, CheckCircle, XCircle, X, ArrowLeft, Save, User as UserIcon, MapPin, Download, AlertCircle, Lock, History, RefreshCw, Bell, ShieldAlert, ChevronDown, ChevronUp, Receipt, Shield } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { QRCodeSVG } from 'qrcode.react';
@@ -32,6 +32,68 @@ const formatCurrency = (amount: number) => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount || 0);
+};
+
+const isCaja1User = (name: string) => {
+    if (!name) return false;
+    const lower = name.toLowerCase().trim();
+    return lower === 'caja 1' || lower === 'caja1' || lower === 'danuris sanchez';
+};
+
+const resolveTellerName = (name: string) => {
+    if (!name) return '';
+    const lower = name.toLowerCase().trim();
+    if (lower === 'caja 1' || lower === 'caja1') {
+        return 'Danuris Sanchez';
+    }
+    return name;
+};
+
+const fineLabels: Record<string, string> = {
+    '01_IMPUESTOS_MOROSOS': '01 - Impuestos Morosos',
+    '02_ADMINISTRATIVAS': '02 - Administrativas',
+    '03_LEGAL': '03 - Legal',
+    '04_JUZGADO_DE_PAZ': '04 - Multas impuestas por Juzgado de Paz',
+    '05_MULTAS_INGENIERIA': '05 - Multas de Ingeniería',
+    '06_MAL_ESTACIONADO': '06 - Multas por mal Estacionados o estacionados en Aceras',
+    '07_RUIDO': '07 - Multas por ruido',
+    '08_PLACAS_VENCIDAS': '08 - Multas por Placas vencidas',
+    '09_RECARGOS_MOROSOS': '09 - Recargos sobre Impuestos Morosos'
+};
+
+const chargeLabels: Record<string, string> = {
+    PERMISO_CONSTRUCCION: 'Permiso de Construcción',
+    PERMISO_OCUPACION: 'Permiso de Ocupación',
+    CERTIFICACION_OCUPACION: 'Certificación de Ocupación',
+    EXTRACCION_BALASTRE: 'Extracción de Balastre',
+    ABONO_LOTE: 'Abono a Lote No.',
+    CERTIFICACION_RESIDENCIA: 'Certificación de Residencia',
+    APROBACION_PLANOS: 'Aprobación de Planos',
+    APROBACION_ANTEPROYECTO: 'Aprobación de Anteproyecto',
+    MULTA: 'Multa',
+    OTROS: 'Otros Impuestos'
+};
+
+const getChargeTitle = (selectedReqId: string | null | undefined, adminRequests: AdminRequest[]) => {
+    if (!selectedReqId) return 'Impuesto de Construcción';
+    const req = adminRequests.find(r => r.id === selectedReqId);
+    if (!req) return 'Impuesto de Construcción';
+    const payload = req.payload || {};
+    const engType = payload.engineeringType;
+    if (engType === 'MULTA' && payload.fineType) {
+        return `Multa: ${fineLabels[payload.fineType] || payload.fineType}`;
+    }
+    return chargeLabels[engType] || 'Cobro de Ingeniería';
+};
+
+const getChargeSubtitle = (selectedReqId: string | null | undefined, adminRequests: AdminRequest[]) => {
+    if (!selectedReqId) return 'Pago Único por Permiso de Obra';
+    const req = adminRequests.find(r => r.id === selectedReqId);
+    if (!req) return 'Pago Único por Permiso de Obra';
+    const payload = req.payload || {};
+    const engType = payload.engineeringType;
+    if (engType === 'MULTA') return 'Recaudación de Multa Municipal';
+    return 'Ingreso por Tasa / Permiso Municipal';
 };
 
 const renderRateInfo = (rate: any): string => {
@@ -368,6 +430,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
         scale: 2,
         ignoreElements: (el) => el.classList.contains('no-print'),
         backgroundColor: '#ffffff',
+        useCORS: true,
       });
 
       const imgData = canvas.toDataURL('image/png');
@@ -834,7 +897,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                 <div className="w-1/3 text-left">
                   <p className="text-[10px] text-slate-500 font-black uppercase tracking-wider mb-1">Información de Cierre</p>
                   <p className="text-xs text-slate-800 font-bold">FECHA: {new Date().toLocaleDateString('es-ES')}</p>
-                  <p className="text-xs text-slate-800 font-bold uppercase">CAJERO: {currentUser?.name}</p>
+                  <p className="text-xs text-slate-800 font-bold uppercase">CAJERO: {resolveTellerName(currentUser?.name)}</p>
                 </div>
 
                 {/* Center: Logo & Titles */}
@@ -935,9 +998,17 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
               </table>
 
               <div className="mt-auto pt-20 flex justify-around">
-                <div className="text-center">
-                  <div className="border-t border-slate-400 w-48 mb-2"></div>
+                <div className="text-center relative">
+                  {isCaja1User(currentUser?.name) && (
+                    <img 
+                      src={`${import.meta.env.BASE_URL}firma-cajera-caja1.png`} 
+                      alt="Firma" 
+                      className="absolute -top-9 left-1/2 -translate-x-1/2 h-14 w-auto object-contain select-none pointer-events-none z-10" 
+                    />
+                  )}
+                  <div className="border-t border-slate-400 w-48 mb-2 relative z-0"></div>
                   <p className="text-xs font-bold text-slate-500 uppercase">Firma del Cajero</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">({resolveTellerName(currentUser?.name)})</p>
                 </div>
                 <div className="text-center">
                   <div className="border-t border-slate-400 w-48 mb-2"></div>
@@ -1051,8 +1122,13 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
             || (lastTransaction.metadata?.registeredPayer ? taxpayers.find(tp => tp.id === lastTransaction.metadata.registeredPayer.id) : null) 
             || activeTaxpayer;
 
+          const isConstructionTx = lastTransaction && (lastTransaction.metadata?.isManualConstruction === true || lastTransaction.taxType === 'CONSTRUCCION' || lastTransaction.taxType?.toUpperCase() === 'CONSTRUCCION');
+
+          const matchingRequest = adminRequests.find(r => r.id === lastTransaction.metadata?.engineeringRequestId);
+          const projectType = matchingRequest?.payload?.projectType 
+            || lastTransaction.metadata?.projectType 
           return (
-            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm no-print">
               <style>{`
                     @media print {
                         @page { size: portrait; margin: 0; }
@@ -1068,10 +1144,10 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                     }
                 `}</style>
 
-              <div id="invoice-modal-content" className="bg-white shadow-2xl w-full max-w-[320px] rounded-lg overflow-hidden flex flex-col relative">
+              <div id="invoice-modal-content" className="bg-white shadow-2xl w-full max-w-[320px] rounded-lg overflow-hidden flex flex-col relative animate-scale-up">
                 
                 {/* Status Badge - Floating Corner */}
-                <div className="absolute top-4 right-4 z-10">
+                <div className="absolute top-4 right-4 z-10 no-print">
                   <span className={`px-2 py-1 rounded border-2 text-[8px] font-black tracking-tighter uppercase shadow-sm ${
                     lastTransaction.status === 'ANULADO' 
                       ? 'bg-red-50 text-red-600 border-red-200' 
@@ -1189,7 +1265,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                             <p className="text-[9px] font-bold text-slate-900">{formatCurrency(item.amount)}</p>
                           </div>
                         ))}
-                        <p className="text-[8px] text-slate-500 italic mt-2">Método: {getPaymentMethodLabel(lastTransaction.paymentMethod)}</p>
+                        <p className="text-[8px] text-slate-500 italic mt-2 text-left">Método: {getPaymentMethodLabel(lastTransaction.paymentMethod)}</p>
                       </div>
                     ) : (
                       <div className="flex justify-between items-start gap-2">
@@ -1210,10 +1286,17 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                   </div>
 
                   {/* Signatures & Legal */}
-                  <div className="space-y-4">
-                    <div className="flex flex-col items-center">
-                      <div className="border-b border-slate-300 w-24 mb-1"></div>
-                      <p className="text-[8px] font-bold text-slate-500 uppercase">Cajero: {lastTransaction.tellerName}</p>
+                  <div className="space-y-4 text-center">
+                    <div className="flex flex-col items-center relative min-h-[56px] justify-end">
+                      {isCaja1User(lastTransaction.tellerName) && (
+                        <img 
+                          src={`${import.meta.env.BASE_URL}firma-cajera-caja1.png`} 
+                          alt="Firma" 
+                          className="h-14 w-auto object-contain -mb-3 relative z-10 select-none pointer-events-none" 
+                        />
+                      )}
+                      <div className="border-b border-slate-300 w-24 mb-1 relative z-0"></div>
+                      <p className="text-[8px] font-bold text-slate-650 uppercase">Cajero: {resolveTellerName(lastTransaction.tellerName)}</p>
                     </div>
                     <p className="text-[8px] text-slate-400 italic leading-tight px-4">
                       Comprobante oficial de pago. Verifique sus datos antes de retirarse.

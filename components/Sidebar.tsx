@@ -21,7 +21,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavig
     { id: 'contabilidad', label: 'Contabilidad', icon: FileText, roles: ['CONTABILIDAD'] },
     { id: 'planilla', label: 'Planilla y RRHH', icon: Users, roles: ['PLANILLA'] },
     { id: 'taxpayers', label: 'Contribuyentes', icon: Users, roles: ['ADMIN', 'CAJERO', 'AUDITOR', 'REGISTRO', 'CONTABILIDAD'] },
-    { id: 'presupuesto', label: 'Ejecución Presupuestaria', icon: TrendingUp, roles: ['CONTABILIDAD'] },
+    { id: 'ingenieria', label: 'Ingeniería Municipal', icon: Building2, roles: ['INGENIERIA'] },
+    { id: 'presupuesto', label: 'Ejecución Presupuestaria', icon: TrendingUp, roles: ['ADMIN', 'CONTABILIDAD'] },
     { id: 'arreglos', label: 'Arreglos de Pago', icon: Receipt, roles: ['ADMIN'] },
     // Split into Caja and Cobros
     { id: 'caja', label: 'Caja', icon: Banknote, roles: ['CAJERO'] },
@@ -175,7 +176,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, userRole, onNavig
               userRole === 'AUDITOR' ? 'Auditor' : 
               userRole === 'REGISTRO' ? 'Oficial Registro' : 
               userRole === 'CONTABILIDAD' ? 'Director de Contabilidad' :
-              userRole === 'PLANILLA' ? 'Encargado de Planilla' : 'Cajero'
+              userRole === 'PLANILLA' ? 'Encargado de Planilla' : 
+              userRole === 'INGENIERIA' ? 'Ingeniero Municipal' : 'Cajero'
             }</p>
           </div>
         </div>
