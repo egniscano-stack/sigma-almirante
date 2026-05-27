@@ -23,7 +23,12 @@ interface DashboardProps {
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export const Dashboard: React.FC<DashboardProps> = ({ transactions, taxpayers, config, onRefresh, isLoading }) => {
-  const taxStructure = config?.customTaxStructure || taxStructureRaw;
+  const taxStructure = config?.customTaxStructure && config.customTaxStructure.length > 0
+    ? [
+        ...config.customTaxStructure,
+        ...taxStructureRaw.filter((raw: any) => !config.customTaxStructure.some((custom: any) => custom.code === raw.code))
+      ]
+    : taxStructureRaw;
   const [timeFilter, setTimeFilter] = useState<'DAY' | 'WEEK' | 'MONTH'>('MONTH');
 
   // 1. FILTER TRANSACTIONS

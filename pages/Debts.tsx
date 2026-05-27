@@ -23,7 +23,12 @@ interface PendingSummary {
 }
 
 export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay, userRole, config, onRefresh, isLoading }) => {
-  const taxStructure = config?.customTaxStructure || taxStructureRaw;
+  const taxStructure = config?.customTaxStructure && config.customTaxStructure.length > 0
+    ? [
+        ...config.customTaxStructure,
+        ...taxStructureRaw.filter((raw: any) => !config.customTaxStructure.some((custom: any) => custom.code === raw.code))
+      ]
+    : taxStructureRaw;
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'PENDING' | 'HISTORY'>('PENDING'); // PENDING or HISTORY
 

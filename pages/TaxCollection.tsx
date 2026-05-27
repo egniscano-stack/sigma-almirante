@@ -124,7 +124,12 @@ const renderRateInfo = (rate: any): string => {
 
 
 export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transactions, config, onPayment, currentUser, municipalityInfo, initialTaxpayer, adminRequests = [], onCreateRequest, onArchiveRequest, onRefresh, onDirectAdminAuth, isLoading }) => {
-  const taxStructure = config?.customTaxStructure || taxStructureRaw;
+  const taxStructure = config?.customTaxStructure && config.customTaxStructure.length > 0
+    ? [
+        ...config.customTaxStructure,
+        ...taxStructureRaw.filter((raw: any) => !config.customTaxStructure.some((custom: any) => custom.code === raw.code))
+      ]
+    : taxStructureRaw;
   const [selectedTaxpayerId, setSelectedTaxpayerId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);

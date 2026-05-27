@@ -243,6 +243,15 @@
     }
   },
   {
+    "code": "11.25.39",
+    "activity": "Guía de Traslado / Sacrificio de Ganado",
+    "rates": {
+      "PEQUENO": 5.00,
+      "MEDIANO": 4.00,
+      "GRANDE": 1.00
+    }
+  },
+  {
     "code": "11.25.40",
     "activity": "Restaurantes, cafés y otros",
     "rates": {

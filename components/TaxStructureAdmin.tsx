@@ -27,21 +27,37 @@ const STORAGE_KEY = 'sigma_custom_tax_structure';
 // ─── Component ──────────────────────────────────────────────────────────────
 export const TaxStructureAdmin: React.FC<TaxStructureAdminProps> = ({ config, onUpdateStructure }) => {
   const initialStructure = useMemo(() => {
+    let baseStructure: TaxEntry[] = taxStructureRaw as TaxEntry[];
     if (config?.customTaxStructure && config.customTaxStructure.length > 0) {
-      return config.customTaxStructure as TaxEntry[];
+      const custom = config.customTaxStructure as TaxEntry[];
+      const missing = (taxStructureRaw as TaxEntry[]).filter(
+        raw => !custom.some(c => c.code === raw.code)
+      );
+      baseStructure = [...custom, ...missing];
+    } else {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const custom = JSON.parse(saved) as TaxEntry[];
+          const missing = (taxStructureRaw as TaxEntry[]).filter(
+            raw => !custom.some(c => c.code === raw.code)
+          );
+          baseStructure = [...custom, ...missing];
+        }
+      } catch { /* ignore */ }
     }
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) return JSON.parse(saved) as TaxEntry[];
-    } catch { /* ignore */ }
-    return taxStructureRaw as TaxEntry[];
+    return baseStructure;
   }, [config?.customTaxStructure]);
 
   const [entries, setEntries] = useState<TaxEntry[]>(initialStructure);
 
   useEffect(() => {
     if (config?.customTaxStructure && config.customTaxStructure.length > 0) {
-      setEntries(config.customTaxStructure as TaxEntry[]);
+      const custom = config.customTaxStructure as TaxEntry[];
+      const missing = (taxStructureRaw as TaxEntry[]).filter(
+        raw => !custom.some(c => c.code === raw.code)
+      );
+      setEntries([...custom, ...missing]);
     }
   }, [config?.customTaxStructure]);
 

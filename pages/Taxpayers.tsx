@@ -241,7 +241,12 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
   confirmModal,
   setConfirmModal
 }) => {
-  const taxStructure = config?.customTaxStructure || taxStructureRaw;
+  const taxStructure = config?.customTaxStructure && config.customTaxStructure.length > 0
+    ? [
+        ...config.customTaxStructure,
+        ...taxStructureRaw.filter((raw: any) => !config.customTaxStructure.some((custom: any) => custom.code === raw.code))
+      ]
+    : taxStructureRaw;
   const session = getSession();
   const uname = session?.username.toLowerCase() || '';
   const isPlacaStation = uname.includes('placa');

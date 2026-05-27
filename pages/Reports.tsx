@@ -29,7 +29,12 @@ interface ReportsProps {
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUser, taxpayers, config }) => {
-  const taxStructure = config?.customTaxStructure || taxStructureRaw;
+  const taxStructure = config?.customTaxStructure && config.customTaxStructure.length > 0
+    ? [
+        ...config.customTaxStructure,
+        ...taxStructureRaw.filter((raw: any) => !config.customTaxStructure.some((custom: any) => custom.code === raw.code))
+      ]
+    : taxStructureRaw;
   const [startDate, setStartDate] = React.useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = React.useState(new Date().toISOString().split('T')[0]);
   const [selectedTeller, setSelectedTeller] = React.useState('ALL');
