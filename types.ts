@@ -153,6 +153,7 @@ export interface TaxConfig {
   commercialBaseRate: number;
   liquorLicenseRate: number; // New
   advertisementRate: number; // New
+  customTaxStructure?: any[];
   // Dynamic commercial rates
   commercialRates: {
     [key in CommercialCategory]: number;

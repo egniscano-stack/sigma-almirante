@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Save, X, Search, ChevronDown, ChevronUp, Download, Upload, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
+import { TaxConfig } from '../types';
 import taxStructureRaw from '../data/taxStructure.json';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -15,24 +16,35 @@ interface TaxEntry {
   rates: TaxRate;
 }
 
+interface TaxStructureAdminProps {
+  config: TaxConfig;
+  onUpdateStructure: (updatedStructure: TaxEntry[]) => void;
+}
+
 // ─── Local Storage key ───────────────────────────────────────────────────────
 const STORAGE_KEY = 'sigma_custom_tax_structure';
 
-function loadStructure(): TaxEntry[] {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch { /* ignore */ }
-  return taxStructureRaw as TaxEntry[];
-}
-
-function saveStructure(data: TaxEntry[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-
 // ─── Component ──────────────────────────────────────────────────────────────
-export const TaxStructureAdmin: React.FC = () => {
-  const [entries, setEntries] = useState<TaxEntry[]>(loadStructure);
+export const TaxStructureAdmin: React.FC<TaxStructureAdminProps> = ({ config, onUpdateStructure }) => {
+  const initialStructure = useMemo(() => {
+    if (config?.customTaxStructure && config.customTaxStructure.length > 0) {
+      return config.customTaxStructure as TaxEntry[];
+    }
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) return JSON.parse(saved) as TaxEntry[];
+    } catch { /* ignore */ }
+    return taxStructureRaw as TaxEntry[];
+  }, [config?.customTaxStructure]);
+
+  const [entries, setEntries] = useState<TaxEntry[]>(initialStructure);
+
+  useEffect(() => {
+    if (config?.customTaxStructure && config.customTaxStructure.length > 0) {
+      setEntries(config.customTaxStructure as TaxEntry[]);
+    }
+  }, [config?.customTaxStructure]);
+
   const [search, setSearch] = useState('');
   const [editingEntry, setEditingEntry] = useState<TaxEntry | null>(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -70,7 +82,10 @@ export const TaxStructureAdmin: React.FC = () => {
 
   const persistAndFlash = (updated: TaxEntry[]) => {
     setEntries(updated);
-    saveStructure(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    } catch { /* ignore */ }
+    onUpdateStructure(updated);
     flashSave();
   };
 

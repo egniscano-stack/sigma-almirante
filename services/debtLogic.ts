@@ -1,6 +1,6 @@
 
 import { Taxpayer, Transaction, TaxConfig, TaxType, CommercialCategory, TaxpayerType } from '../types';
-import taxStructure from '../data/taxStructure.json';
+import taxStructureRaw from '../data/taxStructure.json';
 
 export interface DebtItem {
   id: string;
@@ -18,6 +18,7 @@ export const calculateTaxpayerDebt = (
   transactions: Transaction[],
   config: TaxConfig
 ): { total: number; items: DebtItem[] } => {
+  const taxStructure = config?.customTaxStructure || taxStructureRaw;
   const debts: DebtItem[] = [];
   const currentDate = new Date();
   const currentYear = currentDate.getFullYear();

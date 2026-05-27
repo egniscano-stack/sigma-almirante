@@ -8,7 +8,7 @@ import { Download, FileText, TrendingUp, Calendar, Filter, User as UserIcon, Pri
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
-import taxStructure from '../data/taxStructure.json';
+import taxStructureRaw from '../data/taxStructure.json';
 
 // Helper to format currency with thousands separator (1,000.00)
 const formatCurrency = (amount: number) => {
@@ -29,6 +29,7 @@ interface ReportsProps {
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUser, taxpayers, config }) => {
+  const taxStructure = config?.customTaxStructure || taxStructureRaw;
   const [startDate, setStartDate] = React.useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = React.useState(new Date().toISOString().split('T')[0]);
   const [selectedTeller, setSelectedTeller] = React.useState('ALL');

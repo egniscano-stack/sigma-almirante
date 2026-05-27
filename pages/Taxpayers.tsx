@@ -187,7 +187,7 @@ import { FileScanResult } from '../services/antivirus';
 import { getSession } from '../services/security';
 import { calculateTaxpayerDebt } from '../services/debtLogic';
 
-import taxStructure from '../data/taxStructure.json';
+import taxStructureRaw from '../data/taxStructure.json';
 
 const MUNICIPAL_ACTIVITIES = [
   'ABARROTERIA', 'ALMACEN', 'BARBERIA', 'BARES', 'BASURA2026', 'BUHONERIA', 
@@ -241,6 +241,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
   confirmModal,
   setConfirmModal
 }) => {
+  const taxStructure = config?.customTaxStructure || taxStructureRaw;
   const session = getSession();
   const uname = session?.username.toLowerCase() || '';
   const isPlacaStation = uname.includes('placa');

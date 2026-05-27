@@ -343,7 +343,14 @@ export const Settings: React.FC<SettingsProps> = ({
               <p className="text-xs text-slate-500">Edite, agregue o elimine códigos, actividades y tarifas (Pequeño / Mediano / Grande)</p>
             </div>
           </div>
-          <TaxStructureAdmin />
+          <TaxStructureAdmin
+            config={localConfig}
+            onUpdateStructure={(updated) => {
+              const newConfig = { ...localConfig, customTaxStructure: updated };
+              setLocalConfig(newConfig);
+              onUpdateConfig(newConfig);
+            }}
+          />
         </div>
 
         {/* --- PANAMA EMPRENDE FULL SCRAPER PANEL --- */}

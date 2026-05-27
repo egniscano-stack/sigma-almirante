@@ -4,7 +4,7 @@ import { Car, Building2, Trash2, Store, CreditCard, Search, Banknote, Printer, C
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { QRCodeSVG } from 'qrcode.react';
-import taxStructure from '../data/taxStructure.json';
+import taxStructureRaw from '../data/taxStructure.json';
 import { calculateTaxpayerDebt, DebtItem } from '../services/debtLogic';
 
 interface TaxCollectionProps {
@@ -109,6 +109,7 @@ const renderRateInfo = (rate: any): string => {
 
 
 export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transactions, config, onPayment, currentUser, municipalityInfo, initialTaxpayer, adminRequests = [], onCreateRequest, onArchiveRequest, onRefresh, onDirectAdminAuth, isLoading }) => {
+  const taxStructure = config?.customTaxStructure || taxStructureRaw;
   const [selectedTaxpayerId, setSelectedTaxpayerId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);

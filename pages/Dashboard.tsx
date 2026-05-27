@@ -9,7 +9,7 @@ import {
   CheckCircle, Clock, ChevronRight, Filter, Search, 
   Download, Briefcase, Calendar, RefreshCw, FileText 
 } from 'lucide-react';
-import taxStructure from '../data/taxStructure.json';
+import taxStructureRaw from '../data/taxStructure.json';
 import { calculateTaxpayerDebt } from '../services/debtLogic';
 
 interface DashboardProps {
@@ -23,6 +23,7 @@ interface DashboardProps {
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export const Dashboard: React.FC<DashboardProps> = ({ transactions, taxpayers, config, onRefresh, isLoading }) => {
+  const taxStructure = config?.customTaxStructure || taxStructureRaw;
   const [timeFilter, setTimeFilter] = useState<'DAY' | 'WEEK' | 'MONTH'>('MONTH');
 
   // 1. FILTER TRANSACTIONS

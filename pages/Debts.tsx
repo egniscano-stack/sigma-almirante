@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Taxpayer, Transaction, TaxType } from '../types';
 import { Search, Filter, Download, FileText, CheckCircle, AlertCircle, Clock, Trash2, ChevronDown, ChevronRight, Edit, History, ArrowRight, Calendar, Car, Store, RefreshCw } from 'lucide-react';
 import { calculateTaxpayerDebt } from '../services/debtLogic';
-import taxStructure from '../data/taxStructure.json';
+import taxStructureRaw from '../data/taxStructure.json';
 
 interface DebtsProps {
   taxpayers: Taxpayer[];
@@ -23,7 +23,7 @@ interface PendingSummary {
 }
 
 export const Debts: React.FC<DebtsProps> = ({ taxpayers, transactions, onGoToPay, userRole, config, onRefresh, isLoading }) => {
-
+  const taxStructure = config?.customTaxStructure || taxStructureRaw;
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'PENDING' | 'HISTORY'>('PENDING'); // PENDING or HISTORY
 
