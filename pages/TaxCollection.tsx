@@ -49,6 +49,21 @@ const resolveTellerName = (name: string) => {
     return name;
 };
 
+const renderLivestockDetails = (metadata: any) => {
+  if (!metadata?.livestockDetails) return null;
+  const { macho = 0, hembra = 0, ternero = 0, cerdoOveja = 0, cabra = 0 } = metadata.livestockDetails;
+  return (
+    <div className="mt-1.5 pt-1.5 border-t border-dashed border-slate-300 text-[8px] text-slate-700 space-y-1 font-mono text-left w-full">
+      <p className="font-extrabold text-indigo-700 uppercase tracking-wider text-[7px] mb-0.5">Desglose de Ganado (Guía):</p>
+      {macho > 0 && <div className="flex justify-between"><span>• Ganado vacuno macho ({macho}):</span> <span className="font-bold">B/. {(macho * 5).toFixed(2)}</span></div>}
+      {hembra > 0 && <div className="flex justify-between"><span>• Ganado vacuno hembra ({hembra}):</span> <span className="font-bold">B/. {(hembra * 5).toFixed(2)}</span></div>}
+      {ternero > 0 && <div className="flex justify-between"><span>• Ternero ({ternero}):</span> <span className="font-bold">B/. {(ternero * 5).toFixed(2)}</span></div>}
+      {cerdoOveja > 0 && <div className="flex justify-between"><span>• Ganado porcino/ovino ({cerdoOveja}):</span> <span className="font-bold">B/. {(cerdoOveja * 4).toFixed(2)}</span></div>}
+      {cabra > 0 && <div className="flex justify-between"><span>• Res cabría ({cabra}):</span> <span className="font-bold">B/. {(cabra * 1).toFixed(2)}</span></div>}
+    </div>
+  );
+};
+
 const fineLabels: Record<string, string> = {
     '01_IMPUESTOS_MOROSOS': '01 - Impuestos Morosos',
     '02_ADMINISTRATIVAS': '02 - Administrativas',
@@ -191,6 +206,38 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
   // Autocomplete code search in modal
   const [directCodeSearchTerm, setDirectCodeSearchTerm] = useState('');
   const [directCodeShowDropdown, setDirectCodeShowDropdown] = useState(false);
+
+  // Livestock Guide (11.25.39) detailed quantities
+  const [livestockMacho, setLivestockMacho] = useState<number>(0);
+  const [livestockHembra, setLivestockHembra] = useState<number>(0);
+  const [livestockTernero, setLivestockTernero] = useState<number>(0);
+  const [livestockCerdoOveja, setLivestockCerdoOveja] = useState<number>(0);
+  const [livestockCabra, setLivestockCabra] = useState<number>(0);
+
+  // Auto-calculate directAmount for livestock guide code
+  useEffect(() => {
+    if (directTaxCode === '11.25.39') {
+      const total = 
+        (livestockMacho * 5.00) +
+        (livestockHembra * 5.00) +
+        (livestockTernero * 5.00) +
+        (livestockCerdoOveja * 4.00) +
+        (livestockCabra * 1.00);
+      setDirectAmount(total > 0 ? total.toFixed(2) : '');
+    }
+  }, [directTaxCode, livestockMacho, livestockHembra, livestockTernero, livestockCerdoOveja, livestockCabra]);
+
+  // Clean livestock states if selected direct tax code changes to a non-livestock code
+  useEffect(() => {
+    if (directTaxCode !== '11.25.39') {
+      setLivestockMacho(0);
+      setLivestockHembra(0);
+      setLivestockTernero(0);
+      setLivestockCerdoOveja(0);
+      setLivestockCabra(0);
+    }
+  }, [directTaxCode]);
+
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
 
   const directSearchContainerRef = useRef<HTMLDivElement>(null);
@@ -274,7 +321,18 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
       chargeTypeLabel = `EVENTO ESPECIAL (${daysNum} DÍA${daysNum > 1 ? 'S' : ''}${daysNum === 90 ? ' - RENOVABLE' : ''})`;
     }
 
-    const description = `COBRO DIRECTO - ${chargeTypeLabel} (CÓD: ${directTaxCode.trim()}${directTaxActivityName ? ` - ${directTaxActivityName}` : ''})`;
+    let description = `COBRO DIRECTO - ${chargeTypeLabel} (CÓD: ${directTaxCode.trim()}${directTaxActivityName ? ` - ${directTaxActivityName}` : ''})`;
+    if (directTaxCode.trim() === '11.25.39') {
+      const detailsList = [];
+      if (livestockMacho > 0) detailsList.push(`${livestockMacho} vacuno macho`);
+      if (livestockHembra > 0) detailsList.push(`${livestockHembra} vacuno hembra`);
+      if (livestockTernero > 0) detailsList.push(`${livestockTernero} ternero`);
+      if (livestockCerdoOveja > 0) detailsList.push(`${livestockCerdoOveja} porcino/ovino`);
+      if (livestockCabra > 0) detailsList.push(`${livestockCabra} res cabria`);
+      if (detailsList.length > 0) {
+        description += ` [Detalle: ${detailsList.join(', ')}]`;
+      }
+    }
 
     triggerPaymentPreview({
       taxType: TaxType.COMERCIO,
@@ -298,6 +356,13 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
           docId: directSelectedTaxpayer.docId,
           address: directSelectedTaxpayer.address,
           phone: directSelectedTaxpayer.phone
+        } : undefined,
+        livestockDetails: directTaxCode.trim() === '11.25.39' ? {
+          macho: livestockMacho,
+          hembra: livestockHembra,
+          ternero: livestockTernero,
+          cerdoOveja: livestockCerdoOveja,
+          cabra: livestockCabra
         } : undefined
       }
     });
@@ -318,6 +383,33 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
     setDirectAmount('');
     setDirectSearchTerm('');
     setDirectCodeSearchTerm('');
+    setLivestockMacho(0);
+    setLivestockHembra(0);
+    setLivestockTernero(0);
+    setLivestockCerdoOveja(0);
+    setLivestockCabra(0);
+  };
+
+  const handleCancelDirectCharge = () => {
+    setShowDirectChargeModal(false);
+    setIsManualPayer(false);
+    setDirectSelectedTaxpayerId('');
+    setDirectManualName('');
+    setDirectManualDocId('');
+    setDirectManualAddress('');
+    setDirectManualPhone('');
+    setDirectChargeType('COMERCIO');
+    setDirectEventDays(1);
+    setDirectTaxCode('');
+    setDirectTaxActivityName('');
+    setDirectAmount('');
+    setDirectSearchTerm('');
+    setDirectCodeSearchTerm('');
+    setLivestockMacho(0);
+    setLivestockHembra(0);
+    setLivestockTernero(0);
+    setLivestockCerdoOveja(0);
+    setLivestockCabra(0);
   };
 
   // Pre-fill from props if available
@@ -559,6 +651,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                         }</p>
                         <p><span className="font-bold">Código:</span> {draftPaymentData.metadata.taxCode}</p>
                         {draftPaymentData.metadata.taxActivity && <p><span className="font-bold">Actividad:</span> {draftPaymentData.metadata.taxActivity}</p>}
+                        {renderLivestockDetails(draftPaymentData.metadata)}
                       </div>
                     )}
 
@@ -956,6 +1049,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                               }</p>
                               <p><span className="font-bold">Código:</span> {t.metadata.taxCode}</p>
                               {t.metadata.taxActivity && <p><span className="font-bold">Actividad:</span> {t.metadata.taxActivity}</p>}
+                              {renderLivestockDetails(t.metadata)}
                             </div>
                           )}
                           {(() => {
@@ -1205,6 +1299,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                         }</p>
                         <p><span className="font-bold">Código:</span> {lastTransaction.metadata.taxCode}</p>
                         {lastTransaction.metadata.taxActivity && <p><span className="font-bold">Actividad:</span> {lastTransaction.metadata.taxActivity}</p>}
+                        {renderLivestockDetails(lastTransaction.metadata)}
                       </div>
                     )}
 
@@ -1931,6 +2026,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                               }</p>
                               <p><span className="font-bold">Código:</span> {tx.metadata.taxCode}</p>
                               {tx.metadata.taxActivity && <p><span className="font-bold">Actividad:</span> {tx.metadata.taxActivity}</p>}
+                              {renderLivestockDetails(tx.metadata)}
                             </div>
                           )}
                           {(() => {
@@ -2007,9 +2103,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                 <p className="text-xs text-slate-400">Registrar cobros eventuales y actividades comerciales rápidamente.</p>
               </div>
               <button 
-                onClick={() => {
-                  setShowDirectChargeModal(false);
-                }}
+                onClick={handleCancelDirectCharge}
                 className="text-slate-400 hover:text-white transition-colors"
               >
                 <X size={20} />
@@ -2323,24 +2417,69 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                           </div>
                         </div>
 
-                        <div className="pt-2 border-t border-slate-200">
-                          <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">Establecer Monto Evaluado a Cobrar *</label>
-                          <div className="flex items-center gap-2 max-w-xs">
-                            <span className="text-slate-400 font-black text-sm">B/.</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              className="w-full p-2.5 border border-slate-300 rounded-lg font-black text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all bg-white text-slate-900 shadow-sm"
-                              placeholder="0.00"
-                              value={directAmount}
-                              onChange={(e) => setDirectAmount(e.target.value)}
-                            />
+                        {directTaxCode === '11.25.39' ? (
+                          <div className="pt-2 border-t border-slate-200 space-y-4">
+                            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                              <p className="text-xs font-black text-indigo-800 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                                🐂 Guía de Traslado / Sacrificio de Ganado (11.25.39)
+                              </p>
+                              
+                              <div className="space-y-3">
+                                {[
+                                  { label: 'Ganado Vacuno Macho (B/. 5.00)', value: livestockMacho, setter: setLivestockMacho, price: 5 },
+                                  { label: 'Ganado Vacuno Hembra (B/. 5.00)', value: livestockHembra, setter: setLivestockHembra, price: 5 },
+                                  { label: 'Ternero (B/. 5.00)', value: livestockTernero, setter: setLivestockTernero, price: 5 },
+                                  { label: 'Ganado Porcino u Ovino (B/. 4.00)', value: livestockCerdoOveja, setter: setLivestockCerdoOveja, price: 4 },
+                                  { label: 'Res Cabría (B/. 1.00)', value: livestockCabra, setter: setLivestockCabra, price: 1 }
+                                ].map((item, idx) => (
+                                  <div key={idx} className="flex justify-between items-center gap-4 bg-white/70 p-2.5 rounded-lg border border-slate-200/50">
+                                    <span className="text-xs font-bold text-slate-700">{item.label}</span>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        className="w-20 p-1.5 border border-slate-300 rounded-md font-bold text-right text-xs focus:border-indigo-500 outline-none text-slate-900 bg-white"
+                                        value={item.value || ''}
+                                        placeholder="0"
+                                        onChange={(e) => {
+                                          const val = parseInt(e.target.value) || 0;
+                                          item.setter(Math.max(0, val));
+                                        }}
+                                      />
+                                      <span className="text-[10px] font-bold text-slate-400 w-16 text-right">
+                                        B/. {(item.value * item.price).toFixed(2)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="flex justify-between items-center bg-indigo-900 text-white rounded-xl p-4 shadow-sm">
+                              <span className="text-xs font-bold uppercase tracking-wider">Monto Total Calculado</span>
+                              <span className="text-xl font-black">B/. {formatCurrency(parseFloat(directAmount) || 0)}</span>
+                            </div>
                           </div>
-                          <p className="text-[10px] text-slate-400 mt-1 italic">
-                            Ingrese el monto evaluado según los rangos tarifarios de referencia mostrados.
-                          </p>
-                        </div>
+                        ) : (
+                          <div className="pt-2 border-t border-slate-200">
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">Establecer Monto Evaluado a Cobrar *</label>
+                            <div className="flex items-center gap-2 max-w-xs">
+                              <span className="text-slate-400 font-black text-sm">B/.</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                className="w-full p-2.5 border border-slate-300 rounded-lg font-black text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all bg-white text-slate-900 shadow-sm"
+                                placeholder="0.00"
+                                value={directAmount}
+                                onChange={(e) => setDirectAmount(e.target.value)}
+                              />
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1 italic">
+                              Ingrese el monto evaluado según los rangos tarifarios de referencia mostrados.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     );
                   })()
@@ -2383,22 +2522,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
             <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  setShowDirectChargeModal(false);
-                  setIsManualPayer(false);
-                  setDirectSelectedTaxpayerId('');
-                  setDirectManualName('');
-                  setDirectManualDocId('');
-                  setDirectManualAddress('');
-                  setDirectManualPhone('');
-                  setDirectChargeType('COMERCIO');
-                  setDirectEventDays(1);
-                  setDirectTaxCode('');
-                  setDirectTaxActivityName('');
-                  setDirectAmount('');
-                  setDirectSearchTerm('');
-                  setDirectCodeSearchTerm('');
-                }}
+                onClick={handleCancelDirectCharge}
                 className="bg-white hover:bg-slate-100 text-slate-700 font-bold py-2.5 px-4 rounded-xl border border-slate-200 text-xs transition-all active:scale-95"
               >
                 Cancelar
