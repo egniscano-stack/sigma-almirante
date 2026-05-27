@@ -116,22 +116,25 @@ export const calculateTaxpayerDebt = (
             let hasAssignment = false;
 
             if (t.selectedTaxCodes && t.selectedTaxCodes.length > 0) {
-              hasAssignment = true;
-              t.selectedTaxCodes.forEach(code => {
-                const s = (taxStructure as any[]).find(st => st.code === code);
-                if (s) {
-                  const mRates = t.magnitude === 'GRANDE' ? s.rates.GRANDE :
-                                 t.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
-                  const customRate = typeof t.selectedRates?.[code] === 'number' ? t.selectedRates[code] : parseFloat(t.selectedRates?.[code] as any);
-                  if (!isNaN(customRate)) {
-                    commercialAmount += customRate;
-                  } else if (Array.isArray(mRates)) {
-                    commercialAmount += mRates[0] || 0;
-                  } else if (typeof mRates === 'number') {
-                    commercialAmount += mRates;
+              const activeCodes = t.selectedTaxCodes.filter(c => c !== '11.25.39');
+              if (activeCodes.length > 0) {
+                hasAssignment = true;
+                activeCodes.forEach(code => {
+                  const s = (taxStructure as any[]).find(st => st.code === code);
+                  if (s) {
+                    const mRates = t.magnitude === 'GRANDE' ? s.rates.GRANDE :
+                                   t.magnitude === 'MEDIANO' ? s.rates.MEDIANO : s.rates.PEQUENO;
+                    const customRate = typeof t.selectedRates?.[code] === 'number' ? t.selectedRates[code] : parseFloat(t.selectedRates?.[code] as any);
+                    if (!isNaN(customRate)) {
+                      commercialAmount += customRate;
+                    } else if (Array.isArray(mRates)) {
+                      commercialAmount += mRates[0] || 0;
+                    } else if (typeof mRates === 'number') {
+                      commercialAmount += mRates;
+                    }
                   }
-                }
-              });
+                });
+              }
             }
 
             if ((t.rotuloAmount || 0) > 0) {

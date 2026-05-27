@@ -259,11 +259,14 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
 
   const directFilteredTaxCodes = useMemo(() => {
     if (!directCodeSearchTerm) return [];
-    return (taxStructure as any[]).filter(item => 
-      item.code.toLowerCase().includes(directCodeSearchTerm.toLowerCase()) ||
-      item.activity.toLowerCase().includes(directCodeSearchTerm.toLowerCase())
-    ).slice(0, 10);
-  }, [directCodeSearchTerm]);
+    return (taxStructure as any[]).filter(item => {
+      if (item.code === '11.25.39' && directTaxCode !== '11.25.39') {
+        return false;
+      }
+      return item.code.toLowerCase().includes(directCodeSearchTerm.toLowerCase()) ||
+             item.activity.toLowerCase().includes(directCodeSearchTerm.toLowerCase());
+    }).slice(0, 10);
+  }, [directCodeSearchTerm, directTaxCode, taxStructure]);
 
   const directSelectedTaxpayer = taxpayers.find(t => t.id === directSelectedTaxpayerId);
 
@@ -1696,6 +1699,38 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                   </span>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+        
+        {/* --- SPECIAL SERVICES / LIVESTOCK GUIDE (11.25.39) --- */}
+        {activeTaxpayer && activeTaxpayer.selectedTaxCodes && activeTaxpayer.selectedTaxCodes.includes('11.25.39') && (
+          <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden mb-6 p-5 animate-fade-in relative z-10">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 text-lg font-bold">
+                  🐂
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-800 text-sm uppercase">Guía de Traslado / Sacrificio de Ganado (Código 11.25.39)</h4>
+                  <p className="text-xs text-slate-500">Este contribuyente tiene asignado este servicio. Haz clic para calcular y cobrar.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsManualPayer(false);
+                  setDirectSelectedTaxpayerId(activeTaxpayer.id);
+                  setDirectChargeType('COMERCIO');
+                  setDirectTaxCode('11.25.39');
+                  setDirectTaxActivityName('Guía de Traslado / Sacrificio de Ganado');
+                  setDirectCodeSearchTerm('11.25.39 - Guía de Traslado / Sacrificio de Ganado');
+                  setShowDirectChargeModal(true);
+                }}
+                className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-3 rounded-lg shadow-md flex items-center justify-center gap-2 active:scale-95 transition-all text-xs"
+              >
+                🐂 Cobrar Guía de Ganado
+              </button>
             </div>
           </div>
         )}
