@@ -4,7 +4,7 @@ import {
   PieChart, Pie, Cell, LineChart, Line, Legend, AreaChart, Area
 } from 'recharts';
 import { Transaction, TaxType, User, Taxpayer, Corregimiento, TaxConfig, CommercialCategory } from '../types';
-import { Download, FileText, TrendingUp, Calendar, Filter, User as UserIcon, Printer, PieChart as PieChartIcon, Map as MapIcon, X, Clock } from 'lucide-react';
+import { Download, FileText, TrendingUp, Calendar, Filter, User as UserIcon, Printer, PieChart as PieChartIcon, Map as MapIcon, X, Clock, Percent } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
@@ -147,8 +147,9 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
     });
 
     const byDateData = Array.from(byDateMap.entries()).map(([date, amount]) => ({ date, amount }));
+    const totalDiscounts = filtered.reduce((acc, t) => acc + (t.metadata?.discountAmount || 0), 0);
 
-    return { totalRevenue, avgTicket, paidTransactions, byTypeData, byDateData, filteredTransactions: filtered };
+    return { totalRevenue, avgTicket, paidTransactions, byTypeData, byDateData, filteredTransactions: filtered, totalDiscounts };
   }, [transactions, startDate, endDate, selectedTeller, reportSubFilter, filterCorregimiento, filterActivity]);
 
   // --- Handlers ---
@@ -185,6 +186,7 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
     setPreviewData({
       transactions: filteredForReport,
       total: filteredForReport.reduce((acc, t) => acc + t.amount, 0),
+      totalDiscounts: filteredForReport.reduce((acc, t) => acc + (t.metadata?.discountAmount || 0), 0),
       startDate,
       endDate,
       teller: selectedTeller === 'ALL' ? 'TODOS' : selectedTeller
@@ -199,6 +201,7 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
       setPreviewData({
         transactions: stats.filteredTransactions,
         total: stats.filteredTransactions.reduce((acc, t) => acc + t.amount, 0),
+        totalDiscounts: stats.filteredTransactions.reduce((acc, t) => acc + (t.metadata?.discountAmount || 0), 0),
         startDate,
         endDate,
         teller: selectedTeller === 'ALL' ? 'TODOS' : selectedTeller,
@@ -266,11 +269,13 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
     const totalIncome = corregimientoStats.reduce((sum, c) => sum + c.income, 0);
     const totalDebt = corregimientoStats.reduce((sum, c) => sum + c.debt, 0);
 
+    const totalDiscounts = stats.filteredTransactions.reduce((sum, t) => sum + (t.metadata?.discountAmount || 0), 0);
     setPreviewType('GENERAL');
     setPreviewData({
       corregimientos: corregimientoStats,
       totalIncome,
       totalDebt,
+      totalDiscounts,
       startDate,
       endDate,
       filterLabel: reportSubFilter === 'CORREGIMIENTO' ? (filterCorregimiento === 'ALL' ? 'TODOS LOS CORREGIMIENTOS' : `CORREGIMIENTO: ${filterCorregimiento}`) : 'RESUMEN GLOBAL'
@@ -422,9 +427,10 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
           { title: 'Ingresos Totales', value: `B/. ${formatCurrency(stats.totalRevenue)}`, icon: TrendingUp, color: 'bg-emerald-500', label: 'Monto Neto' },
+          { title: 'Descuentos Concedidos', value: `B/. ${formatCurrency(stats.totalDiscounts)}`, icon: Percent, color: 'bg-rose-500', label: 'Ahorro Contribuyente' },
           { title: 'Tickets Pagados', value: stats.paidTransactions, icon: FileText, color: 'bg-indigo-500', label: 'Transacciones' },
           { title: 'Promedio Cobro', value: `B/. ${formatCurrency(stats.avgTicket)}`, icon: MapIcon, color: 'bg-blue-500', label: 'Por Contribuyente' },
         ].map((stat, idx) => (
@@ -829,6 +835,12 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
                         <td colSpan={4} className="p-4 text-right border border-indigo-100 uppercase tracking-widest">Total Recaudado</td>
                         <td className="p-4 text-right border border-indigo-100 text-lg">B/. {formatCurrency(previewData.total)}</td>
                       </tr>
+                      {previewData.totalDiscounts > 0 && (
+                        <tr className="bg-rose-50 font-black text-rose-800 animate-fade-in">
+                          <td colSpan={4} className="p-4 text-right border border-rose-100 uppercase tracking-widest">Total Descuentos Concedidos</td>
+                          <td className="p-4 text-right border border-rose-100 text-base">- B/. {formatCurrency(previewData.totalDiscounts)}</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 ) : (
@@ -855,6 +867,13 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, users, currentUs
                         <td className="p-4 text-right border border-indigo-100 text-base">B/. {formatCurrency(previewData.totalIncome)}</td>
                         <td className="p-4 text-right border border-indigo-100 text-base text-rose-700">B/. {formatCurrency(previewData.totalDebt)}</td>
                       </tr>
+                      {previewData.totalDiscounts > 0 && (
+                        <tr className="bg-rose-50 font-black text-rose-800 animate-fade-in">
+                          <td colSpan={2} className="p-4 text-right border border-rose-100 uppercase tracking-widest text-xs">Total Descuentos Concedidos</td>
+                          <td className="p-4 text-right border border-rose-100 text-sm font-mono">- B/. {formatCurrency(previewData.totalDiscounts)}</td>
+                          <td className="p-4 text-right border border-rose-100 text-sm"></td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 )}

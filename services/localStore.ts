@@ -30,7 +30,9 @@ const initialData: LocalData = {
     chatMessages: []
 };
 
-let _isTestMode = localStorage.getItem('sigma_test_mode') === 'true';
+const hasCredentials = !!(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
+const storedTestMode = localStorage.getItem('sigma_test_mode');
+let _isTestMode = storedTestMode !== null ? storedTestMode === 'true' : !hasCredentials;
 
 const getFilename = (isTest: boolean) => isTest ? TEST_DATA_FILENAME : DATA_FILENAME;
 const getSyncQueueFilename = (isTest: boolean) => isTest ? TEST_SYNC_QUEUE_FILENAME : SYNC_QUEUE_FILENAME;
@@ -171,23 +173,21 @@ export const localStore = {
             return data;
         }
 
-        // Only load the initial seed on production when no data is present
-        if (!isTest) {
-            try {
-                console.log("[SIGMA localStore] No local database or empty. Loading bundled initial_seed.json...");
-                const response = await fetch('./initial_seed.json');
-                if (response.ok) {
-                    const seed = await response.json();
-                    if (seed && seed.taxpayers && seed.taxpayers.length > 0) {
-                        console.log(`[SIGMA localStore] Bundled seed loaded successfully with ${seed.taxpayers.length} taxpayers! Saving locally...`);
-                        const finalData = { ...initialData, ...seed };
-                        await localStore.saveDataRaw(finalData, false);
-                        return finalData;
-                    }
+        // Load the initial seed when no data is present
+        try {
+            console.log(`[SIGMA localStore] No local database or empty. Loading bundled initial_seed.json (isTest=${isTest})...`);
+            const response = await fetch('./initial_seed.json');
+            if (response.ok) {
+                const seed = await response.json();
+                if (seed && seed.taxpayers && seed.taxpayers.length > 0) {
+                    console.log(`[SIGMA localStore] Bundled seed loaded successfully with ${seed.taxpayers.length} taxpayers! Saving locally...`);
+                    const finalData = { ...initialData, ...seed };
+                    await localStore.saveDataRaw(finalData, isTest);
+                    return finalData;
                 }
-            } catch (e) {
-                console.warn("[SIGMA localStore] Bundled seed file not available, falling back to empty database:", e);
             }
+        } catch (e) {
+            console.warn("[SIGMA localStore] Bundled seed file not available, falling back to empty database:", e);
         }
 
         return data || initialData;

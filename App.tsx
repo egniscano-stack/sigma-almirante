@@ -602,13 +602,43 @@ function App() {
         }
       }
 
+      // If payment is linked to a Pago Anual discount, mark the request as approved/completed in Supabase!
+      if (paymentData.metadata?.pagoAnualRequestId) {
+        const reqId = paymentData.metadata.pagoAnualRequestId;
+        const req = adminRequests.find(r => r.id === reqId);
+        if (req) {
+          const approvedReq = {
+            ...req,
+            status: 'APPROVED' as RequestStatus,
+            responseNote: `Pago Anual Procesado por el cajero ${user?.name || 'Sistema'} en fecha ${new Date().toLocaleDateString()}`
+          };
+          await db.updateAdminRequest(approvedReq);
+          setAdminRequests(prev => prev.map(r => r.id === reqId ? approvedReq : r));
+        }
+      }
+
       // Update Taxpayer Balance locally if needed
       const targetTaxpayer = paymentData.taxpayerId ? taxpayers.find(tp => tp.id === paymentData.taxpayerId) : null;
       if (targetTaxpayer) {
         let newBalance = targetTaxpayer.balance || 0;
         let newPrevDebt = targetTaxpayer.previousYearsDebt || 0;
+        let newLastPaymentMonth = targetTaxpayer.lastPaymentMonth;
         let updatedArrangement = targetTaxpayer.paymentArrangement ? { ...targetTaxpayer.paymentArrangement } : undefined;
         let shouldUpdateTaxpayer = false;
+
+        // 4. Pago Anual check
+        if (paymentData.metadata?.isAnnualPayment) {
+          const currentYear = new Date().getFullYear();
+          newBalance = 0;
+          newPrevDebt = 0;
+          newLastPaymentMonth = `${currentYear}-12`;
+          shouldUpdateTaxpayer = true;
+          if (updatedArrangement && updatedArrangement.estado === 'ACTIVO') {
+            updatedArrangement.estado = 'COMPLETADO';
+            updatedArrangement.cuotasPagadas = updatedArrangement.cuotasTotales;
+            updatedArrangement.abonoPagado = true;
+          }
+        }
 
         // 1. Explicit metadata checks (single-item payment)
         if (paymentData.metadata?.isArrangementAbono && updatedArrangement) {
@@ -678,12 +708,13 @@ function App() {
           shouldUpdateTaxpayer = true;
         }
         
-        if (shouldUpdateTaxpayer || newBalance !== targetTaxpayer.balance || newPrevDebt !== targetTaxpayer.previousYearsDebt) {
+        if (shouldUpdateTaxpayer || newBalance !== targetTaxpayer.balance || newPrevDebt !== targetTaxpayer.previousYearsDebt || newLastPaymentMonth !== targetTaxpayer.lastPaymentMonth) {
           const updatedTp = { 
             ...targetTaxpayer, 
             balance: newBalance, 
             previousYearsDebt: newPrevDebt,
-            paymentArrangement: updatedArrangement
+            paymentArrangement: updatedArrangement,
+            lastPaymentMonth: newLastPaymentMonth
           };
           await db.updateTaxpayer(updatedTp);
           setTaxpayers(prev => prev.map(tp => tp.id === updatedTp.id ? updatedTp : tp));
@@ -1607,6 +1638,38 @@ const AdminRequestModal = ({ requests, updateRequests, onClose, allTransactions,
 }) => {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [discounts, setDiscounts] = useState<Record<string, number>>({});
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount || 0);
+  };
+
+  const handleApprovePagoAnual = async (req: AdminRequest, discountPercent: number) => {
+    const originalAmt = req.totalDebt || 0;
+    const discountAmt = parseFloat((originalAmt * (discountPercent / 100)).toFixed(2));
+    const netAmt = parseFloat((originalAmt - discountAmt).toFixed(2));
+
+    try {
+      await db.updateAdminRequest({
+        ...req,
+        status: 'APPROVED' as RequestStatus,
+        approvedAmount: netAmt,
+        responseNote: `Descuento de Pago Anual del ${discountPercent}% Autorizado. Monto Neto: B/. ${netAmt.toFixed(2)} (Monto Original: B/. ${originalAmt.toFixed(2)})`,
+        payload: {
+          discountPercentage: discountPercent,
+          originalAmount: originalAmt,
+          discountAmount: discountAmt
+        } as any
+      });
+      alert(`Pago Anual aprobado exitosamente con ${discountPercent}% de descuento.`);
+    } catch (e) {
+      console.error(e);
+      alert("Error al aprobar descuento de pago anual.");
+    }
+  };
 
   const handleApprove = async (req: AdminRequest, initial?: number, installments?: number) => {
     try {
@@ -1797,15 +1860,25 @@ const AdminRequestModal = ({ requests, updateRequests, onClose, allTransactions,
             <div className="text-center py-10 text-slate-400">No hay solicitudes en esta sección.</div>
           ) : (
             filteredRequests.map(req => (
-              <div key={req.id} className={`bg-white p-4 rounded-lg shadow-sm border-l-4 ${req.status === 'PENDING' ? 'border-amber-500' :
-
-                req.status === 'APPROVED' ? 'border-emerald-500' : 'border-red-500'
-                } `}>
+              <div key={req.id} className={`bg-white p-4 rounded-lg shadow-sm border-l-4 ${
+                req.status === 'PENDING' 
+                  ? (req.type === 'PAGO_ANUAL' ? 'border-emerald-500 bg-emerald-50/10' : 'border-amber-500') 
+                  : req.status === 'APPROVED' ? 'border-emerald-500' : 'border-red-500'
+              } `}>
                 <div className="flex justify-between items-start mb-2">
                   <div>
-                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${req.type === 'VOID_TRANSACTION' ? 'bg-red-100 text-red-700' : req.type === 'UPDATE_TAXPAYER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                      }`}>
-                      {req.type === 'VOID_TRANSACTION' ? 'ANULACIÓN' : req.type === 'UPDATE_TAXPAYER' ? 'EDICIÓN DATOS' : 'ARREGLO DE PAGO'}
+                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                      req.type === 'VOID_TRANSACTION' ? 'bg-red-100 text-red-700' : 
+                      req.type === 'UPDATE_TAXPAYER' ? 'bg-purple-100 text-purple-700' : 
+                      req.type === 'PAGO_ANUAL' ? 'bg-emerald-100 text-emerald-700 font-extrabold shadow-sm' :
+                      'bg-blue-100 text-blue-700'
+                    }`}>
+                      {
+                        req.type === 'VOID_TRANSACTION' ? 'ANULACIÓN' : 
+                        req.type === 'UPDATE_TAXPAYER' ? 'EDICIÓN DATOS' : 
+                        req.type === 'PAGO_ANUAL' ? 'DESCUENTO PAGO ANUAL' :
+                        'ARREGLO DE PAGO'
+                      }
                     </span>
                     <span className="text-xs text-slate-400 ml-2">{req.createdAt ? req.createdAt.split('T')[0] : 'Hoy'}</span>
                   </div>
@@ -1823,10 +1896,101 @@ const AdminRequestModal = ({ requests, updateRequests, onClose, allTransactions,
                   {req.transactionId && <p className="text-xs font-mono text-slate-500 mt-1">Ref: {req.transactionId}</p>}
                 </div>
 
-                {req.totalDebt && (
+                {req.totalDebt && req.type !== 'PAGO_ANUAL' && (
                   <div className="mt-2 text-sm bg-blue-50 p-2 rounded text-blue-800">
                     <span className="font-bold">Deuda Total a Negociar: B/. {req.totalDebt.toFixed(2)}</span>
                   </div>
+                )}
+
+                {req.type === 'PAGO_ANUAL' && req.status === 'PENDING' && (
+                  (() => {
+                    const originalAmt = req.totalDebt || 0;
+                    const discountPercent = discounts[req.id] !== undefined ? discounts[req.id] : 10;
+                    const discountAmt = parseFloat((originalAmt * (discountPercent / 100)).toFixed(2));
+                    const netAmt = parseFloat((originalAmt - discountAmt).toFixed(2));
+
+                    return (
+                      <div className="mt-3 p-4 bg-emerald-50/50 rounded-xl border border-emerald-100 space-y-4">
+                        <p className="text-xs font-black text-emerald-800 uppercase tracking-wider mb-2">
+                          🧮 CÁLCULO DE INCENTIVO ANUAL (DESGLOSE EN TIEMPO REAL)
+                        </p>
+                        
+                        <div className="grid grid-cols-2 gap-4 text-xs font-semibold">
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-100 shadow-sm text-left">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase">Monto Bruto Anual</span>
+                            <p className="text-sm font-black text-slate-700 mt-0.5">B/. {formatCurrency(originalAmt)}</p>
+                          </div>
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-100 shadow-sm text-left">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase">Valor a Descontar</span>
+                            <p className="text-sm font-black text-rose-600 mt-0.5">- B/. {formatCurrency(discountAmt)}</p>
+                          </div>
+                        </div>
+
+                        {/* Percent Input & Range Slider */}
+                        <div className="space-y-2 bg-white p-3 rounded-lg border border-slate-100 shadow-sm text-left">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[10px] text-slate-400 font-extrabold uppercase">Descuento Incentivo (%)</label>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                className="w-14 text-center border rounded p-1 font-bold text-xs bg-slate-50 focus:bg-white focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                                value={discountPercent}
+                                onChange={(e) => {
+                                  const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                  setDiscounts(prev => ({ ...prev, [req.id]: val }));
+                                }}
+                              />
+                              <span className="text-xs font-black text-slate-500">%</span>
+                            </div>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            step="1"
+                            className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                            value={discountPercent}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 0;
+                              setDiscounts(prev => ({ ...prev, [req.id]: val }));
+                            }}
+                          />
+                          <div className="flex justify-between text-[9px] text-slate-400 font-extrabold uppercase">
+                            <span>0% (Sin desc)</span>
+                            <span>50% (Medio)</span>
+                            <span>100% (Gratis)</span>
+                          </div>
+                        </div>
+
+                        {/* Final Net Amount Display */}
+                        <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-xl p-3.5 flex justify-between items-center shadow-md">
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-wider opacity-90">Monto Final Aprobado (Neto)</span>
+                            <p className="text-[9px] font-medium opacity-80 mt-0.5">El cajero cobrará exactamente esta cantidad</p>
+                          </div>
+                          <span className="text-xl font-black font-mono">B/. {formatCurrency(netAmt)}</span>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex gap-2 pt-2">
+                          <button
+                            onClick={() => handleApprovePagoAnual(req, discountPercent)}
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md active:scale-95 animate-pulse-subtle"
+                          >
+                            <CheckCircle size={14} /> Aprobar Descuento
+                          </button>
+                          <button
+                            onClick={() => setRejectingId(req.id)}
+                            className="bg-slate-100 text-slate-650 px-4 py-3 rounded-xl font-bold text-xs hover:bg-slate-200 border border-slate-200 flex items-center justify-center gap-1 active:scale-95"
+                          >
+                            <XCircle size={14} /> Rechazar
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()
                 )}
 
                 {req.type === 'UPDATE_TAXPAYER' && req.payload && (
@@ -1856,7 +2020,7 @@ const AdminRequestModal = ({ requests, updateRequests, onClose, allTransactions,
                 )}
 
                 {/* Actions if Pending */}
-                {req.status === 'PENDING' && (
+                {req.status === 'PENDING' && req.type !== 'PAGO_ANUAL' && (
                   <div className="mt-4 pt-3 border-t border-slate-100">
                     {/* Rejection Form for this specific item */}
                     {rejectingId === req.id ? (

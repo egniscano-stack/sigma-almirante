@@ -52,6 +52,7 @@
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^41.3.0",
     "electron-builder": "^26.8.1",
+    "ftp-deploy": "^2.4.7",
     "gh-pages": "^6.3.0",
     "terser": "^5.46.0",
     "typescript": "~5.8.2",

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Taxpayer, TaxConfig, TaxType, CommercialCategory, PaymentMethod, Transaction, User, MunicipalityInfo, AdminRequest, RequestType, RequestStatus } from '../types';
+import { Taxpayer, TaxConfig, TaxType, CommercialCategory, PaymentMethod, Transaction, User, MunicipalityInfo, AdminRequest, RequestType, RequestStatus, TaxpayerType } from '../types';
 import { Car, Building2, Trash2, Store, CreditCard, Search, Banknote, Printer, CheckCircle, XCircle, X, ArrowLeft, Save, User as UserIcon, MapPin, Download, AlertCircle, Lock, History, RefreshCw, Bell, ShieldAlert, ChevronDown, ChevronUp, Receipt, Shield } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { QRCodeSVG } from 'qrcode.react';
 import taxStructureRaw from '../data/taxStructure.json';
-import { calculateTaxpayerDebt, DebtItem } from '../services/debtLogic';
+import { calculateTaxpayerDebt, DebtItem, calculateAnnualAmount } from '../services/debtLogic';
 
 interface TaxCollectionProps {
   taxpayers: Taxpayer[];
@@ -244,6 +244,17 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
   }, [directTaxCode]);
 
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+
+  // Auto-calculate annual amount for requests of type PAGO_ANUAL
+  useEffect(() => {
+    if (newRequestType === 'PAGO_ANUAL' && activeTaxpayer) {
+      const annualAmt = calculateAnnualAmount(activeTaxpayer, config);
+      setNewRequestAmount(annualAmt);
+      if (!newRequestDesc) {
+        setNewRequestDesc("Solicitud de incentivo tributario por pago anualizado.");
+      }
+    }
+  }, [newRequestType, activeTaxpayer, config]);
 
   const directSearchContainerRef = useRef<HTMLDivElement>(null);
   const directCodeContainerRef = useRef<HTMLDivElement>(null);
@@ -499,6 +510,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
   const handleClearSelection = () => {
     setSelectedTaxpayerId('');
     setSearchTerm('');
+    setLoadedArrangement(null);
   };
 
   const handleFinishCollection = () => {
@@ -513,6 +525,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
       setSearchTerm('');
       setSelectedTaxpayerId('');
       setPaymentMethod(PaymentMethod.EFECTIVO);
+      setLoadedArrangement(null);
     }
   };
 
@@ -721,8 +734,9 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                       <textarea
                         rows={2}
                         value={draftPaymentData.description}
+                        disabled={draftPaymentData.metadata?.isAnnualPayment}
                         onChange={(e) => updateDraftField('description', e.target.value.toUpperCase())}
-                        className="w-full bg-white text-xs font-bold text-slate-800 p-2.5 rounded-lg border-2 border-slate-200 focus:border-orange-500 outline-none transition-colors leading-tight resize-none"
+                        className="w-full bg-white text-xs font-bold text-slate-800 p-2.5 rounded-lg border-2 border-slate-200 focus:border-orange-500 outline-none transition-colors leading-tight resize-none disabled:bg-slate-100 disabled:text-slate-500"
                       />
                     </div>
 
@@ -735,8 +749,9 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                         min="0.01"
                         inputMode="decimal"
                         value={draftPaymentData.amount || ''}
+                        disabled={draftPaymentData.metadata?.isAnnualPayment}
                         onChange={(e) => updateDraftField('amount', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-white text-sm font-black text-orange-600 p-2.5 rounded-lg border-2 border-slate-200 focus:border-orange-500 outline-none transition-colors"
+                        className="w-full bg-white text-sm font-black text-orange-600 p-2.5 rounded-lg border-2 border-slate-200 focus:border-orange-500 outline-none transition-colors disabled:bg-slate-100 disabled:text-slate-500"
                       />
                     </div>
                   </div>
@@ -1010,10 +1025,14 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                 </div>
 
                 {/* Right: Total Box */}
-                <div className="w-1/3 flex justify-end">
-                  <div className="bg-slate-900 text-white px-6 py-3 rounded-xl shadow-lg text-right min-w-[180px]">
+                <div className="w-1/3 flex flex-col items-end gap-2">
+                  <div className="bg-slate-900 text-white px-6 py-3 rounded-xl shadow-lg text-right min-w-[180px] w-full">
                     <p className="text-[9px] uppercase font-bold opacity-70 mb-1">Total Recaudado Hoy</p>
-                    <p className="text-2xl font-black">B/. {formatCurrency(closingTransactions.reduce((acc, t) => acc + t.amount, 0))}</p>
+                    <p className="text-2xl font-black font-mono">B/. {formatCurrency(closingTransactions.reduce((acc, t) => acc + t.amount, 0))}</p>
+                  </div>
+                  <div className="bg-rose-50 text-rose-800 border border-rose-200 px-6 py-2 rounded-xl text-right min-w-[180px] w-full">
+                    <p className="text-[9px] uppercase font-bold opacity-70 mb-0.5">Descuentos Concedidos</p>
+                    <p className="text-sm font-black font-mono">- B/. {formatCurrency(closingTransactions.reduce((acc, t) => acc + (t.metadata?.discountAmount || 0), 0))}</p>
                   </div>
                 </div>
               </div>
@@ -1383,6 +1402,24 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                     )}
                   </div>
 
+                  {/* Desglose de Descuento (si aplica) */}
+                  {lastTransaction.metadata?.isAnnualPayment && (
+                    <div className="bg-slate-50 p-2 rounded border border-dashed border-slate-350 mt-2 mb-2 text-left space-y-1 font-mono text-[9px]">
+                      <div className="flex justify-between text-slate-650">
+                        <span>Monto Original:</span>
+                        <span className="font-bold">B/. {formatCurrency(lastTransaction.metadata.originalAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-red-650">
+                        <span>Descuento ({lastTransaction.metadata.discountPercentage}%):</span>
+                        <span className="font-bold">- B/. {formatCurrency(lastTransaction.metadata.discountAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-800 border-t border-slate-200 pt-1 font-extrabold text-[10px]">
+                        <span>Monto Neto Cobrado:</span>
+                        <span>B/. {formatCurrency(lastTransaction.amount)}</span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Total Box */}
                   <div className="flex justify-between items-center py-2 px-1 border-b-2 border-slate-900 mb-4">
                     <span className="text-[10px] font-black text-slate-900 uppercase">Total Pagado:</span>
@@ -1737,6 +1774,63 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
       </div>
 
       {/* --- DEBTS LIST (SEPARATE PAYMENTS) --- */}
+      {/* --- LOADED PAGO ANUAL ARRANGEMENT PANEL --- */}
+      {activeTaxpayer && loadedArrangement && loadedArrangement.type === 'PAGO_ANUAL' && loadedArrangement.taxpayerId === activeTaxpayer.id && (
+        <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border-2 border-emerald-500 rounded-xl p-5 mb-6 shadow-md relative overflow-hidden animate-fade-in">
+          <div className="absolute top-0 right-0 bg-emerald-600 text-white font-black uppercase text-[9px] tracking-widest px-3 py-1 rounded-bl-lg">
+            AUTORIZADO
+          </div>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-1 text-left">
+              <h4 className="text-sm font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                <CheckCircle size={18} className="text-emerald-600 animate-pulse" />
+                Incentivo Tributario: Pago Anual Aprobado
+              </h4>
+              <p className="text-xs text-slate-700 font-medium">
+                Se ha autorizado un descuento manual del <span className="font-extrabold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">{(loadedArrangement.payload as any)?.discountPercentage || 0}%</span> para el pago anualizado del contribuyente.
+              </p>
+              <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-dashed border-emerald-200 text-slate-650 text-xs font-mono">
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">Monto Original</p>
+                  <p className="font-extrabold text-slate-700">B/. {formatCurrency((loadedArrangement.payload as any)?.originalAmount || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">Descuento ({((loadedArrangement.payload as any)?.discountPercentage || 0)}%)</p>
+                  <p className="font-extrabold text-rose-600">- B/. {formatCurrency((loadedArrangement.payload as any)?.discountAmount || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">Monto Final Neto</p>
+                  <p className="font-black text-emerald-700">B/. {formatCurrency(loadedArrangement.approvedAmount || 0)}</p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                triggerPaymentPreview({
+                  taxType: TaxType.CONSOLIDADO,
+                  taxpayerId: activeTaxpayer.id,
+                  amount: loadedArrangement.approvedAmount || 0,
+                  paymentMethod: paymentMethod,
+                  description: `PAGO ANUAL VIGENCIA ${new Date().getFullYear()} - DESCUENTO ${(loadedArrangement.payload as any)?.discountPercentage}% APROBADO`,
+                  metadata: {
+                    isAnnualPayment: true,
+                    pagoAnualRequestId: loadedArrangement.id,
+                    discountPercentage: (loadedArrangement.payload as any)?.discountPercentage,
+                    originalAmount: (loadedArrangement.payload as any)?.originalAmount,
+                    discountAmount: (loadedArrangement.payload as any)?.discountAmount,
+                    requestId: loadedArrangement.id
+                  }
+                });
+              }}
+              className="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-5 py-3 rounded-lg shadow-lg active:scale-95 transition-all uppercase tracking-wider flex items-center justify-center gap-2"
+            >
+              <CreditCard size={16} />
+              Procesar Cobro Anual
+            </button>
+          </div>
+        </div>
+      )}
+
       {
         activeTaxpayer && taxpayerDebts.length > 0 && (
           <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden mb-6 animate-fade-in relative z-10">
@@ -1811,6 +1905,9 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                     <option value="VOID_TRANSACTION">Anulación / Descobro (Solicitar)</option>
                     <option value="PAYMENT_ARRANGEMENT">Arreglo de Pago (Solicitar)</option>
                     <option value="UPDATE_TAXPAYER">Editar Datos de Contribuyente (Solicitar)</option>
+                    {activeTaxpayer && activeTaxpayer.type !== TaxpayerType.PLACA && (
+                      <option value="PAGO_ANUAL">Incentivo Pago Anual (Solicitar)</option>
+                    )}
                   </select>
                 </div>
 
@@ -1834,16 +1931,24 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                   </div>
                 )}
 
-                {newRequestType === 'PAYMENT_ARRANGEMENT' && (
+                {(newRequestType === 'PAYMENT_ARRANGEMENT' || newRequestType === 'PAGO_ANUAL') && (
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Monto Total de la Deuda</label>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">
+                      {newRequestType === 'PAGO_ANUAL' ? 'Monto Anualizado Original (12 Meses)' : 'Monto Total de la Deuda'}
+                    </label>
                     <input
                       type="number" inputMode="decimal"
-                      className="w-full border rounded p-2"
+                      className="w-full border rounded p-2 bg-slate-50 font-bold"
                       placeholder="0.00"
+                      disabled={newRequestType === 'PAGO_ANUAL'}
                       value={newRequestAmount === 0 ? '' : newRequestAmount}
                       onChange={(e) => setNewRequestAmount(parseFloat(e.target.value) || 0)}
                     />
+                    {newRequestType === 'PAGO_ANUAL' && (
+                      <p className="text-[10px] text-emerald-600 mt-1 font-semibold text-left">
+                        * Monto anualizado autocalculado de forma lógica según tarifas comerciales y de aseo vigentes.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -1898,7 +2003,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                             description: newRequestDesc || 'Autorizado presencialmente',
                             transactionId: requestTargetId,
                             taxpayerId: finalTaxpayerId, 
-                            totalDebt: newRequestType === 'PAYMENT_ARRANGEMENT' ? newRequestAmount : undefined,
+                            totalDebt: (newRequestType === 'PAYMENT_ARRANGEMENT' || newRequestType === 'PAGO_ANUAL') ? newRequestAmount : undefined,
                             createdAt: new Date().toISOString()
                           };
 
@@ -1958,7 +2063,7 @@ export const TaxCollection: React.FC<TaxCollectionProps> = ({ taxpayers, transac
                           description: newRequestDesc,
                           transactionId: requestTargetId,
                           taxpayerId: finalTaxpayerId, 
-                          totalDebt: newRequestType === 'PAYMENT_ARRANGEMENT' ? newRequestAmount : undefined,
+                          totalDebt: (newRequestType === 'PAYMENT_ARRANGEMENT' || newRequestType === 'PAGO_ANUAL') ? newRequestAmount : undefined,
                           createdAt: new Date().toISOString()
                         };
                         onCreateRequest(req);

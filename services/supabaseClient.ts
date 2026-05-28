@@ -9,8 +9,8 @@ import { createClient } from '@supabase/supabase-js';
 //   VITE_SUPABASE_ANON_KEY=your_anon_key
 // ============================================================
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder-project.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key';
 
 if (!supabaseUrl || !supabaseAnonKey) {
     console.error(
