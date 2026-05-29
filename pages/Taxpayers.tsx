@@ -2517,7 +2517,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {taxpayers.length > 0 ? (
-                  taxpayers.slice(0, 100).sort((a,b) => (a.name||'').localeCompare(b.name||'')).map((tp, idx) => (
+                  taxpayers.slice().sort((a,b) => (a.name||'').localeCompare(b.name||'')).slice(0, 100).map((tp, idx) => (
                     <tr key={`tp-${tp.id}-${tp.taxpayerNumber || ''}-${idx}`} className="hover:bg-slate-50 transition-colors group">
                       <td className="px-8 py-5">
                         <div className="font-black text-slate-800 uppercase tracking-tight group-hover:text-indigo-600 transition-colors">{tp.name}</div>
