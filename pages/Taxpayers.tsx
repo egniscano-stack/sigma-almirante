@@ -636,7 +636,7 @@ export const Taxpayers: React.FC<TaxpayersProps> = ({
       setIsSearching(false);
       setSearchResults([]);
     }
-  }, [searchTerm, taxpayers, selectedActivity]);
+  }, [searchTerm, taxpayers, selectedActivity, isEditing, viewTaxpayer, historyTaxpayer]);
 
 
 
