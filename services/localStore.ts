@@ -30,7 +30,9 @@ const initialData: LocalData = {
     chatMessages: []
 };
 
-const hasCredentials = !!(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
+const resolvedSupabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://nxssrsjcwenxfukdsfoa.supabase.co';
+const resolvedSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54c3Nyc2pjd2VueGZ1a2RzZm9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4Mzg0MjIsImV4cCI6MjA5NDQxNDQyMn0.ketneNoqaakdx8hE53MSE1dmXghyhToDcoGo6u6kneY';
+const hasCredentials = !!(resolvedSupabaseUrl && resolvedSupabaseAnonKey && resolvedSupabaseUrl !== 'https://placeholder-project.supabase.co');
 const storedTestMode = localStorage.getItem('sigma_test_mode');
 let _isTestMode = storedTestMode !== null ? storedTestMode === 'true' : !hasCredentials;
 
